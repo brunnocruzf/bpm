@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AssignCorrelationId;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\VerifyLocalCookieCsrf;
 use App\Support\ApiProblem;
 use App\Support\Correlation;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -38,7 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(AssignCorrelationId::class);
-        $middleware->api(append: [SecurityHeaders::class]);
+        $middleware->api(prepend: [VerifyLocalCookieCsrf::class], append: [SecurityHeaders::class]);
         $middleware->trustProxies(at: '*');
         // API não redireciona para tela de login: responde 401 (problem+json), mesmo sem Accept JSON.
         $middleware->redirectGuestsTo(fn (Request $request) => $request->is('api/*') ? null : '/login');

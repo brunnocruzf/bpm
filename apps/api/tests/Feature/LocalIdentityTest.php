@@ -1,0 +1,162 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Auth\PasswordPolicy;
+use App\Models\AuditEvent;
+use App\Models\AuthSession;
+use App\Models\BpmGroup;
+use App\Models\BpmGroupMembership;
+use App\Models\LocalCredential;
+use App\Models\LocalIdentityToken;
+use App\Models\NotificationMessage;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Crypt;
+use Tests\TestCase;
+
+class LocalIdentityTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->seedIdentity();
+    }
+
+    public function test_admin_invitation_activation_login_cookie_and_logout(): void
+    {
+        $created = $this->as('admin')->postJson('/api/v1/admin/managed-users', [
+            'name' => 'Pessoa Local', 'email' => 'pessoa.local@example.test', 'username' => 'pessoa.local', 'area' => 'Operações',
+        ])->assertCreated()->assertJsonPath('data.authSource', 'local')->assertJsonPath('data.isActive', false);
+        $user = User::where('username', 'pessoa.local')->firstOrFail();
+        $this->assertSame([], $user->roles);
+        $this->assertSame(User::SOURCE_LOCAL, $user->auth_source);
+        $credential = LocalCredential::where('user_id', $user->id)->firstOrFail();
+        $this->assertNotSame('Ativa-Forte-2026!x', $credential->password_hash);
+        $this->assertSame('invitation', LocalIdentityToken::where('user_id', $user->id)->value('purpose'));
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$user->id, ['active' => true])->assertStatus(409);
+
+        $message = NotificationMessage::where('event', 'identity.invitation')->firstOrFail();
+        $this->assertStringNotContainsString('token=', $message->body);
+        $url = Crypt::decryptString($message->body);
+        parse_str((string) parse_url(trim(explode("\n\n", $url)[1]), PHP_URL_QUERY), $query);
+        $inviteToken = $query['token'];
+        $this->assertNotSame($inviteToken, LocalIdentityToken::where('user_id', $user->id)->value('token_hash'));
+
+        $password = 'Ativa-Forte-2026!x';
+        $this->postJson('/api/v1/auth/local/activate', ['token' => $inviteToken, 'password' => $password])->assertOk();
+        $this->assertTrue($user->fresh()->is_active);
+        $this->assertTrue(PasswordPolicy::verify($password, $credential->fresh()->password_hash));
+        $this->postJson('/api/v1/auth/local/activate', ['token' => $inviteToken, 'password' => $password])->assertStatus(422);
+
+        $login = $this->postJson('/api/v1/auth/local/login', ['username' => 'pessoa.local', 'password' => $password])->assertOk()->assertJsonMissingPath('token');
+        $sessionCookie = $login->getCookie('bpm_local_session', false);
+        $csrfCookie = $login->getCookie('bpm_local_csrf', false);
+        $this->assertNotNull($sessionCookie);
+        $this->assertTrue($sessionCookie->isHttpOnly());
+        $this->assertNotNull($csrfCookie);
+        $this->assertSame('/', $csrfCookie->getPath());
+        $opaque = $sessionCookie->getValue();
+        $this->assertSame(hash('sha256', $opaque), AuthSession::where('user_id', $user->id)->value('token_hash'));
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders();
+        $this->withCredentials()->withUnencryptedCookies(['bpm_local_session' => $opaque])->getJson('/api/v1/me')->assertOk()->assertJsonPath('auth.method', 'local');
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders();
+        $this->withCredentials()->withUnencryptedCookies(['bpm_local_session' => $opaque, 'bpm_local_csrf' => $csrfCookie->getValue()])
+            ->withHeader('X-BPM-CSRF', $csrfCookie->getValue())->postJson('/api/v1/auth/logout')->assertNoContent();
+        $this->assertNotNull(AuthSession::where('user_id', $user->id)->firstOrFail()->revoked_at);
+        $this->assertTrue(AuditEvent::where('action', 'identity.local_user_created')->exists());
+        $this->assertTrue(AuditEvent::where('action', 'identity.local_user_activated')->exists());
+    }
+
+    public function test_local_password_recovery_is_neutral_and_revokes_sessions(): void
+    {
+        $user = User::create(['name' => 'Pessoa Local', 'email' => 'pessoa@example.test', 'username' => 'pessoa', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true,
+            'roles' => [], 'groups' => [], 'manual_groups' => [], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
+        $oldPassword = 'Inicial-Forte-2026!x';
+        LocalCredential::create(['user_id' => $user->id, 'password_hash' => PasswordPolicy::hash($oldPassword), 'password_changed_at' => now()]);
+        $this->postJson('/api/v1/auth/local/login', ['username' => 'pessoa', 'password' => $oldPassword])->assertOk();
+        $this->postJson('/api/v1/auth/local/forgot-password', ['username' => 'pessoa'])->assertOk()->assertJsonPath('message', 'Se os dados corresponderem a uma conta local ativa, enviaremos as instruções para o e-mail cadastrado.');
+        $this->postJson('/api/v1/auth/local/forgot-password', ['username' => 'nao-existe'])->assertOk()->assertJsonPath('message', 'Se os dados corresponderem a uma conta local ativa, enviaremos as instruções para o e-mail cadastrado.');
+        $resetMessage = NotificationMessage::where('event', 'identity.password_reset')->firstOrFail();
+        $body = Crypt::decryptString($resetMessage->body);
+        preg_match('/token=([^\\s]+)/', $body, $match);
+        $this->assertNotEmpty($match[1] ?? null);
+        $newPassword = 'Nova-Forte-2026!xy';
+        $this->postJson('/api/v1/auth/local/reset-password', ['token' => $match[1], 'password' => $newPassword])->assertOk();
+        $this->assertTrue(PasswordPolicy::verify($newPassword, LocalCredential::where('user_id', $user->id)->value('password_hash')));
+        $this->assertNotNull(AuthSession::where('user_id', $user->id)->firstOrFail()->revoked_at);
+        $this->postJson('/api/v1/auth/local/reset-password', ['token' => $match[1], 'password' => $newPassword])->assertStatus(422);
+        $this->assertTrue(AuditEvent::where('action', 'identity.local_password_reset')->exists());
+    }
+
+    public function test_manual_group_membership_is_separate_from_directory_sources_and_admin_only(): void
+    {
+        $user = User::create(['name' => 'Pessoa Local', 'email' => 'pessoa@example.test', 'username' => 'pessoa', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true,
+            'roles' => [], 'groups' => [], 'manual_groups' => [], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
+        $group = BpmGroup::where('key', 'CQ')->firstOrFail();
+
+        $this->as('cq')->getJson('/api/v1/admin/managed-users')->assertForbidden();
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?active=true&perPage=50')->assertOk();
+        $this->as('admin')->postJson("/api/v1/admin/groups/{$group->key}/members", ['userIds' => [$user->id]])->assertCreated()->assertJsonPath('added', 1);
+        $this->assertSame(['CQ'], $user->fresh()->manual_groups);
+        $this->assertSame(['CQ'], $user->fresh()->groups);
+        $this->assertSame('manual', BpmGroupMembership::firstOrFail()->source);
+
+        $user->forceFill(['directory_groups' => ['CQ', 'GEF']])->save();
+        $this->as('admin')->deleteJson("/api/v1/admin/groups/{$group->key}/members/{$user->id}")->assertNoContent();
+        $this->assertSame([], $user->fresh()->manual_groups);
+        $this->assertSame(['CQ', 'GEF'], $user->fresh()->groups);
+        $this->assertTrue(AuditEvent::where('action', 'identity.local_group_member_added')->exists());
+        $this->assertTrue(AuditEvent::where('action', 'identity.local_group_member_removed')->exists());
+    }
+
+    public function test_admin_can_create_group_and_assign_existing_active_members(): void
+    {
+        $user = User::create(['name' => 'Pessoa Local', 'email' => 'pessoa@example.test', 'username' => 'pessoa', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true,
+            'roles' => [], 'groups' => [], 'manual_groups' => [], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
+
+        $this->as('cq')->postJson('/api/v1/admin/groups', ['key' => 'RH_NOVO', 'name' => 'Recursos Humanos'])->assertForbidden();
+        $this->as('admin')->postJson('/api/v1/admin/groups', [
+            'key' => 'RH_NOVO', 'name' => 'Recursos Humanos', 'description' => 'Grupo criado pela administração',
+        ])->assertCreated()->assertJsonPath('key', 'RH_NOVO');
+        $this->as('admin')->postJson('/api/v1/admin/groups/RH_NOVO/members', ['userIds' => [$user->id]])->assertCreated()->assertJsonPath('added', 1);
+
+        $this->assertSame(['RH_NOVO'], $user->fresh()->manual_groups);
+        $this->assertTrue(AuditEvent::where('action', 'group.created')->exists());
+        $this->as('admin')->getJson('/api/v1/admin/groups')->assertOk()->assertJsonFragment(['key' => 'RH_NOVO', 'name' => 'Recursos Humanos']);
+    }
+
+    public function test_manual_role_membership_is_audited_and_does_not_overwrite_directory_roles(): void
+    {
+        $user = User::create(['name' => 'Pessoa Local', 'email' => 'papel@example.test', 'username' => 'papel', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true,
+            'roles' => [], 'groups' => [], 'manual_groups' => [], 'manual_roles' => [], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
+        $role = 'Bpm.TaskWorker';
+
+        $this->as('cq')->postJson("/api/v1/admin/roles/{$role}/users", ['userIds' => [$user->id]])->assertForbidden();
+        $this->as('admin')->postJson("/api/v1/admin/roles/{$role}/users", ['userIds' => [$user->id]])->assertCreated()->assertJsonPath('added', 1);
+        $this->assertSame([$role], $user->fresh()->manual_roles);
+        $this->assertSame([$role], $user->fresh()->roles);
+        $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$user->id)->assertOk()->assertJsonPath('data.access.roleSources.manual.0', $role);
+
+        $user->forceFill(['directory_roles' => [$role]])->save();
+        $this->as('admin')->deleteJson("/api/v1/admin/roles/{$role}/users/{$user->id}")->assertNoContent();
+        $this->assertSame([], $user->fresh()->manual_roles);
+        $this->assertSame([$role], $user->fresh()->roles);
+        $this->assertTrue(AuditEvent::where('action', 'identity.manual_role_assigned')->exists());
+        $this->assertTrue(AuditEvent::where('action', 'identity.manual_role_removed')->exists());
+
+        $legacy = User::create(['name' => 'Conta Entra antiga', 'email' => 'antiga@example.test', 'username' => 'antiga', 'auth_source' => User::SOURCE_ENTRA, 'is_active' => true,
+            'roles' => [], 'groups' => [], 'manual_groups' => [], 'manual_roles' => []]);
+        $this->as('admin')->postJson("/api/v1/admin/roles/{$role}/users", ['userIds' => [$legacy->id]])->assertCreated();
+        $this->assertSame([$role], $legacy->fresh()->roles);
+        $this->as('admin')->deleteJson("/api/v1/admin/roles/{$role}/users/{$legacy->id}")->assertNoContent();
+        $this->assertSame([], $legacy->fresh()->roles);
+
+        $admin = $this->dev('admin');
+        $this->as('admin')->postJson("/api/v1/admin/roles/{$role}/users", ['userIds' => [$admin->id]])->assertStatus(409)->assertJsonPath('code', 'self_role_assignment');
+    }
+}

@@ -78,6 +78,28 @@ class AdminController extends ApiController
         ])]);
     }
 
+    public function storeGroup(Request $request): JsonResponse
+    {
+        Gate::authorize(Permissions::SETTINGS_MANAGE);
+        $data = $request->validate([
+            'key' => ['required', 'string', 'max:40', 'regex:/^[A-Z][A-Z0-9_]*$/', 'unique:bpm_groups,key'],
+            'name' => ['required', 'string', 'max:120'],
+            'description' => ['nullable', 'string', 'max:400'],
+            'entraGroupId' => ['nullable', 'uuid', 'unique:bpm_groups,entra_group_id'],
+            'email' => ['nullable', 'email', 'max:200'],
+        ]);
+        $group = BpmGroup::create([
+            'key' => $data['key'],
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
+            'entra_group_id' => $data['entraGroupId'] ?? null,
+            'email' => $data['email'] ?? null,
+        ]);
+        AuditLogger::record('group.created', 'bpm_group', $group->id, ['key' => $group->key], context: ['object_name' => $group->name]);
+
+        return response()->json(['key' => $group->key], 201);
+    }
+
     public function updateGroup(Request $request, string $key): JsonResponse
     {
         Gate::authorize(Permissions::SETTINGS_MANAGE);

@@ -74,6 +74,7 @@ class PublicController extends Controller
                 'demo' => AuthMethods::demoEnabled(),
                 'demoUrl' => AuthMethods::demoUrl(),
                 'superadmin' => AuthMethods::superAdminEnabled($request),
+                'local' => true,
             ],
         ])->header('Cache-Control', 'no-store');
     }

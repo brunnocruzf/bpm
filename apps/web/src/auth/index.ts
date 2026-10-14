@@ -14,7 +14,7 @@ import { reactive } from 'vue'
  */
 export type AuthMethod = 'entra' | 'demo' | 'superadmin' | 'local'
 
-export interface AuthMethods { entra: boolean; demo: boolean; demoUrl: string | null; superadmin: boolean }
+export interface AuthMethods { entra: boolean; demo: boolean; demoUrl: string | null; superadmin: boolean; local: boolean }
 
 export interface SuperAdminSession { token: string; expiresAt: string; name: string }
 
@@ -40,7 +40,7 @@ async function loadMsal(): Promise<MsalModule> {
 
 /** Estado público (reativo) para a tela de login. */
 export const authState = reactive({
-  methods: { entra: false, demo: false, demoUrl: null, superadmin: false } as AuthMethods,
+  methods: { entra: false, demo: false, demoUrl: null, superadmin: false, local: false } as AuthMethods,
   /** MSAL inicializado (botão Microsoft utilizável) */
   entraReady: false,
   entraError: null as string | null,
@@ -85,10 +85,19 @@ function clearLocal(): void {
 }
 
 async function switchTo(method: AuthMethod): Promise<void> {
+  if (currentMethod() === 'local' && method !== 'local') await clearLocalCookieSession()
   clearLocal()
   // ao entrar por outro método, esquece a conta Entra desta aba (sem sair da Microsoft)
   if (method !== 'entra' && msal) await msal.clearLocalAccount().catch(() => undefined)
   sessionStorage.setItem(METHOD_KEY, method)
+}
+
+async function clearLocalCookieSession(): Promise<void> {
+  const csrf = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('bpm_local_csrf='))?.slice('bpm_local_csrf='.length)
+  try {
+    const base = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '')
+    await fetch(`${base}/auth/local/logout`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', ...(csrf ? { 'X-BPM-CSRF': decodeURIComponent(csrf) } : {}) } })
+  } catch { /* o servidor também expira/revoga sessões por tempo */ }
 }
 
 export const auth = {
@@ -100,6 +109,7 @@ export const auth = {
       demo: demoBuild && (m.demo ?? false),
       demoUrl: typeof m.demoUrl === 'string' && /^https?:\/\//i.test(m.demoUrl) ? m.demoUrl : null,
       superadmin: m.superadmin ?? false,
+      local: m.local ?? false,
     }
     authState.configLoaded = cfg !== null
     const runtime = cfg?.entra ?? null
@@ -112,7 +122,7 @@ export const auth = {
     try {
       // configuração pública ativada em Configurações → Entra ID (fallback: variáveis do build)
       if (await (await loadMsal()).initMsal(runtime)) {
-        clearLocal()
+        await switchTo('entra')
         sessionStorage.setItem(METHOD_KEY, 'entra')
       }
       authState.entraReady = true
@@ -133,6 +143,7 @@ export const auth = {
     switch (this.method()) {
       case 'demo': return !!sessionStorage.getItem(DEV_KEY)
       case 'superadmin': return readSuperAdmin() !== null
+      case 'local': return sessionStorage.getItem(LOCAL_KEY) === 'active'
       case 'entra': return msal?.hasAccount() ?? false
       default: return false
     }
@@ -145,7 +156,7 @@ export const auth = {
         return user ? `dev:${user}` : null
       }
       case 'superadmin': return readSuperAdmin()?.token ?? null
-      case 'local': return sessionStorage.getItem(LOCAL_KEY)
+      case 'local': return null // sessão de servidor transmitida em cookie HttpOnly
       case 'entra': return (await loadMsal()).acquireApiToken()
       default: return null
     }
@@ -153,7 +164,7 @@ export const auth = {
 
   async loginEntra(): Promise<void> {
     if (!authState.entraReady) throw new Error(authState.entraError ?? 'Login Microsoft indisponível.')
-    clearLocal()
+    await switchTo('entra')
     sessionStorage.setItem(METHOD_KEY, 'entra')
     await (await loadMsal()).loginRedirect()
   },
@@ -169,9 +180,9 @@ export const auth = {
     await switchTo('superadmin')
     sessionStorage.setItem(SA_KEY, JSON.stringify({ token: session.token, expiresAt: session.expiresAt, name: session.user.name } satisfies SuperAdminSession))
   },
-  async startLocal(session: { token: string }): Promise<void> {
+  async startLocal(): Promise<void> {
     await switchTo('local')
-    sessionStorage.setItem(LOCAL_KEY, session.token)
+    sessionStorage.setItem(LOCAL_KEY, 'active')
   },
 
   superAdminSession(): Omit<SuperAdminSession, 'token'> | null {
@@ -182,11 +193,12 @@ export const auth = {
   /** 401 da API: sessões locais (visitante/SuperAdmin) deixam de valer; o Entra renova pelo MSAL. */
   expireLocal(): void {
     const m = currentMethod()
-    if (m === 'demo' || m === 'superadmin') clearLocal()
+    if (m === 'demo' || m === 'superadmin' || m === 'local') clearLocal()
   },
 
   /** Limpa a sessão local sem redirecionar (antes de um novo login). */
   async reset(): Promise<void> {
+    if (currentMethod() === 'local') await clearLocalCookieSession()
     clearLocal()
   },
 

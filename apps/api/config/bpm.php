@@ -44,6 +44,16 @@ return [
             'roles' => ['Bpm.Admin', 'Bpm.Designer', 'Bpm.Publisher', 'Bpm.ProcessAdmin', 'Bpm.Reporter', 'Bpm.Auditor'],
         ],
 
+        'local' => [
+            'session_minutes' => (int) env('BPM_LOCAL_SESSION_MINUTES', 240),
+            'idle_minutes' => (int) env('BPM_LOCAL_IDLE_MINUTES', 30),
+            'max_sessions' => 3,
+            'max_attempts' => (int) env('BPM_LOCAL_MAX_ATTEMPTS', 5),
+            'attempt_window_seconds' => 900,
+            'lockout_threshold' => (int) env('BPM_LOCAL_LOCKOUT_THRESHOLD', 10),
+            'lockout_minutes' => (int) env('BPM_LOCAL_LOCKOUT_MINUTES', 30),
+        ],
+
         'entra' => [
             'tenant_id' => env('BPM_ENTRA_TENANT_ID'),
             // Lista separada por vírgula de tenants aceitos (default: tenant_id).

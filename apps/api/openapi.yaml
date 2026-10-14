@@ -370,6 +370,17 @@ paths:
       summary: Consulta AX sob demanda (tpr, item, purchaseOrder, supplier)
       parameters: [{ name: source, in: path, required: true, schema: { type: string } }, { name: value, in: query, required: true, schema: { type: string } }]
       responses: { '200': { description: OK }, '503': { $ref: '#/components/responses/Problem' } }
+  /admin/roles:
+    get: { summary: "Effective roles and related users (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
+  /admin/roles/{roleKey}/users:
+    parameters: [{ name: roleKey, in: path, required: true, schema: { type: string } }]
+    post:
+      summary: "Assigns a manual role to active users without changing Entra ID (settings.manage)"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [userIds], properties: { userIds: { type: array, minItems: 1, maxItems: 100, items: { type: string, format: uuid } } } } } } }
+      responses: { '201': { description: Assigned }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/roles/{roleKey}/users/{userId}:
+    parameters: [{ name: roleKey, in: path, required: true, schema: { type: string } }, { name: userId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete: { summary: "Removes only a manual role and preserves Entra/token sources", responses: { '204': { description: Removed }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } } }
   /admin/integrations:
     get: { summary: "Saúde do engine/AX, outbox e notificações (sem segredos)", responses: { '200': { description: OK } } }
   /admin/engine-commands:
@@ -379,6 +390,10 @@ paths:
     post: { summary: "Reenvio com reconciliação prévia", responses: { '200': { description: OK } } }
   /admin/groups:
     get: { summary: "Grupos/raias e mapeamento Entra", responses: { '200': { description: OK } } }
+    post:
+      summary: "Cria um grupo/raia interno (settings.manage)"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [key, name], properties: { key: { type: string, maxLength: 40, pattern: '^[A-Z][A-Z0-9_]*$' }, name: { type: string, maxLength: 120 }, description: { type: string, nullable: true, maxLength: 400 }, entraGroupId: { type: string, format: uuid, nullable: true }, email: { type: string, format: email, nullable: true } } } } } }
+      responses: { '201': { description: Created }, '403': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
   /admin/groups/{key}:
     parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
     patch: { summary: "Altera grupo/raia (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }

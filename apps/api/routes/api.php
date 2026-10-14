@@ -2,14 +2,16 @@
 
 use App\Http\Controllers\Api\V1\Admin\AuditController;
 use App\Http\Controllers\Api\V1\Admin\DirectoryController;
+use App\Http\Controllers\Api\V1\Admin\GroupMembershipController;
 use App\Http\Controllers\Api\V1\Admin\IntegrationCatalogController;
 use App\Http\Controllers\Api\V1\Admin\IntegrationLogController;
 use App\Http\Controllers\Api\V1\Admin\NotificationController;
+use App\Http\Controllers\Api\V1\Admin\RoleMembershipController;
 use App\Http\Controllers\Api\V1\Admin\SettingsController;
+use App\Http\Controllers\Api\V1\Admin\UserManagementController;
 use App\Http\Controllers\Api\V1\AdminController;
 use App\Http\Controllers\Api\V1\AttachmentController;
 use App\Http\Controllers\Api\V1\AuthController;
-use App\Http\Controllers\Api\V1\Admin\UserManagementController;
 use App\Http\Controllers\Api\V1\DefinitionController;
 use App\Http\Controllers\Api\V1\FlowController;
 use App\Http\Controllers\Api\V1\HealthController;
@@ -43,6 +45,10 @@ Route::prefix('v1')->group(function () {
     // Login SuperAdmin (acesso de emergência): limite por rota + limite/bloqueio por usuário e IP no serviço.
     Route::post('auth/superadmin/login', [AuthController::class, 'superAdminLogin'])->middleware('throttle:20,1');
     Route::post('auth/local/login', [AuthController::class, 'localLogin'])->middleware('throttle:20,1');
+    Route::post('auth/local/logout', [AuthController::class, 'localCookieLogout'])->middleware('throttle:20,1');
+    Route::post('auth/local/forgot-password', [AuthController::class, 'requestLocalPasswordReset'])->middleware('throttle:10,1');
+    Route::post('auth/local/activate', [AuthController::class, 'activateLocalAccount'])->middleware('throttle:10,1');
+    Route::post('auth/local/reset-password', [AuthController::class, 'resetLocalPassword'])->middleware('throttle:10,1');
 
     // Download por URL assinada de curta duração (sem bearer).
     Route::get('files/{attachment}', [AttachmentController::class, 'download'])->middleware('signed')->name('attachments.download');
@@ -143,11 +149,20 @@ Route::prefix('v1')->group(function () {
         Route::get('admin/engine-commands', [AdminController::class, 'commands']);
         Route::post('admin/engine-commands/{id}/retry', [AdminController::class, 'retryCommand'])->whereUuid('id');
         Route::get('admin/groups', [AdminController::class, 'groups']);
+        Route::post('admin/groups', [AdminController::class, 'storeGroup']);
         Route::patch('admin/groups/{key}', [AdminController::class, 'updateGroup']);
         Route::get('admin/users', [AdminController::class, 'users']);
         Route::get('admin/managed-users', [UserManagementController::class, 'index']);
-        Route::get('admin/managed-users/{id}', [UserManagementController::class, 'show'])->whereUuid('id');
         Route::post('admin/managed-users', [UserManagementController::class, 'store']);
+        Route::get('admin/managed-users/{id}', [UserManagementController::class, 'show'])->whereUuid('id');
+        Route::patch('admin/managed-users/{id}', [UserManagementController::class, 'update'])->whereUuid('id');
+        Route::post('admin/managed-users/{id}/invitation', [UserManagementController::class, 'resendInvitation'])->whereUuid('id');
+        Route::get('admin/roles', [UserManagementController::class, 'roles']);
+        Route::post('admin/roles/{roleKey}/users', [RoleMembershipController::class, 'store']);
+        Route::delete('admin/roles/{roleKey}/users/{userId}', [RoleMembershipController::class, 'destroy'])->whereUuid('userId');
+        Route::get('admin/groups/{key}/members', [GroupMembershipController::class, 'index']);
+        Route::post('admin/groups/{key}/members', [GroupMembershipController::class, 'store']);
+        Route::delete('admin/groups/{key}/members/{userId}', [GroupMembershipController::class, 'destroy'])->whereUuid('userId');
 
         // Configurações (settings.manage). Segredos são somente escrita.
         Route::prefix('admin/settings')->group(function () {

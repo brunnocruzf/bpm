@@ -37,7 +37,8 @@ class TokenUserResolver
 
     public function __invoke(Request $request): ?User
     {
-        $token = $request->bearerToken();
+        // Cookies de sessão local são HttpOnly; Bearer tem precedência para Entra/SuperAdmin/demo.
+        $token = $request->bearerToken() ?: $request->cookie('bpm_local_session');
         if (! $token) {
             return null;
         }

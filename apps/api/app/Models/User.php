@@ -11,12 +11,12 @@ use Illuminate\Support\Carbon;
 
 /**
  * Usuário espelhado do IdP. Não há senha na tabela: a autenticação é feita pelo Entra ID, pelo acesso
- * de demonstração (usuários fictícios, nunca em produção) ou, para o SuperAdmin de emergência, pela
- * credencial local (local_credentials, somente hash). Chave estável do Entra: tenant + oid.
- * auth_source: entra | demo | superadmin (impede que um método autentique contas de outro).
+ * de demonstração (usuários fictícios, nunca em produção), por conta local provisionada pelo administrador,
+ * ou pelo SuperAdmin de emergência. Credenciais locais ficam separadas em local_credentials. Chave Entra: tenant + oid.
+ * auth_source impede que um método autentique contas de outra origem.
  *
- * roles/groups são os valores EFETIVOS = união das origens: token (App Roles/grupos do login)
- * e diretório (mapeamentos explícitos da sincronização Graph). Seeds de dev não têm origem.
+ * roles/groups são os valores efetivos: roles vêm do token e dos mapeamentos Graph; groups também incluem
+ * associações manuais internas, armazenadas separadamente das memberships Entra.
  *
  * @property string $id
  * @property string $name
@@ -29,6 +29,8 @@ use Illuminate\Support\Carbon;
  * @property bool|null $account_enabled
  * @property array<int,string> $roles
  * @property array<int,string> $groups
+ * @property array<int,string>|null $manual_groups
+ * @property array<int,string>|null $manual_roles
  * @property array<int,string>|null $token_roles
  * @property array<int,string>|null $token_groups
  * @property array<int,string>|null $directory_roles
@@ -52,9 +54,11 @@ class User extends Model implements AuthenticatableContract
 
     public const SOURCE_SUPERADMIN = 'superadmin';
 
+    public const SOURCE_LOCAL = 'local';
+
     protected $fillable = [
         'entra_oid', 'entra_tid', 'username', 'name', 'email', 'upn', 'area', 'department', 'user_type', 'account_enabled',
-        'roles', 'groups', 'token_roles', 'token_groups', 'directory_roles', 'directory_groups', 'directory_synced_at',
+        'roles', 'groups', 'manual_groups', 'manual_roles', 'token_roles', 'token_groups', 'directory_roles', 'directory_groups', 'directory_synced_at',
         'is_active', 'disabled_reason', 'disabled_at', 'last_seen_at', 'auth_source',
     ];
 
@@ -63,6 +67,8 @@ class User extends Model implements AuthenticatableContract
         return [
             'roles' => 'array',
             'groups' => 'array',
+            'manual_groups' => 'array',
+            'manual_roles' => 'array',
             'token_roles' => 'array',
             'token_groups' => 'array',
             'directory_roles' => 'array',
@@ -107,9 +113,14 @@ class User extends Model implements AuthenticatableContract
     public function recomputeEffectiveAccess(): void
     {
         if ($this->token_roles === null && $this->directory_roles === null && $this->token_groups === null && $this->directory_groups === null) {
+            $this->roles = array_values(array_unique([...($this->roles ?? []), ...($this->manual_roles ?? [])]));
+            if ($this->manual_groups) {
+                $this->groups = array_values(array_unique([...($this->groups ?? []), ...$this->manual_groups]));
+            }
+
             return; // usuário sem origem rastreada (seed de desenvolvimento)
         }
-        $this->roles = array_values(array_unique([...($this->token_roles ?? []), ...($this->directory_roles ?? [])]));
-        $this->groups = array_values(array_unique([...($this->token_groups ?? []), ...($this->directory_groups ?? [])]));
+        $this->roles = array_values(array_unique([...($this->token_roles ?? []), ...($this->directory_roles ?? []), ...($this->manual_roles ?? [])]));
+        $this->groups = array_values(array_unique([...($this->token_groups ?? []), ...($this->directory_groups ?? []), ...($this->manual_groups ?? [])]));
     }
 }

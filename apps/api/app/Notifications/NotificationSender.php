@@ -15,6 +15,7 @@ use App\Settings\Types\EmailSettings;
 use App\Support\AuditLogger;
 use App\Support\Correlation;
 use App\Support\Masker;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -54,12 +55,15 @@ class NotificationSender
         $brand = $this->settings->value(app(BrandingSettings::class));
         $started = microtime(true);
         try {
+            $body = in_array($message->event, ['identity.invitation', 'identity.password_reset'], true)
+                ? Crypt::decryptString($message->body)
+                : $message->body;
             $mail = new OutgoingMail(
                 (string) $message->recipient_address,
                 $message->recipient_name,
                 $message->subject,
-                $message->body,
-                NotificationTemplate::html($message->body, (string) $brand['appName'], (string) config('app.frontend_url', config('app.url'))),
+                $body,
+                NotificationTemplate::html($body, (string) $brand['appName'], (string) config('app.frontend_url', config('app.url'))),
                 (string) ($message->idempotency_key ?? $message->id),
                 $message->correlation_id,
             );

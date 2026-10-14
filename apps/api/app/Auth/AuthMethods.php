@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\IpUtils;
  *  - demo:       visitante com usuários fictícios — somente fora de produção;
  *  - superadmin: usuário e senha locais de emergência — desabilitado por padrão; em produção exige
  *                lista de IPs permitidos.
+ *  - local: contas locais provisionadas por administradores, autenticadas por sessão HttpOnly.
  * O SPA apenas reflete /public/auth-config; quem aceita ou recusa o token é o servidor.
  */
 final class AuthMethods
@@ -21,6 +22,7 @@ final class AuthMethods
     public const DEMO = 'demo';
 
     public const SUPERADMIN = 'superadmin';
+
     public const LOCAL = 'local';
 
     /** Falha cedo (boot) em combinações inseguras. */

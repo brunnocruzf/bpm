@@ -71,6 +71,177 @@ No acesso de visitante, escolha um perfil:
 
 Dica para o mock do AX: qualquer TPR/item/OC retorna dados fictícios; valores iniciados por `NAOEXISTE` simulam "não encontrado" e `INDISPONIVEL` simulam AX fora do ar.
 
+## Guia completo: clonar, implantar com Docker e validar o ambiente
+
+Este procedimento prepara uma instalação limpa do BPM TMSA em Docker, desde o clone do Git até a validação dos serviços. O Compose deste repositório é destinado a **desenvolvimento, demonstração e POC em servidor único**; ele não fornece alta disponibilidade nem substitui a arquitetura corporativa de produção.
+
+### 1. Pré-requisitos
+
+- Acesso ao repositório Git e permissão para cloná-lo.
+- Docker Desktop (Windows/macOS) ou Docker Engine (Linux), com Docker Compose v2 habilitado e usando containers Linux.
+- No Windows, Git for Windows com **Git Bash** ou WSL2, necessário para executar o script que gera o Docker secret local.
+- Conexão à internet na primeira compilação, para baixar imagens e dependências.
+- Portas `8080` e `8025` livres. A porta `8080` serve a aplicação e a `8025` a interface de e-mail de desenvolvimento (Mailpit).
+- Espaço em disco para imagens e volumes persistentes. No Docker Desktop, reserve memória suficiente para compilar e executar PostgreSQL, Flowable, API, worker, storage e frontend (recomendado: pelo menos 6 GB para Docker).
+
+Não é necessário instalar Node.js, PHP, Composer ou PostgreSQL no computador para compilar e executar o ambiente Docker; os builds usam imagens de containers.
+
+### 2. Clonar o projeto
+
+Use a URL Git fornecida pela equipe. Os exemplos abaixo assumem que o diretório local se chamará `bpmn`.
+
+**PowerShell:**
+
+```powershell
+git clone <URL_DO_REPOSITORIO> bpmn
+Set-Location .\bpmn
+```
+
+**Linux, macOS, Git Bash ou WSL:**
+
+```bash
+git clone <URL_DO_REPOSITORIO> bpmn
+cd bpmn
+```
+
+Se for necessário usar uma branch específica, entre no repositório e selecione a branch indicada pela equipe:
+
+```bash
+git switch <branch>
+```
+
+Confira se está na raiz do projeto (onde ficam `README.md`, `apps/` e `deploy/`) e entre na pasta do Compose:
+
+```bash
+cd deploy/docker
+```
+
+No PowerShell, o comando equivalente é `Set-Location .\deploy\docker`.
+
+### 3. Configurar o ambiente e os segredos locais
+
+1. Crie o arquivo de ambiente a partir do modelo:
+
+   - PowerShell: `Copy-Item .env.example .env`
+   - Linux/macOS/Git Bash/WSL: `cp .env.example .env`
+
+2. Gere uma chave Laravel exclusiva. A partir da pasta `deploy/docker`, execute:
+
+   ```powershell
+   docker run --rm php:8.4-cli-alpine php -r "echo 'base64:'.base64_encode(random_bytes(32)).PHP_EOL;"
+   ```
+
+   Copie o valor `base64:...` impresso e substitua o valor de exemplo de `APP_KEY` no arquivo `.env`.
+
+3. Abra `.env` em um editor de texto e substitua **todos** os valores de senha de exemplo por senhas fortes, únicas e não reutilizadas: `POSTGRES_SUPERUSER_PASSWORD`, `BPM_APP_DB_PASSWORD`, `FLOWABLE_DB_PASSWORD`, `FLOWABLE_REST_PASSWORD` e `STORAGE_SECRET_KEY`. Não coloque senhas reais neste README, no Git ou em chamados/logs.
+
+4. Para a demonstração local, mantenha os valores compatíveis com o perfil de desenvolvimento, em particular `APP_ENV=local`, `BPM_AUTH_DRIVER=dev`, `WEB_BUILD_MODE=docker-dev`, `SEED_ON_START=true` e `COMPOSE_PROFILES=dev`. Mantenha `BPM_HTTP_BIND=127.0.0.1` se o acesso for somente pelo próprio computador. O modelo usa a porta `8080` para a aplicação e `8025` para o Mailpit.
+
+5. Gere o arquivo local do cofre de segredos. Execute a partir de `deploy/docker` usando Git Bash, WSL ou outro shell POSIX:
+
+   ```bash
+   sh secrets/generate.sh
+   ```
+
+   O script cria `secrets/bpm_secrets_key` se ele ainda não existir. Esse arquivo é ignorado pelo Git e não deve ser apagado nem substituído sem seguir o procedimento de rotação do [runbook](docs/runbook.md); perder essa chave pode tornar ilegíveis os segredos guardados pela aplicação.
+
+6. Confirme que os arquivos locais não serão versionados. Na raiz do repositório, `git status --short` não deve listar `deploy/docker/.env` nem `deploy/docker/secrets/bpm_secrets_key`.
+
+> O perfil de demonstração inicializa usuários e dados fictícios. Use somente dados fictícios nesse ambiente. Não reutilize essa configuração como produção.
+
+### 4. Conferir a configuração e implantar
+
+Ainda em `deploy/docker`, valide a configuração resolvida do Compose. O comando deve terminar sem erro:
+
+```bash
+docker compose config --quiet
+```
+
+Confira quais serviços serão executados e faça o deploy, compilando as imagens necessárias:
+
+```bash
+docker compose config --services
+docker compose up --build -d
+```
+
+O Compose inicia PostgreSQL, Flowable, storage, API, servidor web, proxy reverso, worker e scheduler. O perfil `dev` também inicia o Mailpit. A API executa as migrations na inicialização; com `SEED_ON_START=true`, carrega os dados de demonstração e o fluxo PO 159.
+
+Veja o estado dos containers:
+
+```bash
+docker compose ps
+```
+
+Na primeira inicialização, aguarde alguns minutos. PostgreSQL, Flowable e API devem chegar ao estado `healthy`; os demais serviços devem estar `running`. O backend só fica pronto depois que o banco e o engine BPMN estiverem disponíveis.
+
+### 5. Validar os serviços por HTTP
+
+Execute estes comandos em PowerShell ou Windows Terminal:
+
+```powershell
+Invoke-RestMethod http://localhost:8080/api/v1/health | ConvertTo-Json
+Invoke-RestMethod http://localhost:8080/api/v1/ready | ConvertTo-Json -Depth 5
+(Invoke-WebRequest -Uri http://localhost:8080/ -UseBasicParsing).StatusCode
+(Invoke-WebRequest -Uri http://localhost:8080/admin/groups -UseBasicParsing).StatusCode
+(Invoke-WebRequest -Uri http://localhost:8080/api/v1/openapi.yaml -UseBasicParsing).StatusCode
+```
+
+No Linux/macOS/Git Bash, use `curl -i` com as mesmas URLs. Resultados esperados:
+
+- `/api/v1/health`: HTTP 200 e `status: UP` (processo da API ativo).
+- `/api/v1/ready`: HTTP 200, `status: UP`, `database: true` e `engine: true` (banco e Flowable acessíveis pela API).
+- `/`, `/admin/groups` e `/api/v1/openapi.yaml`: HTTP 200.
+
+`health` verifica liveness; para confirmar dependências, use também `ready`. O Flowable, PostgreSQL e storage não devem precisar de portas públicas: somente o proxy reverso publica a aplicação. A UI do Mailpit fica em <http://localhost:8025> no perfil de desenvolvimento.
+
+### 6. Validar o ambiente funcionalmente
+
+1. Abra <http://localhost:8080/login> ou <http://localhost:8080/login/visitante> e escolha **Acessar como visitante**. Entre com **Ana Administradora** para verificar áreas administrativas. Os perfis fictícios e seus usos estão descritos na tabela de demonstração acima.
+2. Acesse **Administração → Usuários e grupos** e confirme que a página carrega. Verifique as abas de usuários, grupos/raias e papéis. Os dados iniciais aparecem quando `SEED_ON_START=true`.
+3. Para validar o engine e o worker, entre como **Carla — CQ** (ou outro perfil de operação), inicie o fluxo de demonstração **PO 159 — Item Reprovado no Recebimento**, envie uma solicitação fictícia e confirme que a tarefa aparece na caixa de tarefas da raia responsável. Use somente valores de teste; as consultas ao AX neste ambiente são simuladas.
+4. Para validar e-mail local, entre como administradora, use a opção de teste de e-mail nas configurações e confira a mensagem em <http://localhost:8025>. O Mailpit captura mensagens e não as envia para destinatários externos.
+5. Confira worker e scheduler e investigue erros repetidos:
+
+   ```bash
+   docker compose logs --tail=100 api api-web web queue-worker scheduler
+   ```
+
+6. Confirme novamente `docker compose ps` e consulte `/api/v1/ready`. Para detalhes de operação, backup, sincronização, logs e rollback, siga o [runbook](docs/runbook.md).
+
+### 7. Configurar o SuperAdmin local (opcional)
+
+No modelo local, o método SuperAdmin está habilitado. Defina uma senha interativamente, sem colocá-la em linha de comando nem no `.env`:
+
+```bash
+docker compose exec api php artisan bpm:superadmin set-password
+```
+
+Depois, entre em <http://localhost:8080/login/superadmin>. Consulte o [guia de login](.claude/login/INSTRUCOES_DE_LOGIN.md) para políticas, operações e uso seguro. O visitante é apenas para demonstração; não o habilite em produção.
+
+### 8. Atualizar, parar e preservar dados
+
+Para atualizar a cópia clonada, faça backup conforme o runbook, atualize a branch e reconstrua os serviços:
+
+```bash
+# a partir da raiz do repositório
+git pull --ff-only
+cd deploy/docker
+docker compose up --build -d
+docker compose ps
+```
+
+Para parar o ambiente sem apagar os dados persistentes:
+
+```bash
+docker compose down
+```
+
+**Não use `docker compose down -v` para uma parada normal:** a opção `-v` remove volumes, inclusive banco de dados e arquivos do storage. A restauração de backup e a remoção deliberada de dados devem seguir um procedimento aprovado.
+
+### 9. Nota sobre produção
+
+Este Compose é um ambiente de desenvolvimento/POC em servidor único. Antes de qualquer produção, a equipe de plataforma deve definir HTTPS e proxy confiável, domínio e URLs públicas, credenciais em secret manager, login Entra, `APP_ENV=production`, `WEB_BUILD_MODE=production`, visitante desativado, restrições de IP do SuperAdmin, backup/restauração testados, observabilidade, firewall/egress e estratégia de alta disponibilidade. Não exponha diretamente as portas internas nem reutilize senhas, dados fictícios ou chaves do ambiente local. Os requisitos e procedimentos operacionais estão no [runbook](docs/runbook.md) e em [Instruções de login](.claude/login/INSTRUCOES_DE_LOGIN.md).
+
 ## Desenvolvimento local (sem containers para API/SPA)
 
 ```bash

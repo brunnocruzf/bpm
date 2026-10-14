@@ -8,6 +8,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/login/visitante', name: 'login-demo', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'demo' } },
   { path: '/login/superadmin', name: 'login-superadmin', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'superadmin' } },
   { path: '/login/local', name: 'login-local', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'local' } },
+  { path: '/login/local/activate', name: 'login-local-activate', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'activate' } },
+  { path: '/login/local/reset', name: 'login-local-reset', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'reset' } },
   {
     path: '/',
     component: () => import('./layouts/AppShell.vue'),

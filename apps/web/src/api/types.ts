@@ -28,7 +28,7 @@ export interface Me {
   }
   counters: { openTasks: number }
   /** método do login atual; SuperAdmin traz a expiração absoluta da sessão */
-  auth: { method: 'entra' | 'demo' | 'superadmin'; expiresAt?: string; idleMinutes?: number }
+  auth: { method: 'entra' | 'demo' | 'superadmin' | 'local'; expiresAt?: string; idleMinutes?: number }
 }
 
 export interface Option { key: string; label: string }

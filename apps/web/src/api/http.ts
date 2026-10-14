@@ -39,6 +39,8 @@ export async function api<T = any>(path: string, opts: RequestOptions = {}): Pro
   const headers: Record<string, string> = { Accept: 'application/json', 'X-Correlation-Id': newId() }
   const token = await auth.getToken()
   if (token) headers.Authorization = `Bearer ${token}`
+  const csrf = document.cookie.split(';').map((part) => part.trim()).find((part) => part.startsWith('bpm_local_csrf='))?.slice('bpm_local_csrf='.length)
+  if (csrf) headers['X-BPM-CSRF'] = decodeURIComponent(csrf)
   if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey
   if (opts.ifMatch !== undefined) headers['If-Match'] = String(opts.ifMatch)
 
@@ -52,7 +54,7 @@ export async function api<T = any>(path: string, opts: RequestOptions = {}): Pro
 
   let response: Response
   try {
-    response = await fetch(url, { method: opts.method ?? (body ? 'POST' : 'GET'), headers, body })
+    response = await fetch(url, { method: opts.method ?? (body ? 'POST' : 'GET'), headers, body, credentials: 'same-origin' })
   } catch {
     throw new ApiError({ title: 'Sem conexão', status: 0, detail: 'Não foi possível contactar o servidor. Verifique sua conexão.', code: 'network_error' })
   }

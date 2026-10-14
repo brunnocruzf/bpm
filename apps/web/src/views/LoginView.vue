@@ -18,7 +18,7 @@ import { contrastRatio, lighten } from '@/composables/contrast'
 interface DevUser { username: string; name: string; area: string | null; roles: string[]; groups: string[] }
 interface SuperAdminLoginResponse { token: string; expiresAt: string; idleMinutes: number; user: { name: string; username: string } }
 
-const props = defineProps<{ mode: 'entra' | 'demo' | 'superadmin' | 'local' }>()
+const props = defineProps<{ mode: 'entra' | 'demo' | 'superadmin' | 'local' | 'activate' | 'reset' }>()
 
 const route = useRoute()
 const router = useRouter()
@@ -38,7 +38,7 @@ const keepQuery = computed(() => (redirect.value !== '/' ? { redirect: redirect.
 
 const methods = computed(() => authState.methods)
 const showDemo = computed(() => methods.value.demo || !!methods.value.demoUrl)
-const hasAlternatives = computed(() => showDemo.value || methods.value.superadmin)
+const hasAlternatives = computed(() => showDemo.value || methods.value.superadmin || methods.value.local)
 const links = computed(() => brand.branding.links ?? { support: null, privacy: null, help: null })
 
 /** Destaque do título sobre a foto: tom claro da marca com contraste garantido (fallback: pêssego do protótipo). */
@@ -138,11 +138,33 @@ async function enterSuperAdmin() {
 
 const localUser = ref('')
 const localPassword = ref('')
+const localPasswordConfirm = ref('')
+const localMessage = ref('')
+const forgotLocal = ref(false)
 async function enterLocal() {
   error.value = ''; loading.value = true
   try {
-    const res = await api<{ token: string }>('/auth/local/login', { method: 'POST', body: { username: localUser.value.trim(), password: localPassword.value } })
-    localPassword.value = ''; await auth.startLocal(res); await finish()
+    await api('/auth/local/login', { method: 'POST', body: { username: localUser.value.trim(), password: localPassword.value } })
+    localPassword.value = ''; await auth.startLocal(); await finish()
+  } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
+}
+async function requestLocalReset() {
+  error.value = ''; localMessage.value = ''; loading.value = true
+  try {
+    const res = await api<{ message: string }>('/auth/local/forgot-password', { method: 'POST', body: { username: localUser.value.trim() } })
+    localMessage.value = res.message
+  } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
+}
+async function submitLocalCredentialLink() {
+  error.value = ''; localMessage.value = ''
+  if (localPassword.value !== localPasswordConfirm.value) { error.value = 'As senhas não coincidem.'; return }
+  loading.value = true
+  try {
+    const token = typeof route.query.token === 'string' ? route.query.token : ''
+    const path = props.mode === 'activate' ? '/auth/local/activate' : '/auth/local/reset-password'
+    const res = await api<{ message: string }>(path, { method: 'POST', body: { token, password: localPassword.value } })
+    localPassword.value = ''; localPasswordConfirm.value = ''; localMessage.value = res.message
+    await router.replace({ name: 'login-local', query: keepQuery.value })
   } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
 }
 
@@ -191,11 +213,20 @@ onMounted(async () => {
             <RouterLink class="lg-back" :to="{ name: 'login', query: keepQuery }"><i class="pi pi-arrow-left" aria-hidden="true" /> Voltar ao login corporativo</RouterLink>
             <p class="lg-eyebrow">Conta local</p><h1 id="lg-title">Entrar com usuário local</h1>
             <p class="lg-intro">Conta fornecida pelo administrador. Não há cadastro público.</p>
-            <form class="lg-form" @submit.prevent="enterLocal">
+            <form class="lg-form" @submit.prevent="forgotLocal ? requestLocalReset() : enterLocal()">
               <label for="local-user">Usuário ou e-mail</label><input id="local-user" v-model="localUser" class="lg-input" autocomplete="username" required />
-              <label for="local-password">Senha</label><input id="local-password" v-model="localPassword" class="lg-input" type="password" autocomplete="current-password" required />
-              <button class="lg-submit" type="submit" :disabled="loading">{{ loading ? 'Entrando…' : 'Entrar' }}</button>
+              <template v-if="!forgotLocal"><label for="local-password">Senha</label><div class="lg-pass"><input id="local-password" v-model="localPassword" class="lg-input" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" required /><button type="button" class="lg-pass-toggle" :aria-pressed="showPassword" :aria-label="showPassword ? 'Ocultar senha' : 'Mostrar senha'" @click="showPassword = !showPassword"><i :class="showPassword ? 'pi pi-eye-slash' : 'pi pi-eye'" aria-hidden="true" /></button></div></template>
+              <button class="lg-submit" type="submit" :disabled="loading">{{ loading ? 'Aguarde…' : forgotLocal ? 'Enviar instruções' : 'Entrar' }}</button>
             </form>
+            <p v-if="localMessage" class="lg-secure" role="status">{{ localMessage }}</p>
+            <button v-if="!forgotLocal" type="button" class="lg-link-button" @click="forgotLocal = true">Esqueci minha senha</button><button v-else type="button" class="lg-link-button" @click="forgotLocal = false">Voltar ao login local</button>
+          </template>
+          <template v-else-if="mode === 'activate' || mode === 'reset'">
+            <RouterLink class="lg-back" :to="{ name: 'login-local', query: keepQuery }"><i class="pi pi-arrow-left" aria-hidden="true" /> Voltar ao login local</RouterLink>
+            <p class="lg-eyebrow">{{ mode === 'activate' ? 'Ativação segura' : 'Recuperação de acesso' }}</p><h1 id="lg-title">{{ mode === 'activate' ? 'Defina sua senha' : 'Redefina sua senha' }}</h1>
+            <p class="lg-intro">Use uma senha forte com pelo menos 14 caracteres.</p>
+            <form class="lg-form" @submit.prevent="submitLocalCredentialLink"><label for="credential-password">Nova senha</label><input id="credential-password" v-model="localPassword" class="lg-input" type="password" autocomplete="new-password" minlength="14" required /><label for="credential-confirm">Confirme a senha</label><input id="credential-confirm" v-model="localPasswordConfirm" class="lg-input" type="password" autocomplete="new-password" minlength="14" required /><button class="lg-submit" type="submit" :disabled="loading">{{ loading ? 'Salvando…' : 'Salvar senha' }}</button></form>
+            <p v-if="localMessage" class="lg-secure" role="status">{{ localMessage }}</p>
           </template>
           <template v-else-if="mode === 'entra'">
             <p class="lg-eyebrow">Plataforma de processos</p>
@@ -235,6 +266,7 @@ onMounted(async () => {
                 <span><strong>Acesso SuperAdmin</strong><small>Usuário e senha — somente para emergências</small></span>
                 <i class="pi pi-angle-right lg-alt-go" aria-hidden="true" />
               </RouterLink>
+              <RouterLink v-if="methods.local" class="lg-alt-link" :to="{ name: 'login-local', query: keepQuery }"><i class="pi pi-user" aria-hidden="true" /><span><strong>Entrar com usuário local</strong><small>Use uma conta fornecida pelo administrador</small></span><i class="pi pi-angle-right lg-alt-go" aria-hidden="true" /></RouterLink>
             </nav>
 
             <p v-if="links.support" class="lg-help">Não consegue entrar? <a :href="links.support" rel="noopener" target="_blank">Fale com o suporte</a></p>
@@ -434,6 +466,8 @@ onMounted(async () => {
 
 .lg-help { margin: 26px 0 0; color: var(--lg-muted); font-size: 13px; line-height: 1.6; }
 .lg-help a { color: var(--brand-text); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--brand-text) 35%, transparent); text-underline-offset: 3px; }
+.lg-link-button { display: block; width: fit-content; margin: 14px auto 0; padding: 4px; border: 0; background: none; color: var(--brand-text); cursor: pointer; font: 600 13px var(--lg-body); text-decoration: underline; text-underline-offset: 3px; }
+.lg-link-button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 
 .lg-back { display: flex; width: fit-content; align-items: center; gap: 6px; margin-bottom: 26px; color: var(--lg-muted); font-size: 13px; font-weight: 600; text-decoration: none; }
 .lg-back:hover { color: var(--brand-text); }

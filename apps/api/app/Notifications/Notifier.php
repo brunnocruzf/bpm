@@ -13,6 +13,7 @@ use App\Settings\Types\BrandingSettings;
 use App\Settings\Types\EmailSettings;
 use App\Support\AuditLogger;
 use App\Support\Correlation;
+use Illuminate\Support\Facades\Crypt;
 
 /**
  * Enfileira notificações em notification_outbox (na transação local corrente) com chave de
@@ -25,6 +26,30 @@ class Notifier
         private readonly RecipientResolver $recipients,
         private readonly SettingsRepository $settings,
     ) {}
+
+    /** E-mail de convite/reset: o conteúdo com token fica cifrado no outbox. */
+    public function localIdentityLink(User $user, string $event, string $subject, string $url): NotificationMessage
+    {
+        $provider = $this->settings->value(app(EmailSettings::class))['provider'] ?? 'disabled';
+        $canSend = $user->email !== null && $provider !== 'disabled';
+        $message = NotificationMessage::create([
+            'idempotency_key' => $event.':'.$user->id.':'.Correlation::id(),
+            'event' => $event, 'recipient' => 'user:'.$user->id, 'recipient_user_id' => $user->id,
+            'recipient_address' => $user->email, 'recipient_name' => $user->name,
+            'subject' => mb_substr($subject, 0, 200),
+            'body' => Crypt::encryptString("Use o link abaixo em até 60 minutos. Ele pode ser utilizado uma única vez.\n\n".$url),
+            'state' => $canSend ? NotificationMessage::QUEUED : NotificationMessage::SKIPPED,
+            'error_code' => $user->email ? ($canSend ? null : 'provider_disabled') : 'no_recipient',
+            'available_at' => now(), 'correlation_id' => Correlation::id(), 'max_attempts' => 1,
+        ]);
+        AuditLogger::record($message->state === NotificationMessage::SKIPPED ? 'notification.skipped' : 'notification.queued', 'notification', $message->id,
+            ['event' => $event, 'recipient' => $message->recipient, 'code' => $message->error_code]);
+        if ($message->state === NotificationMessage::QUEUED) {
+            SendNotification::dispatch($message->id)->onQueue('notifications')->afterCommit();
+        }
+
+        return $message;
+    }
 
     /**
      * Etapa recebeu uma tarefa (criada pelo engine — já confirmada — ou reatribuída).

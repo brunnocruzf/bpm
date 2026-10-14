@@ -26,7 +26,7 @@ describe('auth (métodos simultâneos)', () => {
     mockConfig({ entra: false, demo: true, demoUrl: 'javascript:alert(1)', superadmin: true })
     let m = await load(false)
     await m.auth.init()
-    expect(m.authState.methods).toEqual({ entra: false, demo: false, demoUrl: null, superadmin: true })
+    expect(m.authState.methods).toEqual({ entra: false, demo: false, demoUrl: null, superadmin: true, local: false })
     expect(m.authState.entraReady).toBe(false)
     expect(m.authState.entraError).toMatch(/não configurado/)
     await expect(m.auth.loginDemo('admin')).rejects.toThrow()
@@ -36,6 +36,11 @@ describe('auth (métodos simultâneos)', () => {
     await m.auth.init()
     expect(m.authState.methods.demo).toBe(true)
     expect(m.authState.methods.demoUrl).toBe('https://demo.tmsa.example')
+
+    mockConfig({ entra: false, demo: false, superadmin: false, local: true })
+    m = await load(false)
+    await m.auth.init()
+    expect(m.authState.methods.local).toBe(true)
   })
 
   it('visitante usa token dev:<usuário> e sai sem resíduos', async () => {
