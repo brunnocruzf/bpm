@@ -1,0 +1,597 @@
+openapi: 3.1.0
+info:
+  title: BPM TMSA — API de produto
+  version: 0.2.0
+  description: |
+    API pública do BPM TMSA (Laravel). Única superfície exposta: o Flowable REST fica em rede interna
+    e é acessado apenas pelo backend/worker. Erros seguem RFC 7807 (application/problem+json) com
+    `correlationId`. Mutações críticas aceitam `Idempotency-Key` (obrigatória em POST /process-instances).
+    Autorização no servidor por permissões (Gates): settings.manage, processes.manage, audit.read, audit.export,
+    reports.instance, reports.operational, reports.templates, data.sensitive. Segredos nunca são devolvidos.
+servers:
+  - url: /api/v1
+security:
+  - bearer: []
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: |
+        Access token do Microsoft Entra ID (scope access_as_user); sessão SuperAdmin "bpmsa_..." emitida por
+        POST /auth/superadmin/login; visitante (somente fora de produção) "dev:<username>" de usuário fictício. Ver ADR-0015.
+  parameters:
+    FlowKey: { name: key, in: path, required: true, schema: { type: string, pattern: '^[a-z][a-z0-9_]{2,63}$' } }
+    Version: { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    StageKey: { name: stageKey, in: path, required: true, schema: { type: string } }
+    FormKey: { name: formKey, in: path, required: true, schema: { type: string } }
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: false, schema: { type: string, pattern: '^[A-Za-z0-9\-_:.]{8,160}$' } }
+    CorrelationId: { name: X-Correlation-Id, in: header, required: false, schema: { type: string } }
+  responses:
+    Problem:
+      description: Erro (RFC 7807)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Branding:
+      type: object
+      properties:
+        appName: { type: string }
+        orgName: { type: string }
+        tagline: { type: string }
+        colors: { type: object, properties: { primary: { type: string }, secondary: { type: string }, accent: { type: string } } }
+        assets: { type: object, properties: { main: { type: [string, 'null'] }, compact: { type: [string, 'null'] }, favicon: { type: [string, 'null'] } } }
+        links: { type: object, description: Links institucionais da tela de login (https:// ou mailto:), properties: { support: { type: [string, 'null'] }, privacy: { type: [string, 'null'] }, help: { type: [string, 'null'] } } }
+        version: { type: integer }
+    AuthConfig:
+      type: object
+      properties:
+        driver: { type: string, description: Legado (dev habilita o visitante) }
+        source: { type: string, enum: [settings, environment] }
+        entra: { type: [object, 'null'], description: "Parâmetros públicos do MSAL da configuração ATIVADA (null = variáveis do build)" }
+        methods:
+          type: object
+          properties:
+            entra: { type: boolean }
+            demo: { type: boolean, description: Visitante com usuários fictícios (nunca em produção) }
+            demoUrl: { type: [string, 'null'], description: Ambiente de demonstração separado }
+            superadmin: { type: boolean, description: Habilitado e permitido para o IP desta requisição }
+    SuperAdminLogin:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, maxLength: 120 }
+        password: { type: string, format: password, maxLength: 256 }
+    SuperAdminSession:
+      type: object
+      properties:
+        token: { type: string, description: Token opaco (somente o hash fica no servidor). Enviar como Bearer. }
+        expiresAt: { type: string, format: date-time }
+        idleMinutes: { type: integer }
+        user: { type: object, properties: { name: { type: string }, username: { type: string } } }
+    Setting:
+      type: object
+      properties:
+        key: { type: string }
+        label: { type: string }
+        status: { type: string, enum: [configured, incomplete, test_pending, error, disabled] }
+        statusDetail: { type: [string, 'null'] }
+        version: { type: integer }
+        value: { type: object, description: Valores não secretos; segredos aparecem apenas como metadados (configured/source/updatedAt) }
+        updatedAt: { type: [string, 'null'], format: date-time }
+        updatedBy: { type: [string, 'null'] }
+        lastValidation: { type: [object, 'null'] }
+        lastValidatedAt: { type: [string, 'null'], format: date-time }
+        activatedAt: { type: [string, 'null'], format: date-time }
+    ReportJob:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        format: { type: string, enum: [pdf, csv, xlsx] }
+        status: { type: string, enum: [queued, rendering, ready, failed, expired] }
+        progress: { type: integer }
+        errorCode: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'], format: date-time }
+    Problem:
+      type: object
+      required: [title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string, examples: [validation_failed, forbidden, not_found, stale_task, task_unavailable, idempotency_key_reused, deploy_pending, integration_unavailable] }
+        instance: { type: string }
+        correlationId: { type: string }
+        errors: { type: object, additionalProperties: { type: array, items: { type: string } } }
+        problems: { type: array, items: { $ref: '#/components/schemas/ValidationProblem' } }
+    ValidationProblem:
+      type: object
+      properties:
+        severity: { type: string, enum: [error, warning, info] }
+        code: { type: string }
+        message: { type: string }
+        stageKey: { type: [string, 'null'] }
+    Condition:
+      type: object
+      description: DSL em lista branca, compilada para funções seguras do Flowable (vars:equals, vars:isEmpty...).
+      properties:
+        match: { type: string, enum: [all, any] }
+        rules:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [field, operator]
+            properties:
+              field: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,62}$' }
+              operator: { type: string, enum: [eq, neq, empty, not_empty, contains, gt, gte, lt, lte] }
+              value: { type: [string, number, boolean, 'null'] }
+    Stage:
+      type: object
+      properties:
+        key: { type: string }
+        elementId: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [start, user_task, exclusive_gateway, parallel_gateway, service_task, timer, end] }
+        lane: { type: [string, 'null'], description: Chave do grupo/raia (bpm_groups) }
+        config: { type: object }
+        form: { type: [object, 'null'], properties: { formKey: { type: string }, title: { type: string }, fieldCount: { type: integer } } }
+        outgoing:
+          type: array
+          items:
+            type: object
+            properties:
+              target: { type: string }
+              condition: { $ref: '#/components/schemas/Condition' }
+              conditionText: { type: string }
+              isDefault: { type: boolean }
+    Version:
+      type: object
+      properties:
+        version: { type: integer }
+        status: { type: string, enum: [draft, published, retired, suspended] }
+        lockVersion: { type: integer }
+        hash: { type: [string, 'null'] }
+        engineDeployed: { type: boolean }
+        stages: { type: array, items: { $ref: '#/components/schemas/Stage' } }
+        openingStageKey: { type: [string, 'null'] }
+    InstanceSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, examples: ['IRR-000001/26'] }
+        requesterName: { type: string }
+        requesterArea: { type: [string, 'null'] }
+        startedAt: { type: string, format: date-time }
+        status: { type: string, enum: [starting, running, completed, cancelled, error] }
+        result: { type: [string, 'null'] }
+        processing: { type: boolean, description: Comando ao engine ainda não confirmado }
+        currentTasks: { type: array, items: { type: object } }
+    TaskSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string, enum: [open, claimed, completing, completed, cancelled] }
+        candidateGroup: { type: [string, 'null'] }
+        dueAt: { type: [string, 'null'], format: date-time }
+        rowVersion: { type: integer, description: ETag para concorrência otimista }
+        canWork: { type: boolean }
+        canClaim: { type: boolean }
+paths:
+  /health:
+    get: { summary: "Liveness, security: []", responses: { '200': { description: OK } } }
+  /ready:
+    get: { summary: "Readiness (banco + engine), security: []", responses: { '200': { description: OK }, '503': { description: Degradado } } }
+  /dev/users:
+    get: { security: [], summary: "Perfis fictícios do acesso de visitante (404 com a demonstração desabilitada e sempre em produção)", responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } } }
+  /me:
+    get: { summary: "Usuário atual, papéis, grupos, permissões e método do login (auth.method: entra | demo | superadmin)", responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Problem' } } }
+  /auth/superadmin/login:
+    post:
+      security: []
+      summary: "Login SuperAdmin (acesso de emergência): usuário e senha locais; resposta genérica, limite de tentativas e bloqueio"
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SuperAdminLogin' } } } }
+      responses:
+        '200': { description: Sessão criada, content: { application/json: { schema: { $ref: '#/components/schemas/SuperAdminSession' } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { description: Método desabilitado neste ambiente ou IP não permitido }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /auth/logout:
+    post: { summary: "Saída auditada; revoga a sessão SuperAdmin atual", responses: { '204': { description: Sem conteúdo }, '401': { $ref: '#/components/responses/Problem' } } }
+  /meta:
+    get: { summary: "Grupos, categorias, catálogo de campos automáticos, consultas AX, integrações e operadores", responses: { '200': { description: OK } } }
+  /catalog/processes:
+    get:
+      summary: Catálogo permitido ao usuário
+      parameters: [{ name: category, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }]
+      responses: { '200': { description: OK } }
+  /flows:
+    post:
+      summary: Cria fluxo + versão 1 rascunho + "Etapa 1" + formulário vazio associado + Início→Etapa 1→Fim (transacional)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, category]
+              properties:
+                name: { type: string, minLength: 3, maxLength: 90 }
+                key: { type: [string, 'null'] }
+                category: { type: string }
+                description: { type: [string, 'null'] }
+                instancePrefix: { type: [string, 'null'] }
+      responses: { '201': { description: Criado }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /flows/{key}:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }]
+    get: { summary: "Fluxo e versões", responses: { '200': { description: OK } } }
+    patch: { summary: "Atualiza nome/categoria/descrição/prefixo/grupos iniciadores", responses: { '200': { description: OK } } }
+    delete:
+      summary: "Exclui fluxo NUNCA publicado (só rascunho, sem solicitações); confirmação ?confirm=<identificador>. Publicado → 409 flow_published"
+      parameters: [{ name: confirm, in: query, required: true, schema: { type: string } }]
+      responses: { '204': { description: Excluído }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /flows/{key}/start-form:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }]
+    get: { summary: "Formulário de abertura da versão publicada (com pré-preenchimento do servidor)", responses: { '200': { description: OK } } }
+  /flows/{key}/submissions:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }]
+    get: { summary: "Resultados/respostas filtradas por autorização", responses: { '200': { description: OK } } }
+  /definitions/{key}/versions:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }]
+    get: { summary: "Versões", responses: { '200': { description: OK } } }
+    post: { summary: "Novo rascunho clonado da última versão (publicadas são imutáveis)", responses: { '201': { description: Criado } } }
+  /definitions/{key}/versions/{version}:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }]
+    get: { summary: "Versão com etapas, rotas, campos e validação", responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Version' } } } } } }
+    delete: { summary: "Descarta o rascunho de um fluxo já publicado (versões publicadas são imutáveis → 409 not_draft)", responses: { '204': { description: Descartado }, '409': { $ref: '#/components/responses/Problem' } } }
+  /definitions/{key}/versions/{version}/stages:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }]
+    post: { summary: "Adiciona etapa (tarefa humana já com formulário; decisão/integração/timer/fim sem formulário)", responses: { '201': { description: Criado }, '409': { $ref: '#/components/responses/Problem' } } }
+  /definitions/{key}/versions/{version}/stages/{stageKey}:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/StageKey' }]
+    patch: { summary: "Atualiza nome, tipo, raia, instrução ou configuração", responses: { '200': { description: OK } } }
+    delete: { summary: "Remove etapa (reconecta predecessores; mantém ao menos uma tarefa humana)", responses: { '200': { description: OK } } }
+  /definitions/{key}/versions/{version}/stages-order:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }]
+    put: { summary: "Reordenação visual", responses: { '200': { description: OK } } }
+  /definitions/{key}/versions/{version}/stages/{stageKey}/transitions:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/StageKey' }]
+    put:
+      summary: Define "O que ocorre depois?" (condições em DSL; nada de expressão livre)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                transitions:
+                  type: array
+                  items: { type: object, properties: { target: { type: string }, condition: { $ref: '#/components/schemas/Condition' }, isDefault: { type: boolean }, label: { type: string } } }
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } }
+  /definitions/{key}/versions/{version}/forms/{formKey}:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/FormKey' }]
+    get: { summary: "Schema Form.io (sem credenciais/URLs administrativas)", responses: { '200': { description: OK } } }
+    put: { summary: "Salva schema (somente rascunho; sanitizado - sem JS livre, fontes externas ou HTML perigoso)", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } } }
+  /definitions/{key}/versions/{version}/forms/{formKey}/copy-from:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/FormKey' }]
+    post: { summary: "Usar outro formulário como modelo (cópia independente)", responses: { '200': { description: OK } } }
+  /definitions/{key}/versions/{version}/bpmn:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }]
+    get: { summary: "BPMN 2.0 XML (gerado para rascunho; congelado para publicada)", responses: { '200': { description: OK, content: { application/xml: {} } } } }
+  /definitions/{key}/versions/{version}/bpmn/import:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }]
+    post: { summary: "Importa BPMN (subset suportado; preserva formulários por element_id)", responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } } }
+  /definitions/{key}/versions/{version}/validate:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }]
+    post: { summary: "Valida etapas, formulários, rotas, campos, papéis, timers e integrações", responses: { '200': { description: OK } } }
+  /definitions/{key}/versions/{version}/publish:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }]
+    post: { summary: "Publica (Bpm.Publisher); congela artefatos e agenda deploy via outbox", responses: { '202': { description: Aceito }, '422': { $ref: '#/components/responses/Problem' } } }
+  /process-instances:
+    get:
+      summary: Grid de solicitações visível ao usuário
+      parameters: [{ name: flow, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }, { name: q, in: query, schema: { type: string } }, { name: page, in: query, schema: { type: integer } }]
+      responses: { '200': { description: OK } }
+    post:
+      summary: Abre solicitação (submissão de abertura + START no outbox, mesma transação)
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [flowKey, data], properties: { flowKey: { type: string }, data: { type: object } } }
+      responses:
+        '202': { description: Aceito; processando no engine, content: { application/json: { schema: { type: object, properties: { instance: { $ref: '#/components/schemas/InstanceSummary' } } } } } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /process-instances/metrics:
+    get: { summary: "Indicadores (em andamento, aguardando, concluídas no mês, % no prazo)", responses: { '200': { description: OK } } }
+  /process-instances/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Detalhe com tarefas, respostas, anexos, plano de ação e diagrama", responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } } }
+  /process-instances/{id}/timeline:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Linha do tempo filtrada", responses: { '200': { description: OK } } }
+  /submissions/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Submissão com schema da época (somente leitura)", responses: { '200': { description: OK } } }
+  /tasks:
+    get:
+      summary: Inbox
+      parameters: [{ name: scope, in: query, schema: { type: string, enum: [mine, groups, started, completed] } }]
+      responses: { '200': { description: OK } }
+  /tasks/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Tarefa com formulário, pré-preenchimento, rascunho e plano de ação", responses: { '200': { description: OK } } }
+  /tasks/{id}/claim:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Assume a tarefa", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
+  /tasks/{id}/release:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Devolve ao grupo", responses: { '200': { description: OK } } }
+  /tasks/{id}/reassign:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Reatribui (Bpm.Admin) com justificativa auditada", responses: { '200': { description: OK } } }
+  /tasks/{id}/draft:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put: { summary: "Salva rascunho (não validado)", responses: { '200': { description: OK } } }
+  /tasks/{id}/complete:
+    parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }, { name: If-Match, in: header, schema: { type: string } }]
+    post:
+      summary: Conclui (valida atribuição, rowVersion e payload; grava submissão + auditoria + COMPLETE no outbox)
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [data], properties: { data: { type: object }, rowVersion: { type: integer } } }
+      responses: { '202': { description: Aceito; processando }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' }, '503': { $ref: '#/components/responses/Problem' } }
+  /tasks/{id}/actions/{actionId}/complete:
+    parameters: [{ $ref: '#/components/parameters/Id' }, { name: actionId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: "Conclui uma ação do plano (30.1) com observações e evidências", responses: { '200': { description: OK } } }
+  /attachments:
+    post:
+      summary: Upload (extensão, MIME real, tamanho e antivírus validados)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema: { type: object, required: [file], properties: { file: { type: string, format: binary }, taskId: { type: string, format: uuid }, fieldKey: { type: string } } }
+      responses: { '201': { description: Criado }, '422': { $ref: '#/components/responses/Problem' } }
+  /attachments/{id}/url:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "URL assinada de curta duração (após autorização)", responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } } }
+  /lookups/{source}:
+    get:
+      summary: Consulta AX sob demanda (tpr, item, purchaseOrder, supplier)
+      parameters: [{ name: source, in: path, required: true, schema: { type: string } }, { name: value, in: query, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '503': { $ref: '#/components/responses/Problem' } }
+  /admin/integrations:
+    get: { summary: "Saúde do engine/AX, outbox e notificações (sem segredos)", responses: { '200': { description: OK } } }
+  /admin/engine-commands:
+    get: { summary: "Comandos do outbox", responses: { '200': { description: OK } } }
+  /admin/engine-commands/{id}/retry:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Reenvio com reconciliação prévia", responses: { '200': { description: OK } } }
+  /admin/groups:
+    get: { summary: "Grupos/raias e mapeamento Entra", responses: { '200': { description: OK } } }
+  /admin/groups/{key}:
+    parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
+    patch: { summary: "Altera grupo/raia (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
+
+  # ---------------------------------------------------------------- públicos (sem bearer, sem segredos)
+  /public/branding:
+    get:
+      security: []
+      summary: Identidade visual aplicada (nome, cores, URLs versionadas dos logos)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Branding' } } } } }
+  /public/branding/assets/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { security: [], summary: "Imagem da marca aplicada (rascunhos não são públicos)", responses: { '200': { description: PNG/WebP }, '404': { $ref: '#/components/responses/Problem' } } }
+  /public/auth-config:
+    get:
+      security: []
+      summary: Métodos de login disponíveis (Entra, visitante, SuperAdmin) e parâmetros públicos do MSAL
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AuthConfig' } } } } }
+
+  # ---------------------------------------------------------------- Configurações (settings.manage)
+  /admin/settings:
+    get: { summary: "Visão geral das configurações (estado, versão, última validação)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
+  /admin/settings/{slug}:
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        description: Seção de configuração (aceita barras)
+        schema: { type: string, enum: [branding, entra/auth, entra/directory-sync, email, audit-retention, reports] }
+    get: { summary: "Lê a configuração (segredos substituídos por metadados)", responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Setting' } } } } } }
+    put:
+      summary: Grava nova versão (validação server-side; segredos somente escrita; auditoria com diff redigido)
+      requestBody: { content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' }, '403': { $ref: '#/components/responses/Problem' } }
+  /admin/settings/branding/assets:
+    post:
+      summary: Upload de logo/favicon (PNG/WebP; SVG recusado; recodificado; antivírus)
+      requestBody: { content: { multipart/form-data: { schema: { type: object, properties: { kind: { type: string, enum: [logo_main, logo_compact, favicon] }, file: { type: string, format: binary } } } } } }
+      responses: { '201': { description: Criado }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/settings/branding/assets/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Pré-visualização autenticada de imagem (inclusive rascunho)", responses: { '200': { description: Imagem } } }
+  /admin/settings/branding/reset:
+    post: { summary: "Restaura o tema padrão (auditado)", responses: { '200': { description: OK } } }
+  /admin/settings/entra/auth/validate:
+    post: { summary: "Descoberta OIDC real do tenant (issuer, JWKS, PKCE, política de tenant)", responses: { '200': { description: Configuração com lastValidation } } }
+  /admin/settings/entra/auth/token-test:
+    post:
+      summary: Valida um access token obtido pela SPA com a configuração candidata (não armazenado)
+      requestBody: { content: { application/json: { schema: { type: object, required: [accessToken], properties: { accessToken: { type: string } } } } } }
+      responses: { '200': { description: "Configuração com lastValidation (token_ok, audience_mismatch, token_expired...)" } }
+  /admin/settings/entra/auth/activate:
+    post: { summary: "Ativa a configuração validada (exige descoberta + teste de token na versão atual)", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/settings/entra/auth/deactivate:
+    post: { summary: "Volta a usar a configuração do ambiente", responses: { '200': { description: OK } } }
+  /admin/settings/entra/directory-sync/test:
+    post: { summary: "Teste real de credencial app-only, permissões no token e leituras mínimas no Graph", responses: { '200': { description: OK } } }
+  /admin/settings/email/test-connection:
+    post: { summary: "Teste de conexão do provedor (SMTP/TLS/AUTH ou token M365); não envia mensagem", responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/settings/email/test:
+    post:
+      summary: Enfileira e-mail de teste para o endereço informado (outbox/worker)
+      requestBody: { content: { application/json: { schema: { type: object, required: [to], properties: { to: { type: string, format: email } } } } } }
+      responses: { '202': { description: Mensagem enfileirada } }
+  /admin/settings/email/test/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Estado do e-mail de teste (estado, provedor, ID no provedor, código de erro sanitizado, duração)", responses: { '200': { description: OK } } }
+  /admin/settings/reports/carbone-health:
+    post: { summary: "Verifica o serviço Carbone interno (somente se habilitado pela plataforma)", responses: { '200': { description: OK } } }
+  # ---------------------------------------------------------------- Catálogo de integrações REST (ADR-0016; settings.manage)
+  /admin/integrations/connections:
+    get: { summary: "Conexões (credencial só como metadados; política de rede; último teste)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
+    post: { summary: "Cria conexão (URL base, ambiente, autenticação, segredo somente escrita, OpenAPI, escritas com aprovação)", responses: { '201': { description: Criada }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/connections/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    put: { summary: "Altera conexão", responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/connections/{id}/test:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Testa a conexão (política de rede + login/credencial; não chama endpoints de negócio)", responses: { '200': { description: OK } } }
+  /admin/integrations/connections/{id}/openapi/preview:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Prévia da importação do OpenAPI 3 (url baixada pelo servidor ou arquivo multipart 'file'); nada é gravado", responses: { '200': { description: "previewId, meta, operations (new|changed|unchanged), removed, warnings" }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/connections/{id}/openapi/apply:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Importa as operações selecionadas da prévia (novos endpoints desabilitados)", responses: { '200': { description: "created, updated, unchanged, removed" }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/endpoints:
+    get: { summary: "Endpoints (fontes de dados) com filtros connection, tag, status, kind, q", responses: { '200': { description: OK } } }
+    post: { summary: "Cria endpoint manual", responses: { '201': { description: Criado }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/endpoints/infer:
+    post: { summary: "Infere campos de saída de um exemplo de resposta (nada é chamado nem gravado)", responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/endpoints/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Endpoint completo (parâmetros, corpo, saída, publicação, uso)", responses: { '200': { description: OK } } }
+    put: { summary: "Altera endpoint (credencial como constante é recusada; exemplo guardado só como estrutura)", responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } } }
+    delete: { summary: "Remove endpoint (bloqueado se vinculado ativo ou usado em formulários)", responses: { '204': { description: Removido }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/endpoints/{id}/test:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Teste real no servidor; escrita exige confirmWrite e nunca em produção", responses: { '200': { description: "ok, status, durationMs, sample (mascarado), inferred" }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/bindings:
+    get: { summary: "Operações do BPM e vínculos com endpoints (transporte efetivo)", responses: { '200': { description: OK } } }
+  /admin/integrations/bindings/{operation}:
+    parameters: [{ name: operation, in: path, required: true, schema: { type: string } }]
+    put: { summary: "Salva vínculo (endpointId, enabled, inputMap destino⇐input:/const:, outputMap campo⇐caminho)", responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/executions:
+    get: { summary: "Execuções (settings.manage, processes.manage ou audit.read): filtros result, since, q, system, endpoint; pedido/resposta mascarados", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
+  /admin/integrations/executions/{id}/reconcile:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Reconcilia escrita com resultado incerto (processes.manage): outcome done (com resultData) | not_done", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/settings/logs/{area}:
+    get:
+      summary: "Log da integração (settings.manage): testes com etapas, configuração, entregas de e-mail por tentativa, importações por etapa, acessos/tokens Entra recusados — com código, explicação e correlation ID"
+      parameters:
+        - { name: area, in: path, required: true, schema: { type: string, enum: [email, entra] } }
+        - { name: kind, in: query, description: "Tipos separados por vírgula (email: test,delivery,config · entra: test,sync,access,config,mapping,user)", schema: { type: string } }
+        - { name: subsystem, in: query, description: "Somente Entra: login | directory", schema: { type: string, enum: [login, directory] } }
+        - { name: since, in: query, schema: { type: string, enum: ['24h', '7d', '30d', '90d'] } }
+        - { name: failures, in: query, description: Somente falhas e alertas, schema: { type: boolean } }
+        - { name: q, in: query, schema: { type: string, maxLength: 80 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 5, maximum: 100 } }
+        - { name: cursor, in: query, description: Cursor opaco devolvido em "next", schema: { type: string } }
+      responses: { '200': { description: "data[], next, stats" }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' } }
+
+  # ---------------------------------------------------------------- Diretório Entra (settings.manage)
+  /admin/entra/sync/preview:
+    post: { summary: "Prévia (dry run) — mesma lógica, sem gravar; execução no worker", responses: { '202': { description: Execução (idempotente se já houver uma ativa) } } }
+  /admin/entra/sync/run:
+    post:
+      summary: Sincronizar agora (delta) ou recarga completa controlada
+      requestBody: { content: { application/json: { schema: { type: object, properties: { mode: { type: string, enum: [delta, full] } } } } } }
+      responses: { '202': { description: Execução }, '409': { $ref: '#/components/responses/Problem' } }
+  /admin/entra/sync/runs:
+    get: { summary: "Histórico de execuções + visão geral (cursor presente, próxima execução, alertas)", responses: { '200': { description: OK } } }
+  /admin/entra/sync/runs/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Detalhe (totais, erros por registro sem PII, plano da prévia)", responses: { '200': { description: OK } } }
+  /admin/entra/groups:
+    get: { summary: "Grupos importados (object ID, membros)", responses: { '200': { description: OK } } }
+  /admin/entra/mappings:
+    get: { summary: "Mapeamentos grupo Entra → raia/papéis TMSA", responses: { '200': { description: OK } } }
+    post: { summary: "Cria mapeamento explícito (privilegiado exige confirmação e justificativa)", responses: { '201': { description: Criado }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/entra/mappings/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch: { summary: "Altera mapeamento (recalcula papéis)", responses: { '200': { description: OK } } }
+    delete: { summary: "Remove mapeamento (recalcula papéis)", responses: { '204': { description: Removido } } }
+
+  # ---------------------------------------------------------------- Auditoria
+  /admin/audit-events:
+    get:
+      summary: Trilha de auditoria (audit.read) — filtros e paginação
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: actor, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: outcome, in: query, schema: { type: string, enum: [success, failure, blocked] } }
+        - { name: number, in: query, schema: { type: string } }
+        - { name: flowKey, in: query, schema: { type: string } }
+        - { name: stageKey, in: query, schema: { type: string } }
+        - { name: correlationId, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: perPage, in: query, schema: { type: integer, maximum: 100 } }
+        - { name: sort, in: query, schema: { type: string, enum: [desc, asc] } }
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } }
+  /admin/audit-events/catalog:
+    get: { summary: "Catálogo de categorias e eventos tipados", responses: { '200': { description: OK } } }
+  /admin/audit-events/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Detalhe com diff redigido e eventos correlacionados", responses: { '200': { description: OK } } }
+  /admin/audit-events/export:
+    get:
+      summary: Exportação CSV/JSON (audit.export) — gera evento audit.exported
+      parameters: [{ name: format, in: query, schema: { type: string, enum: [csv, json] } }]
+      responses: { '200': { description: Arquivo }, '403': { $ref: '#/components/responses/Problem' } }
+
+  # ---------------------------------------------------------------- Notificações (processes.manage)
+  /admin/notifications:
+    get: { summary: "Outbox de e-mail (estado, tentativas, erro sanitizado, ID no provedor)", responses: { '200': { description: OK } } }
+  /admin/notifications/{id}/retry:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Reprocessa mensagem com falha (dead-letter)", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
+  /definitions/{key}/versions/{version}/stages/{stageKey}/notification-preview:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/StageKey' }]
+    get: { summary: "Pré-visualiza o e-mail da etapa com dados de exemplo (destinatários só para administradores)", responses: { '200': { description: OK } } }
+  /definitions/{key}/versions/{version}/stages/{stageKey}/notification-test:
+    parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/StageKey' }]
+    post: { summary: "E-mail de teste da etapa (settings.manage)", responses: { '202': { description: Enfileirado } } }
+
+  # ---------------------------------------------------------------- Relatórios
+  /reports/catalog:
+    get: { summary: "Relatórios permitidos ao usuário, filtros e modelos ativos", responses: { '200': { description: OK } } }
+  /reports:
+    get: { summary: "Meus relatórios (jobs)", responses: { '200': { description: OK } } }
+    post:
+      summary: Relatório operacional (reports.operational) — catálogo aprovado, sem SQL livre
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [type, format], properties: { type: { type: string, enum: [instances, stage_aging, pending, sla, integration_errors, notifications] }, format: { type: string, enum: [pdf, csv, xlsx] }, filters: { type: object } } } } } }
+      responses: { '202': { description: Job na fila, content: { application/json: { schema: { $ref: '#/components/schemas/ReportJob' } } } }, '403': { $ref: '#/components/responses/Problem' } }
+  /process-instances/{id}/reports:
+    parameters: [{ $ref: '#/components/parameters/Id' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+    post:
+      summary: Relatório da solicitação (resumo, etapas selecionadas ou completo) a partir dos snapshots
+      requestBody: { content: { application/json: { schema: { type: object, properties: { mode: { type: string, enum: [summary, stages, full] }, stages: { type: array, items: { type: string } } } } } } }
+      responses: { '202': { description: Job na fila }, '404': { $ref: '#/components/responses/Problem' } }
+  /reports/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Estado do job (queued, rendering, ready, failed, expired)", responses: { '200': { description: OK } } }
+  /reports/{id}/download:
+    parameters: [{ $ref: '#/components/parameters/Id' }, { name: purpose, in: query, schema: { type: string, enum: [download, preview, print] } }]
+    get: { summary: "Download/visualização/impressão — autorização revalidada e auditada; sem URL pública", responses: { '200': { description: Arquivo }, '409': { $ref: '#/components/responses/Problem' }, '410': { $ref: '#/components/responses/Problem' } } }
+  /admin/report-templates:
+    get: { summary: "Modelos versionados (reports.templates)", responses: { '200': { description: OK } } }
+    post: { summary: "Nova versão de modelo (nativo ou Carbone; arquivo validado — sem macros/vínculos externos)", responses: { '201': { description: Criado }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/report-templates/{id}/activate:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post: { summary: "Ativa a versão (anterior é substituída)", responses: { '200': { description: OK } } }

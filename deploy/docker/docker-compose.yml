@@ -1,0 +1,289 @@
+# BPM TMSA — Compose de desenvolvimento / POC (servidor único; NÃO é alta disponibilidade).
+# Único serviço publicado: reverse-proxy (127.0.0.1). Flowable, PostgreSQL, storage e Carbone ficam na
+# rede interna "backend" (sem saída para a internet e sem portas publicadas).
+#
+#   cp .env.example .env               # ajuste senhas (nunca versione o .env)
+#   ./secrets/generate.sh               # gera a chave do cofre de segredos (Docker secret local)
+#   docker compose up --build -d        # COMPOSE_PROFILES=dev no .env inclui o Mailpit
+#   http://localhost:8080  ·  Mailpit: http://localhost:8025
+#
+# Perfis: dev/test → Mailpit (captura e-mails, sem entrega externa) · carbone → Carbone (somente após
+# aprovação da licença; ver ADR-0011). Imagens de terceiros fixadas por tag + digest.
+name: bpm-tmsa
+
+x-api-env: &api-env
+  APP_NAME: BPM TMSA
+  APP_ENV: ${APP_ENV:-local}
+  APP_KEY: ${APP_KEY:?defina APP_KEY no .env}
+  APP_DEBUG: "false"
+  APP_URL: ${PUBLIC_URL:-http://localhost:8080}
+  FRONTEND_URL: ${PUBLIC_URL:-http://localhost:8080}
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_DATABASE: bpm_app
+  DB_USERNAME: bpm_app
+  DB_PASSWORD: ${BPM_APP_DB_PASSWORD:?defina BPM_APP_DB_PASSWORD}
+  CACHE_STORE: database
+  QUEUE_CONNECTION: database
+  SESSION_DRIVER: array
+  # O provedor de e-mail é escolhido em Configurações → E-mail (Mailpit só fora de produção).
+  MAIL_MAILER: smtp
+  MAIL_HOST: mailpit
+  MAIL_PORT: "1025"
+  MAIL_FROM_ADDRESS: bpm@tmsa.local
+  BPM_MAILPIT_HOST: mailpit
+  BPM_MAIL_PRIVATE_RELAY_HOSTS: ${BPM_MAIL_PRIVATE_RELAY_HOSTS:-}
+  BPM_AUTH_DRIVER: ${BPM_AUTH_DRIVER:-dev}
+  # Métodos de login (ADR-0015): visitante (demonstração, nunca em produção) e SuperAdmin (emergência).
+  BPM_DEMO_LOGIN_ENABLED: ${BPM_DEMO_LOGIN_ENABLED:-false}
+  BPM_DEMO_URL: ${BPM_DEMO_URL:-}
+  BPM_SUPERADMIN_LOGIN_ENABLED: ${BPM_SUPERADMIN_LOGIN_ENABLED:-false}
+  BPM_SUPERADMIN_ALLOWED_IPS: ${BPM_SUPERADMIN_ALLOWED_IPS:-}
+  # Catálogo de integrações REST (ADR-0016): hosts internos/produção que o servidor pode chamar (não editável pela tela)
+  BPM_INTEGRATION_ALLOWED_HOSTS: ${BPM_INTEGRATION_ALLOWED_HOSTS:-}
+  BPM_ENTRA_TENANT_ID: ${BPM_ENTRA_TENANT_ID:-}
+  BPM_ENTRA_AUDIENCE: ${BPM_ENTRA_AUDIENCE:-}
+  # Cofre de segredos das integrações: chave dedicada lida de Docker secret (nunca do .env em produção).
+  BPM_SECRETS_KEY_FILE: /run/secrets/bpm_secrets_key
+  BPM_SECRETS_DIR: /run/secrets
+  FLOWABLE_REST_URL: http://flowable-rest:8080/flowable-rest
+  FLOWABLE_REST_USER: ${FLOWABLE_REST_USER:-bpm-engine-client}
+  FLOWABLE_REST_PASSWORD: ${FLOWABLE_REST_PASSWORD:?defina FLOWABLE_REST_PASSWORD}
+  BPM_ATTACHMENTS_DISK: attachments_s3
+  BPM_REPORTS_DISK: attachments_s3
+  BPM_AUDIT_ARCHIVE_DISK: attachments_s3
+  BPM_S3_ENDPOINT: http://storage:9000
+  BPM_S3_KEY: ${STORAGE_ACCESS_KEY:?defina STORAGE_ACCESS_KEY}
+  BPM_S3_SECRET: ${STORAGE_SECRET_KEY:?defina STORAGE_SECRET_KEY}
+  BPM_S3_BUCKET: bpm-attachments
+  BPM_S3_PATH_STYLE: "true"
+  BPM_CLAMAV_HOST: ${BPM_CLAMAV_HOST:-}
+  # Carbone: desabilitado até aprovação jurídica/segurança da licença (ADR-0011).
+  BPM_CARBONE_ENABLED: ${BPM_CARBONE_ENABLED:-false}
+  BPM_CARBONE_URL: http://carbone:4000
+  BPM_CARBONE_TOKEN_FILE: ${BPM_CARBONE_TOKEN_FILE:-}
+
+x-api-secrets: &api-secrets
+  - bpm_secrets_key
+
+services:
+  postgres:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?defina POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: postgres
+      TZ: UTC
+      BPM_APP_DB_PASSWORD: ${BPM_APP_DB_PASSWORD}
+      FLOWABLE_DB_PASSWORD: ${FLOWABLE_DB_PASSWORD:?defina FLOWABLE_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres && psql -U postgres -tAc \"select 1 from pg_database where datname='flowable'\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    deploy:
+      resources:
+        limits: { memory: 768m }
+    networks: [backend]
+    restart: unless-stopped
+
+  flowable-rest:
+    build: ../../apps/flowable
+    image: bpm-tmsa/flowable-rest:7.2.0
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/flowable
+      SPRING_DATASOURCE_USERNAME: flowable
+      SPRING_DATASOURCE_PASSWORD: ${FLOWABLE_DB_PASSWORD}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      FLOWABLE_REST_APP_ADMIN_USER_ID: ${FLOWABLE_REST_USER:-bpm-engine-client}
+      FLOWABLE_REST_APP_ADMIN_PASSWORD: ${FLOWABLE_REST_PASSWORD}
+      FLOWABLE_REST_APP_ADMIN_FIRST_NAME: BPM
+      FLOWABLE_REST_APP_ADMIN_LAST_NAME: TMSA
+      TZ: UTC
+      JAVA_OPTS: -Xms256m -Xmx768m -Duser.timezone=UTC
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      # actuator exige a credencial técnica (o engine nunca fica aberto)
+      test: ["CMD-SHELL", "wget -qO- \"http://$${FLOWABLE_REST_APP_ADMIN_USER_ID}:$${FLOWABLE_REST_APP_ADMIN_PASSWORD}@localhost:8080/flowable-rest/actuator/health\" | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    deploy:
+      resources:
+        limits: { memory: 1g }
+    networks: [backend]
+    restart: unless-stopped
+
+  storage:
+    # S3 compatível para dev/POC (MinIO não publica mais imagens; ver ADR-0007). Produção: storage corporativo.
+    image: rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
+    environment:
+      RUSTFS_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${STORAGE_SECRET_KEY}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+    volumes:
+      - storagedata:/data
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    networks: [backend]
+    restart: unless-stopped
+
+  mailpit:
+    # Somente dev/test: captura e-mails (nenhuma entrega externa: rede "backend" é interna).
+    # UI publicada apenas em 127.0.0.1:8025 por uma rede própria sem acesso aos demais serviços.
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    profiles: [dev, test]
+    environment:
+      MP_SMTP_RELAY_HOST: ""
+      MP_MAX_MESSAGES: "2000"
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    deploy:
+      resources:
+        limits: { memory: 128m }
+    networks: [backend, mailui]
+    restart: unless-stopped
+
+  carbone:
+    # Somente com licença aprovada (perfil "carbone"). Rede interna, porta NÃO publicada; acesso
+    # exclusivo do Laravel (api/worker). Licença/token via Docker secrets — nunca na imagem ou no Git.
+    image: carbone/carbone-ee:full-5.15.4@sha256:ebf8940b68584691f90fabbe5eefed6c75d02d10e8ad5bed14ae04c3086a7392
+    profiles: [carbone]
+    environment:
+      CARBONE_AUTHENTICATION: "true"
+      CARBONE_STUDIO: "false"
+      CARBONE_USE_S3_PLUGIN: "false"
+    volumes:
+      - ./secrets/carbone_key.pub:/app/config/key.pub:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4000/status',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1536m }
+    networks: [backend]
+    restart: unless-stopped
+
+  api:
+    build: ../../apps/api
+    image: bpm-tmsa/api:dev
+    environment:
+      <<: *api-env
+      RUN_MIGRATIONS: "true"
+      SEED_ON_START: ${SEED_ON_START:-true}
+    secrets: *api-secrets
+    depends_on:
+      postgres: { condition: service_healthy }
+      flowable-rest: { condition: service_healthy }
+      storage: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "SCRIPT_NAME=/fpm-ping SCRIPT_FILENAME=/fpm-ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    # "edge" dá saída controlada (Entra/Graph/SMTP). Em produção: allowlist de egress no firewall/proxy.
+    networks: [backend, edge]
+    restart: unless-stopped
+
+  api-web:
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    volumes:
+      - ./nginx/api.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 128m }
+    networks: [edge]
+    restart: unless-stopped
+
+  queue-worker:
+    image: bpm-tmsa/api:dev
+    # filas: engine (outbox Flowable), notifications (e-mail), directory (Graph), reports (relatórios)
+    command: ["php", "artisan", "queue:work", "database", "--queue=engine,notifications,directory,reports,default", "--sleep=1", "--tries=1", "--timeout=3500", "--max-time=3600"]
+    environment:
+      <<: *api-env
+    secrets: *api-secrets
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    networks: [backend, edge]
+    restart: unless-stopped
+
+  scheduler:
+    image: bpm-tmsa/api:dev
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *api-env
+    secrets: *api-secrets
+    depends_on:
+      api: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 384m }
+    networks: [backend, edge]
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../../apps/web
+      args:
+        BUILD_MODE: ${WEB_BUILD_MODE:-docker-dev}
+    image: bpm-tmsa/web:dev
+    deploy:
+      resources:
+        limits: { memory: 64m }
+    networks: [edge]
+    restart: unless-stopped
+
+  reverse-proxy:
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    ports:
+      - "${BPM_HTTP_BIND:-127.0.0.1}:${BPM_HTTP_PORT:-8080}:80"
+    volumes:
+      - ./nginx/edge.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api-web: { condition: service_started }
+      web: { condition: service_started }
+    deploy:
+      resources:
+        limits: { memory: 64m }
+    networks: [edge]
+    restart: unless-stopped
+
+secrets:
+  # Arquivo local (gitignored) gerado por ./secrets/generate.sh. Produção: secret manager / Docker Swarm secrets / Key Vault CSI.
+  bpm_secrets_key:
+    file: ./secrets/bpm_secrets_key
+
+networks:
+  edge: {}
+  # Sem saída para a internet e sem portas publicadas: engine, banco, storage, Mailpit (SMTP) e Carbone.
+  backend:
+    internal: true
+  # Apenas para publicar a UI do Mailpit em 127.0.0.1 (perfil dev).
+  mailui: {}
+
+volumes:
+  pgdata: {}
+  storagedata: {}

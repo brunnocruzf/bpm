@@ -1,0 +1,103 @@
+# Matriz requisito → teste
+
+Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual · ⏳ pendente (depende de decisão/contrato).
+
+| Requisito (seção da especificação) | Evidência | Status |
+|---|---|---|
+| §4.3 Novo fluxo cria fluxo + versão draft + Etapa 1 + formulário + Início→Etapa 1→Fim em uma transação | `FlowAuthoringTest::test_new_flow_creates_draft_first_human_stage_linked_form_and_initial_path_atomically`, `::test_flow_creation_rolls_back_completely_on_failure` | ✅ |
+| §4.3 Adicionar etapa humana cria form; gateway/timer/integração não cria form órfão; manter ≥1 tarefa humana | `FlowAuthoringTest::test_adding_stages_links_forms_only_to_human_tasks` | ✅ |
+| §4.2/§10 Builder sem JavaScript livre; HTML/URLs perigosos; fontes externas; keys válidas | `FormioSchemaSanitizerTest` (5 testes) | ✅ |
+| §4.2 Condições em lista branca (sem JUEL/SpEL livre) e escape de literais | `ConditionCompilerTest` (9 casos) + validado no Flowable real | ✅ |
+| §4.3 item 6 Validação: form válido, responsável, rotas, campos referenciados, caminho até o fim | `FlowAuthoringTest::test_validation_reports_actionable_problems_and_blocks_publication`, `::test_gateway_conditions_must_reference_existing_fields` | ✅ |
+| §4.4 Publicação congela versão; artefatos imutáveis; nova versão por clone | `FlowAuthoringTest::test_form_is_sanitized_and_published_versions_are_immutable` | ✅ |
+| §4.2 Import/export BPMN com recusa de elementos não suportados; preserva forms | `FlowAuthoringTest::test_bpmn_export_and_import_round_trip_preserves_forms_and_rejects_unsupported_elements` | ✅ |
+| §3.3 Outbox/idempotência/reconciliação sem duplicar instância | `RuntimeTest::test_lost_start_response_is_reconciled_without_duplicating_the_instance` | ✅ |
+| §3.3 Resposta perdida na conclusão reconciliada pelo histórico | `RuntimeTest::test_lost_complete_response_is_reconciled_from_history` | ✅ |
+| §9 Idempotency-Key obrigatória e replay | `RuntimeTest::test_start_requires_idempotency_key_and_replays_same_response` | ✅ |
+| §5 Número IRR sequencial/ano sem MAX+1 | `RuntimeTest::test_instance_numbers_are_sequential_per_year`, `SubmissionProcessorTest::test_sequence_is_allocated_once_and_kept_on_revision` | ✅ |
+| §13 Concorrência: dois usuários na mesma tarefa → conflito controlado | `RuntimeTest::test_concurrent_claim_and_double_completion_are_rejected_with_conflict` | ✅ |
+| §13 Usuário sem grupo não lista/abre/completa instância alheia por troca de ID | `RuntimeTest::test_users_outside_the_group_cannot_view_or_complete_tasks_by_id` | ✅ |
+| §8.3 Validação servidor-side; condicionais obrigatórios; campos automáticos readOnly | `SubmissionProcessorTest` (7 testes) | ✅ |
+| §7.3 Lookup AX: não encontrado/indisponível sem perder dados; snapshot da origem | `SubmissionProcessorTest::test_lookup_*` | ✅ |
+| §8.3/§10 Anexos: extensão/MIME/permissão; URL assinada; anexo de outro usuário recusado | `RuntimeTest::test_attachments_validate_type_and_require_authorization_to_download` | ✅ |
+| §6.1 JWT Entra: assinatura, audience, tenant, issuer, scope, expiração, alg confusion; oid+tid | `EntraAuthTest` (3 testes) | ✅ |
+| §9 RFC 7807 + correlation ID; 401 sem redirecionamento | `RuntimeTest::test_problem_details_and_correlation_id_on_errors`, `::test_unauthenticated_api_requests_get_401_even_without_json_accept_header` | ✅ |
+| §13 PO 159: abertura, 06 Sim→07/08→09→11, 24/26/27/28 com Comitê e revisão do RACF (histórico imutável), 29 paralelismo, 30 com múltiplas ações, validação negativa e reenvio, 30.1 bloqueio até concluir ações + evidência, 30.2 eficaz, 33 devolução, 45/46 sem NF espelho, integração AX (service task), 40, 41 FOB com timer, 44, sincronização e fim | `Po159EndToEndTest` contra Flowable 7.2 real (94 asserções) | ✅ |
+| §13 Demais ramos 33–47 (garantia TMSA tipo 01/03/09, garantia fornecedor → 39, NF espelho Sim → 47, CIF) | Roteamento coberto pelo validador e pelo BPMN; cenário E2E dedicado pendente | 🟡 |
+| §13 30.3 loop com limite (6 ciclos) e timer P30D | Modelado; teste com duração reduzida pendente | 🟡 |
+| §13 Virada de ano, backup/restore, anexo infectado (ClamAV real), logs sem PII | Sequência por ano implementada; demais em homologação | ⏳ |
+| §7 Contratos AX reais (AIF/WCF ou façade REST) | Transportes não configurados de propósito | ⏳ |
+| §6.2 Autenticação do fornecedor externo | Decisão pendente | ⏳ |
+
+## Customizações fase 2 (`.claude/BPMN_TMSA_customs_1.md`)
+
+| Requisito | Evidência | Status |
+|---|---|---|
+| §2 Menu Configurações só para autorizados; Gates por permissão (configuração, processos, auditoria leitura/exportação, relatórios) | `AuthorizationAndAuditTest::test_settings_require_settings_manage_permission_on_the_server`, `::test_audit_read_and_export_have_separate_permissions_and_no_write_routes` | ✅ |
+| §3.1 Login: só parâmetros públicos, URIs seguras, tenant multi-tenant recusado | `EntraLoginSettingsTest::test_only_non_secret_parameters_with_safe_values_are_accepted` | ✅ |
+| §3.1 Ativação somente após descoberta OIDC + teste de token (audience/expiração), config efetiva usada pelo resource server; alteração exige nova validação | `EntraLoginSettingsTest::test_activation_requires_real_discovery_and_token_test`, `::test_discovery_reports_unknown_tenant` | ✅ |
+| §11 Token Entra: issuer/audience/tenant/expirado/claim inválida | `EntraAuthTest` + `EntraLoginSettingsTest` | ✅ |
+| §3.2 Carga inicial paginada (nextLink), deltaLink só ao fim, escopo por grupos, guests/desabilitados excluídos, cursor não serializado | `DirectorySyncTest::test_initial_paginated_load_imports_scope_and_saves_delta_link_only_at_the_end` | ✅ |
+| §3.2 Delta: tombstones (@removed) desativam sem apagar, membership removida, sem duplicatas (tenant+oid) | `DirectorySyncTest::test_delta_round_uses_delta_link_disables_removed_users_and_removes_memberships_without_deleting` | ✅ |
+| §3.2 429/Retry-After · consentimento ausente · credencial inválida · cursor expirado (410) · falha no meio + retomada idempotente | `DirectorySyncTest::test_throttling_respects_retry_after`, `::test_missing_consent_and_invalid_credential_fail_without_advancing_cursor`, `::test_expired_delta_token_triggers_controlled_full_reload`, `::test_failure_mid_round_keeps_checkpoint_and_resume_is_idempotent` | ✅ |
+| §3.2 Falha parcial não desativa em massa (trava); prévia sem persistência; repetição idempotente | `DirectorySyncTest::test_mass_disable_is_blocked_by_safety_threshold`, `::test_preview_computes_plan_without_persisting_anything`, `::test_requests_are_idempotent_while_a_run_is_active` | ✅ |
+| §3.2 Grupo sem mapeamento não concede papel; privilegiado exige confirmação | `DirectorySyncTest::test_role_mapping_is_explicit_and_privileged_roles_need_confirmation` | ✅ |
+| §3.2 Graph só no backend (links fora do Graph recusados; SPA sem Graph/token endpoint; CSP) | `DirectorySyncTest::test_graph_client_only_follows_links_inside_microsoft_graph`, `apps/web/src/security/boundaries.spec.ts` | ✅ |
+| §3.2 Teste de conexão lê permissões reais do token; mock local | `DirectorySyncTest::test_connection_test_checks_real_token_permissions`, `::test_mock_directory_transport_works_for_local_demo` | ✅ |
+| §4 Validação por provedor; Mailpit recusado em produção; anti-SSRF (metadata, privada, porta, sem TLS) | `EmailSettingsTest::test_validation_depends_on_provider_type`, `::test_mailpit_is_refused_in_production`, `::test_host_policy_blocks_ssrf_targets_and_plaintext` | ✅ |
+| §4 Segredo criptografado, mascarado, ausente de resposta/log/auditoria/revisões | `EmailSettingsTest::test_secret_is_encrypted_masked_and_never_returned_or_logged`, `SupportUnitsTest::test_secret_store_encrypts_rotates_and_reads_mounted_files_only_inside_dir` | ✅ |
+| §4 TLS failure com código sanitizado; teste de envio pela fila; retry/backoff; dead-letter; reprocessamento; idempotência; correlation ID | `EmailSettingsTest::test_connection_test_reports_tls_failure_with_sanitized_code`, `::test_test_email_goes_through_outbox_and_confirms_result`, `::test_transient_failures_retry_with_backoff_then_dead_letter_and_manual_retry`, `::test_permanent_failure_goes_straight_to_dead_letter` | ✅ |
+| §4/§11 Mailpit em dev sem envio externo | Validado no Compose (Configurações → E-mail → Enviar teste; mensagem no Mailpit com Message-ID determinístico) | 🟡 manual |
+| §7 Notifica só a etapa ativada pelo engine (gateway), nunca antes da confirmação, sem duplicar; toggle desligado não envia; falha de e-mail não afeta a tarefa; sem destinatário não vaza | `StageNotificationTest` (6 testes) | ✅ |
+| §7 Template fechado (placeholders, sem código), prévia para designer, destinatários/teste só admin | `StageNotificationTest::test_template_rejects_unknown_placeholders_and_code`, `SupportUnitsTest::test_notification_template_is_closed_and_escaped` | ✅ |
+| §5 Upload seguro (SVG/poliglota/tamanho/dimensão), recodificação, público só após aplicar; contraste WCAG; reset; diff auditado | `BrandingTest` (3 testes), `apps/web/src/composables/contrast.spec.ts` | ✅ |
+| §6 Append-only (model + trigger), redação de segredos/tokens/PEM/deltatoken, catálogo tipado, diff e causalidade, retenção com arquivo | `AuthorizationAndAuditTest` (7 testes) + verificação no PostgreSQL do Compose | ✅ |
+| §8 Relatório de uma etapa, várias e completo; snapshot; sensível mascarado; schema histórico | `ReportsTest::test_single_stage_multiple_stages_and_full_report`, `::test_snapshot_of_submission_and_markers_for_empty_hidden_and_sensitive_fields`, `::test_historical_schema_is_used_even_after_form_changes` | ✅ |
+| §8 PDF (preview/impressão), CSV/XLSX, fuso de negócio, idempotência, artefato expirado, link não autorizado, download auditado | `ReportsTest::test_pdf_generation_preview_print_and_audited_download`, `::test_operational_reports_in_pdf_csv_xlsx_respect_permission_and_timezone`, `::test_expired_artifact_is_gone`, `::test_idempotent_request_and_validation`, `::test_csv_neutralizes_formula_injection` | ✅ |
+| §8.1 Contrato Carbone (payload/headers), template inválido (macro, vínculo externo, hash), timeout; seleção exige aprovação | `ReportsTest::test_carbone_contract_template_validation_and_timeout`, `::test_carbone_cannot_be_selected_without_license_approval` | ✅ |
+| §8.1 Teste integrado com container/licença do Carbone | Bloqueado: licença não aprovada (perfil `carbone` desligado) | ⏳ |
+| §11 E2E no navegador (configurações, marca, e-mail, diretório mock, notificação no editor, relatório PDF, auditoria) | Executado com Playwright (MCP) contra o Compose; não há suíte Playwright automatizada no repositório | 🟡 manual |
+
+## Tela de login (`.claude/login`) — Entra ID, visitante e SuperAdmin (ADR-0015)
+
+| Requisito | Evidência | Status |
+|---|---|---|
+| Métodos simultâneos refletidos em `/public/auth-config`; `demoUrl` só http(s); visitante 404 quando desabilitado | `LoginMethodsTest::test_public_config_reflects_enabled_methods`, `apps/web/src/auth/auth.spec.ts` | ✅ |
+| SuperAdmin: senha só por comando (hash), sessão opaca (só hash), `/me` com método, logout revoga, auditoria sem senha/token | `LoginMethodsTest::test_superadmin_login_session_and_logout_are_audited_without_secrets` | ✅ |
+| Resposta genérica, bloqueio por falhas consecutivas, desbloqueio; tentativa atribuída a ator não autenticado | `LoginMethodsTest::test_wrong_password_is_generic_and_locks_the_account` | ✅ |
+| Limite de tentativas (429) e usuário digitado não armazenado | `LoginMethodsTest::test_typed_unknown_username_is_never_stored_and_attempts_are_rate_limited` | ✅ |
+| Método desabilitado invalida sessões; lista de IPs; expiração por inatividade e absoluta; troca de senha revoga; limite de sessões | `LoginMethodsTest::test_disabled_method_ip_allowlist_and_session_expiry`, `::test_new_password_revokes_sessions_and_session_limit_applies` | ✅ |
+| Token de visitante nunca alcança SuperAdmin/Entra; perfis listados só fictícios | `LoginMethodsTest::test_demo_tokens_never_reach_superadmin_or_entra_accounts` | ✅ |
+| Política de senha; conta de demonstração não é convertida; desativar | `LoginMethodsTest::test_command_validates_password_policy_and_username_collisions` | ✅ |
+| Produção recusa visitante e SuperAdmin sem lista de IPs | `LoginMethodsTest::test_production_refuses_demo_and_requires_ip_allowlist_for_superadmin` | ✅ |
+| Links institucionais só https/mailto | `LoginMethodsTest::test_login_page_links_accept_only_https_or_mailto` | ✅ |
+| Fontes/imagens locais (sem Google Fonts/CDN), senha nunca em storage | `apps/web/src/security/boundaries.spec.ts` | ✅ |
+| Layout do protótipo (desktop 1440×900 e mobile 390×844), visitante → app, SuperAdmin (erro genérico, entrada, faixa de sessão, sair) | Playwright (MCP) contra o Compose | 🟡 manual |
+| Botão Microsoft com tenant real | Não exercitado (sem autorização para autenticar no tenant); MSAL inicializa com a configuração ativada | ⏳ |
+
+## Logs das integrações (e-mail e Entra ID)
+
+| Requisito | Evidência | Status |
+|---|---|---|
+| Histórico de testes (não só o último), etapas com duração, cada tentativa de entrega com código/explicação, filtros, busca, sem senha/corpo | `IntegrationLogTest::test_email_log_keeps_every_test_and_each_delivery_attempt_with_explanations` | ✅ |
+| Paginação exata entre fontes (sem perder/repetir) | `IntegrationLogTest::test_email_log_paginates_across_sources_without_losing_or_repeating_entries` | ✅ |
+| Importação com log por etapa; falha com código + explicação; token Entra recusado auditado (deduplicado, sem token); filtro login × importação; somente settings.manage; segredos ausentes | `IntegrationLogTest::test_entra_log_shows_sync_steps_rejected_tokens_and_respects_permissions` | ✅ |
+| Componente de log (lista, expandir explicação/tentativas, filtros) | `apps/web/src/components/settings/IntegrationLog.spec.ts` | ✅ |
+| Telas E-mail, Entra login e Entra importação exibindo o log com dados do ambiente | Playwright (MCP) contra o Compose, somente leitura | 🟡 manual |
+
+## Catálogo de integrações REST / API do AX (ADR-0016)
+
+| Requisito | Evidência | Status |
+|---|---|---|
+| Importação do OpenAPI: prévia (novo/alterado/inalterado), alertas (resposta não documentada, senha na query), seleção, endpoints desabilitados, corpo e resposta documentada importados | `IntegrationCatalogTest::test_openapi_preview_apply_and_contract_drift` | ✅ |
+| Reimportação preserva nome/constantes; `bpm:openapi-check` só marca contrato alterado | idem | ✅ |
+| Credencial nunca como constante; parâmetro de caminho obrigatório; saída inferida de exemplo sem guardar valores; sensível exige confirmação para publicar | `IntegrationCatalogTest::test_endpoint_wizard_rules_and_response_inference_never_store_real_values` | ✅ |
+| Consulta `api:<id>` e vínculo da consulta fixa (`supplier`) chamando a API com token de login em cache; log mascarado; vínculo com endpoint desligado falha (sem MOCK silencioso) | `IntegrationCatalogTest::test_published_lookup_and_bound_operation_call_the_api_with_cached_login_token` | ✅ |
+| Escrita exige aprovação; idempotente (não repete POST); timeout após envio = incerto → reconciliação; teste de escrita só com confirmação e nunca em produção | `IntegrationCatalogTest::test_writes_need_approval_are_idempotent_and_uncertain_results_require_reconciliation` | ✅ |
+| Anti-SSRF (IP interno não declarado, metadata, credencial na URL), redirecionamento não seguido, permissões | `IntegrationCatalogTest::test_target_policy_permissions_and_redirects` | ✅ |
+| Métodos de autenticação (Bearer com/sem prefixo, chave em cabeçalho com prefixo, Basic, OAuth2 client credentials) e teste de conexão com verificação real (não verificado sem caminho; 401 → credencial recusada); nenhum segredo devolvido | `IntegrationCatalogTest::test_authentication_methods_send_the_right_header_and_the_connection_test_verifies_for_real` | ✅ |
+| Excluir fluxo nunca publicado (confirmação, cascata, auditoria) e descartar rascunho de fluxo publicado; publicado nunca é excluído | `FlowAuthoringTest::test_draft_flow_can_be_deleted_and_draft_version_discarded_but_published_versions_never` | ✅ |
+| Prévia com o Swagger real da API do AX (v1 68 operações, v2 6) | Execução de leitura no container (sem gravar) | 🟡 manual |
+| Chamadas reais a endpoints do AX | Não executadas (sem autorização/credencial de homologação) | ⏳ |
+
+Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web).

@@ -1,0 +1,1 @@
+{"type":"https:\/\/bpm.tmsa.local\/problems\/rate_limited","title":"Muitas requisi\u00e7\u00f5es","status":429,"detail":"Aguarde alguns instantes e tente novamente.","code":"rate_limited","instance":"\/api\/v1\/admin\/integrations\/connections\/01a13a59-affe-70c1-8099-1d1b20f56e96\/test","correlationId":"c5abad5b-f150-4ee8-855e-2cac75b9de5e"}

@@ -1,0 +1,96 @@
+// Form.io (Builder/Renderer) depende do Bootstrap 5. Importamos apenas as partes
+// necessárias e SEM o reboot, para não alterar a base visual do restante da aplicação.
+@import 'bootstrap/scss/functions';
+@import 'bootstrap/scss/variables';
+@import 'bootstrap/scss/variables-dark';
+@import 'bootstrap/scss/maps';
+@import 'bootstrap/scss/mixins';
+@import 'bootstrap/scss/utilities';
+@import 'bootstrap/scss/root';
+@import 'bootstrap/scss/containers';
+@import 'bootstrap/scss/grid';
+@import 'bootstrap/scss/tables';
+@import 'bootstrap/scss/forms';
+@import 'bootstrap/scss/buttons';
+@import 'bootstrap/scss/transitions';
+@import 'bootstrap/scss/dropdown';
+@import 'bootstrap/scss/button-group';
+@import 'bootstrap/scss/nav';
+@import 'bootstrap/scss/card';
+@import 'bootstrap/scss/badge';
+@import 'bootstrap/scss/alert';
+@import 'bootstrap/scss/progress';
+@import 'bootstrap/scss/list-group';
+@import 'bootstrap/scss/close';
+@import 'bootstrap/scss/modal';
+@import 'bootstrap/scss/tooltip';
+@import 'bootstrap/scss/popover';
+@import 'bootstrap/scss/helpers'; // .visually-hidden (textos de leitores de tela do Form.io)
+@import 'bootstrap/scss/utilities/api';
+
+@import 'bootstrap-icons/font/bootstrap-icons.css';
+@import '@formio/js/dist/formio.full.min.css';
+
+// Ajustes de tema TMSA no Form.io
+.formio-component {
+  font-size: 13px;
+  .col-form-label, label {
+    font-size: 12px;
+    font-weight: 650;
+    color: #43566a;
+  }
+}
+.formio-form, .formbuilder {
+  --bs-primary: var(--brand);
+  .btn-primary {
+    --bs-btn-color: var(--on-brand);
+    --bs-btn-bg: var(--brand);
+    --bs-btn-border-color: var(--brand);
+    --bs-btn-hover-color: var(--on-brand);
+    --bs-btn-hover-bg: var(--brand-hover);
+    --bs-btn-hover-border-color: var(--brand-hover);
+    --bs-btn-active-color: var(--on-brand);
+    --bs-btn-active-bg: var(--brand-hover);
+  }
+  .form-control, .form-select, .choices__inner {
+    font-size: 13px;
+    border-color: #d4dde6;
+    border-radius: 7px;
+  }
+  .form-control:disabled, .form-control[readonly] {
+    background: #f4f7f9;
+    color: #3d5063;
+  }
+  .card { border-color: #e4eaf0; border-radius: 9px; }
+  .card-header { background: #fafcfd; font-size: 12px; font-weight: 700; color: #2c3e50; }
+  .field-required::after, .field-required:after { color: #c6504e; }
+  .formio-errors .error, .invalid-feedback { font-size: 11px; }
+}
+.formbuilder {
+  .formcomponents .builder-sidebar .btn,
+  .formcomponents .formcomponent {
+    font-size: 12px;
+    text-align: left;
+  }
+  .builder-group-button { font-size: 12px; font-weight: 700; }
+  .drag-and-drop-alert { font-size: 12px; }
+}
+.formio-dialog { z-index: 2000; }
+.tm-axlookup-btn {
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.tm-axlookup-status {
+  font-size: 11px;
+  margin-top: 4px;
+  &.ok { color: #23885b; }
+  &.warn { color: #a86513; }
+  &.err { color: #b54545; }
+}
+
+// Builder embutido em colunas estreitas do editor: menu de componentes com largura fixa.
+.tm-builder .formbuilder {
+  flex-wrap: nowrap;
+  > .formcomponents { flex: 0 0 200px; max-width: 200px; width: 200px; }
+  > .formarea { flex: 1 1 auto; max-width: calc(100% - 200px); min-width: 0; }
+}

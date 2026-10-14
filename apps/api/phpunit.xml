@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:dGVzdC1rZXktb25seS1mb3ItcGhwdW5pdC10ZXN0cyE="/>
+        <env name="DB_HOST" value=""/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="null"/>
+        <env name="BPM_AUTH_DRIVER" value="dev"/>
+        <env name="BPM_ATTACHMENTS_DISK" value="attachments_local"/>
+        <env name="BPM_REPORTS_DISK" value="attachments_local"/>
+        <env name="BPM_AUDIT_ARCHIVE_DISK" value="attachments_local"/>
+        <!-- chave exclusiva da suíte de testes (sem valor fora dela) -->
+        <env name="BPM_SECRETS_KEY" value="base64:dGVzdC1zZWNyZXRzLWtleS0zMi1ieXRlcy0hISEhISE="/>
+        <env name="BPM_MAIL_PRIVATE_RELAY_HOSTS" value="relay.interno.tmsa"/>
+        <env name="FLOWABLE_REST_URL" value="http://flowable.test/flowable-rest"/>
+        <env name="FLOWABLE_REST_USER" value="test"/>
+        <env name="FLOWABLE_REST_PASSWORD" value="test"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>

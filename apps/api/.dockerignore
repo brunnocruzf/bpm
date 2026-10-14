@@ -1,0 +1,14 @@
+vendor
+node_modules
+.env
+.env.*
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/app/private/*
+bootstrap/cache/*.php
+database/*.sqlite
+tests
+.phpunit.result.cache
+phpstan.neon

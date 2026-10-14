@@ -1,0 +1,25 @@
+# Override OPCIONAL para desenvolvimento local fora de containers (php artisan serve + vite):
+# publica PostgreSQL e Flowable REST apenas em 127.0.0.1. Nunca usar em servidor compartilhado.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres flowable-rest storage mailpit
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${DEV_PG_PORT:-55432}:5432"
+    networks: [backend, devhost]
+  flowable-rest:
+    ports:
+      - "127.0.0.1:${DEV_FLOWABLE_PORT:-8090}:8080"
+    networks: [backend, devhost]
+  storage:
+    ports:
+      - "127.0.0.1:${DEV_S3_PORT:-9100}:9000"
+    networks: [backend, devhost]
+  mailpit:
+    ports:
+      - "127.0.0.1:${DEV_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    networks: [backend, devhost]
+
+networks:
+  devhost: {}

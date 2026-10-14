@@ -1,0 +1,91 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "API de exemplo - Dynamics AX 2012 (fixture sintética)", "version": "v1" },
+  "paths": {
+    "/v1/User/login": {
+      "post": {
+        "tags": ["User"],
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginDTO" } } } },
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/Access": {
+      "post": {
+        "tags": ["Access"],
+        "parameters": [
+          { "name": "userName", "in": "query", "schema": { "type": "string" } },
+          { "name": "password", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/v1/Fornecedores/{CPF_CNPJ}": {
+      "get": {
+        "tags": ["Fornecedores"],
+        "summary": "Lista um Fornecedor",
+        "operationId": "ListaFornCNPJ",
+        "parameters": [ { "name": "CPF_CNPJ", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/v1/Itens/Senf/TodosItens/{filter}/{site}": {
+      "get": {
+        "tags": ["Itens"],
+        "summary": "Retorna todos os itens",
+        "operationId": "GetTodosItens",
+        "parameters": [
+          { "name": "filter", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "site", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "grupoDeItem", "in": "query", "schema": { "type": "string" } },
+          { "name": "NomeDePesquisa", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/v1/Financeiro/CriarOrdemTransferencia": {
+      "post": {
+        "tags": ["Financeiro"],
+        "summary": "Criar Ordem De Transferencia",
+        "operationId": "CriarOT",
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrdemDeTransferencia" } } } },
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/v1/Geral/Endereco/{cep}": {
+      "get": {
+        "tags": ["Geral"],
+        "summary": "Retorna um Endereço",
+        "operationId": "GetEnderecoAsync",
+        "parameters": [ { "name": "cep", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Endereco" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LoginDTO": { "type": "object", "properties": { "userName": { "type": "string", "nullable": true }, "password": { "type": "string", "nullable": true } } },
+      "OrdemDeTransferencia": {
+        "type": "object",
+        "properties": {
+          "inventLocationIdFrom": { "type": "string" },
+          "inventLocationIdTo": { "type": "string" },
+          "shipDate": { "type": "string", "format": "date-time" },
+          "transferId": { "type": "string" },
+          "lines": { "type": "array", "items": { "$ref": "#/components/schemas/LinhaTransferencia" } }
+        }
+      },
+      "LinhaTransferencia": {
+        "type": "object",
+        "properties": { "itemId": { "type": "string" }, "lineNum": { "type": "integer", "format": "int32" }, "transferQty": { "type": "number", "format": "double" } }
+      },
+      "Endereco": {
+        "type": "object",
+        "properties": { "logradouro": { "type": "string" }, "cidade": { "type": "string" }, "uf": { "type": "string" } }
+      }
+    },
+    "securitySchemes": { "Bearer": { "type": "apiKey", "name": "Authorization", "in": "header" } }
+  },
+  "security": [ { "Bearer": [] } ]
+}

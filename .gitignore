@@ -1,0 +1,33 @@
+# Segredos e ambientes locais
+.env
+.env.*
+!.env.example
+!apps/web/.env.development
+!apps/web/.env.docker-dev
+!apps/web/.env.production
+
+# Dependências e builds
+node_modules/
+vendor/
+dist/
+apps/api/public/build/
+
+# Artefatos de execução/testes
+apps/api/storage/logs/*.log
+apps/api/storage/framework/
+apps/api/storage/app/private/
+apps/api/bootstrap/cache/*.php
+apps/api/.phpunit.cache/
+apps/api/database/*.sqlite
+.playwright-mcp/
+
+# Editores/SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Segredos locais do Compose (Docker secrets em arquivo)
+deploy/docker/secrets/*
+!deploy/docker/secrets/generate.sh
+!deploy/docker/secrets/README.md

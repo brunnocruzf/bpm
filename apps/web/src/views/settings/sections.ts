@@ -1,0 +1,10 @@
+export interface SettingsSection { name: string; slug: string; label: string; icon: string; description: string }
+
+export const SETTINGS_SECTIONS: SettingsSection[] = [
+  { name: 'settings-branding', slug: 'branding', label: 'Organização e identidade visual', icon: 'pi-palette', description: 'Nome, logos, favicon e cores com contraste acessível.' },
+  { name: 'settings-entra-auth', slug: 'entra/auth', label: 'Entra ID — login da aplicação', icon: 'pi-sign-in', description: 'SPA (MSAL + PKCE) e validação do access token na API.' },
+  { name: 'settings-entra-directory', slug: 'entra/directory-sync', label: 'Entra ID — usuários e grupos', icon: 'pi-users', description: 'Importação via Microsoft Graph (app-only, somente leitura).' },
+  { name: 'settings-email', slug: 'email', label: 'E-mail e notificações', icon: 'pi-envelope', description: 'Provedor, remetente, teste de conexão e envio de teste.' },
+  { name: 'settings-audit', slug: 'audit-retention', label: 'Auditoria e retenção', icon: 'pi-shield', description: 'Prazo aprovado, arquivamento e expurgo controlado.' },
+  { name: 'settings-reports', slug: 'reports', label: 'Relatórios e modelos', icon: 'pi-file-pdf', description: 'Renderer, confidencialidade e modelos versionados.' },
+]
