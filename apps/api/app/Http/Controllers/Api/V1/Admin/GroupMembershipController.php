@@ -57,10 +57,10 @@ class GroupMembershipController extends ApiController
         }
         DB::transaction(function () use ($users, $group) {
             foreach ($users as $user) {
-                BpmGroupMembership::create(['group_id' => $group->id, 'user_id' => $user->id, 'source' => 'manual', 'created_by' => $this->user()->id, 'created_by_name' => $this->user()->name, 'created_at' => now()]);
+                $membership = BpmGroupMembership::create(['group_id' => $group->id, 'user_id' => $user->id, 'source' => 'manual', 'created_by' => $this->user()->id, 'created_by_name' => $this->user()->name, 'created_at' => now()]);
                 $manual = array_values(array_unique([...($user->manual_groups ?? []), $group->key]));
                 $user->forceFill(['manual_groups' => $manual, 'groups' => array_values(array_unique([...($user->token_groups ?? []), ...($user->directory_groups ?? []), ...$manual]))])->save();
-                AuditLogger::record('identity.local_group_member_added', 'bpm_group_membership', $group->id.':'.$user->id, ['groupKey' => $group->key, 'source' => 'manual'], null, $this->user(), context: ['object_name' => $group->name.' — '.$user->name]);
+                AuditLogger::record('identity.local_group_member_added', 'bpm_group_membership', (string) $membership->id, ['groupKey' => $group->key, 'source' => 'manual'], null, $this->user(), context: ['object_name' => $group->name.' — '.$user->name]);
             }
         });
 
@@ -83,7 +83,7 @@ class GroupMembershipController extends ApiController
             $link->delete();
             $manual = array_values(array_diff($user->manual_groups ?? [], [$group->key]));
             $user->forceFill(['manual_groups' => $manual, 'groups' => array_values(array_unique([...($user->token_groups ?? []), ...($user->directory_groups ?? []), ...$manual]))])->save();
-            AuditLogger::record('identity.local_group_member_removed', 'bpm_group_membership', $group->id.':'.$user->id, ['groupKey' => $group->key, 'source' => 'manual'], null, $this->user(), context: ['object_name' => $group->name.' — '.$user->name]);
+            AuditLogger::record('identity.local_group_member_removed', 'bpm_group_membership', (string) $link->id, ['groupKey' => $group->key, 'source' => 'manual'], null, $this->user(), context: ['object_name' => $group->name.' — '.$user->name]);
         });
 
         return response()->noContent();
