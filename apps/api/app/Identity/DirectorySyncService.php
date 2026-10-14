@@ -662,10 +662,11 @@ class DirectorySyncService
                 return;
             }
             $user = new User([
-                'entra_oid' => $oid, 'entra_tid' => $tenant, 'is_active' => $enabled !== false,
+                'entra_oid' => $oid, 'entra_tid' => $tenant, 'auth_source' => User::SOURCE_ENTRA, 'is_active' => $enabled !== false,
                 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => [], 'roles' => [], 'groups' => [],
             ]);
         }
+        $user->auth_source = User::SOURCE_ENTRA;
         $before = $user->exists ? $user->only(['name', 'upn', 'email', 'department', 'user_type', 'account_enabled']) : null;
         $map = ['displayName' => 'name', 'userPrincipalName' => 'upn', 'mail' => 'email', 'department' => 'department', 'userType' => 'user_type', 'accountEnabled' => 'account_enabled'];
         foreach ($map as $src => $col) {
