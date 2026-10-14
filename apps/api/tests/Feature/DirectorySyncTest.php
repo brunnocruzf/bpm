@@ -89,6 +89,47 @@ class DirectorySyncTest extends TestCase
         $this->as('admin')->getJson('/api/v1/admin/entra/sync/runs')->assertOk()->assertJsonPath('overview.cursor.present', true)->assertJsonMissingPath('data.0.plan');
     }
 
+    public function test_manager_relationship_is_tracked_and_resolved_when_manager_is_imported_later(): void
+    {
+        $ids = $this->seedDirectory();
+        $managerOid = $this->graph->user('7');
+        $this->graph->managerAssignments[$ids['a']] = $managerOid;
+
+        $run = $this->sync();
+        $this->assertSame(DirectorySyncRun::COMPLETED, $run->status, (string) $run->error_message);
+        $this->assertTrue($this->graph->calledWith('users/delta?$select=id,displayName,userPrincipalName,mail,department,accountEnabled,userType,manager'));
+        $report = User::where('entra_oid', $ids['a'])->firstOrFail();
+        $this->assertSame($managerOid, $report->manager_entra_oid);
+        $this->assertNull($report->manager_user_id, 'a referência fica pendente sem importar usuários fora do escopo');
+        $this->assertNull(User::where('entra_oid', $managerOid)->first());
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?'.http_build_query(['q' => 'Usuário 1']))
+            ->assertOk()->assertJsonPath('data.0.managerPending', true)->assertJsonPath('data.0.manager', null);
+
+        // O manager entra no escopo depois; o vínculo pendente é resolvido por tenant + object ID.
+        $this->graph->members[FakeGraph::G1][] = $managerOid;
+        $this->graph->groupChanges = [['id' => FakeGraph::G1, 'members@delta' => [['@odata.type' => '#microsoft.graph.user', 'id' => $managerOid]]]];
+        $run = $this->sync();
+        $this->assertSame(DirectorySyncRun::COMPLETED, $run->status, (string) $run->error_message);
+        $manager = User::where('entra_oid', $managerOid)->firstOrFail();
+        $report->refresh();
+        $this->assertSame($manager->id, $report->manager_user_id);
+        $this->assertSame($manager->name, $report->manager->name);
+
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?'.http_build_query(['q' => 'Usuário 1']))
+            ->assertOk()->assertJsonPath('data.0.manager.id', $manager->id)->assertJsonPath('data.0.manager.name', $manager->name);
+        $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$manager->id)
+            ->assertOk()->assertJsonPath('data.identity.id', $manager->id);
+        $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$report->id)
+            ->assertOk()->assertJsonPath('data.organization.manager', $manager->name);
+
+        // A remoção do vínculo também chega como manager@delta vazio.
+        $this->graph->userChanges = [['id' => $ids['a'], 'manager@delta' => []]];
+        $run = $this->sync();
+        $this->assertSame(DirectorySyncRun::COMPLETED, $run->status, (string) $run->error_message);
+        $this->assertNull($report->fresh()->manager_entra_oid);
+        $this->assertNull($report->fresh()->manager_user_id);
+    }
+
     public function test_all_directory_scope_needs_confirmation_and_imports_every_group_and_member_user(): void
     {
         $ids = $this->seedDirectory();

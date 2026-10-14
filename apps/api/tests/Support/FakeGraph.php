@@ -20,6 +20,9 @@ class FakeGraph
     /** @var array<string, array<string,mixed>> */
     public array $users = [];
 
+    /** Entra object ID do manager por usuário. */
+    public array $managerAssignments = [];
+
     /** @var array<string, list<string>> membros por grupo */
     public array $members = [];
 
@@ -106,7 +109,14 @@ class FakeGraph
 
                 return Http::response(['value' => $changes, '@odata.deltaLink' => $this->link('users', ['$deltatoken' => 'u-'.(++$this->round)])]);
             }
-            $all = array_values($this->users);
+            $all = array_map(function (array $user) {
+                $managerId = $this->managerAssignments[$user['id']] ?? null;
+                if ($managerId) {
+                    $user['manager@delta'] = [['@odata.type' => '#microsoft.graph.user', 'id' => $managerId]];
+                }
+
+                return $user;
+            }, array_values($this->users));
             $page = (int) ($q['$skiptoken'] ?? 0);
             $slice = array_slice($all, $page * 3, 3);
             if (($page + 1) * 3 < count($all)) {
@@ -116,7 +126,15 @@ class FakeGraph
             return Http::response(['value' => $slice, '@odata.deltaLink' => $this->link('users', ['$deltatoken' => 'u-'.$this->round])]);
         }
         if (preg_match('#/users/([0-9a-f\-]{36})$#', $path, $mm)) {
-            return isset($this->users[$mm[1]]) ? Http::response($this->users[$mm[1]]) : Http::response(['error' => ['code' => 'Request_ResourceNotFound']], 404);
+            if (! isset($this->users[$mm[1]])) {
+                return Http::response(['error' => ['code' => 'Request_ResourceNotFound']], 404);
+            }
+            $user = $this->users[$mm[1]];
+            if ($managerId = ($this->managerAssignments[$mm[1]] ?? null)) {
+                $user['manager'] = ['id' => $managerId];
+            }
+
+            return Http::response($user);
         }
         if (preg_match('#/groups/([0-9a-f\-]{36})$#', $path, $mm)) {
             return Http::response(['id' => $mm[1], 'displayName' => 'Grupo']);

@@ -667,12 +667,16 @@ class DirectorySyncService
             ]);
         }
         $user->auth_source = User::SOURCE_ENTRA;
-        $before = $user->exists ? $user->only(['name', 'upn', 'email', 'department', 'user_type', 'account_enabled']) : null;
+        $before = $user->exists ? $user->only(['name', 'upn', 'email', 'department', 'user_type', 'account_enabled', 'manager_entra_oid']) : null;
         $map = ['displayName' => 'name', 'userPrincipalName' => 'upn', 'mail' => 'email', 'department' => 'department', 'userType' => 'user_type', 'accountEnabled' => 'account_enabled'];
         foreach ($map as $src => $col) {
             if (array_key_exists($src, $u)) {
                 $user->{$col} = is_string($u[$src]) ? mb_substr($u[$src], 0, 200) : $u[$src];
             }
+        }
+        [$hasManager, $managerOid] = $this->managerOid($u);
+        if ($hasManager) {
+            $user->manager_entra_oid = $managerOid;
         }
         $user->name = $user->name ?: 'Usuário do diretório';
         if (! $user->email && $user->upn) {
@@ -686,6 +690,7 @@ class DirectorySyncService
         if (! $user->exists) {
             $user->save();
             $known[$oid] = $user->id;
+            $this->resolveManagerRelationship($user, $tenant);
             $this->s['totals']['created']++;
             $this->sample('create', 'user', $user->name, $user->upn);
             AuditLogger::record('directory.user_created', 'user', $user->id, ['userType' => $user->user_type, 'enabled' => $user->is_active], context: ['object_name' => $user->name]);
@@ -700,7 +705,7 @@ class DirectorySyncService
             $user->disabled_at = null;
             $this->s['totals']['reenabled']++;
         }
-        $after = $user->only(['name', 'upn', 'email', 'department', 'user_type', 'account_enabled']);
+        $after = $user->only(['name', 'upn', 'email', 'department', 'user_type', 'account_enabled', 'manager_entra_oid']);
         if ($before !== $after || $user->isDirty('is_active')) {
             $this->s['totals']['updated']++;
             $this->sample('update', 'user', $user->name, $user->upn);
@@ -708,6 +713,44 @@ class DirectorySyncService
             $this->s['totals']['unchanged']++;
         }
         $user->save();
+        $this->resolveManagerRelationship($user, $tenant);
+    }
+
+    /** @return array{bool, ?string} */
+    private function managerOid(array $user): array
+    {
+        if (array_key_exists('manager@delta', $user)) {
+            $manager = array_values((array) $user['manager@delta'])[0] ?? null;
+
+            return [true, is_array($manager) && isset($manager['id']) ? strtolower((string) $manager['id']) : null];
+        }
+        if (array_key_exists('manager', $user)) {
+            $manager = $user['manager'];
+
+            return [true, is_array($manager) && isset($manager['id']) ? strtolower((string) $manager['id']) : null];
+        }
+
+        return [false, null];
+    }
+
+    /** Resolve only inside the same Entra tenant; keep the OID when the manager is imported later. */
+    private function resolveManagerRelationship(User $user, string $tenant): void
+    {
+        $managerId = null;
+        if ($user->manager_entra_oid && $user->manager_entra_oid !== $user->entra_oid) {
+            $managerId = User::where('entra_tid', $tenant)->where('entra_oid', $user->manager_entra_oid)->value('id');
+        }
+        if ($user->manager_user_id !== $managerId) {
+            $user->manager_user_id = $managerId;
+            $user->save();
+        }
+
+        if ($user->entra_oid) {
+            User::where('entra_tid', $tenant)
+                ->where('manager_entra_oid', $user->entra_oid)
+                ->where('id', '<>', $user->id)
+                ->update(['manager_user_id' => $user->id]);
+        }
     }
 
     /**

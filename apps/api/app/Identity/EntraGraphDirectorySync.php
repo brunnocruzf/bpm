@@ -12,7 +12,9 @@ use Closure;
  */
 class EntraGraphDirectorySync
 {
-    public const USER_SELECT = 'id,displayName,userPrincipalName,mail,department,accountEnabled,userType';
+    public const USER_PROPERTIES = 'id,displayName,userPrincipalName,mail,department,accountEnabled,userType';
+
+    public const USER_SELECT = self::USER_PROPERTIES.',manager';
 
     public const GROUP_SELECT = 'id,displayName,description,mail,securityEnabled';
 
@@ -47,7 +49,7 @@ class EntraGraphDirectorySync
     /** @return array<string,mixed> */
     public function user(string $id): array
     {
-        return $this->graph->get('users/'.rawurlencode($id).'?$select='.self::USER_SELECT);
+        return $this->graph->get('users/'.rawurlencode($id).'?$select='.self::USER_PROPERTIES.'&$expand=manager($select=id)');
     }
 
     /** @return array<string,mixed> */

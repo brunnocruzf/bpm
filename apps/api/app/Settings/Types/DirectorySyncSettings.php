@@ -20,7 +20,7 @@ class DirectorySyncSettings extends SettingType
     public const KEY = 'entra.directory';
 
     public const PERMISSIONS = [
-        ['permission' => 'User.Read.All', 'type' => 'Application', 'why' => 'Ler usuários (users/delta, users/{id}).'],
+        ['permission' => 'User.Read.All', 'type' => 'Application', 'why' => 'Ler usuários e o vínculo de manager (users/delta, users/{id}).'],
         ['permission' => 'Group.Read.All', 'type' => 'Application', 'why' => 'Ler grupos (selecionados ou todos) e membros (groups/delta com members). Avaliar GroupMember.Read.All na POC.'],
     ];
 

@@ -41,7 +41,7 @@ class UserManagementController extends ApiController
             }
         }
         $request->validate(['q' => ['nullable', 'string', 'max:200'], 'source' => ['nullable', 'in:entra,local,demo,superadmin'], 'active' => ['nullable', 'boolean'], 'area' => ['nullable', 'string', 'max:200'], 'role' => ['nullable', 'in:'.implode(',', array_values((array) config('bpm.roles')))], 'group' => ['nullable', 'exists:bpm_groups,key'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100']]);
-        $query = User::query();
+        $query = User::query()->with('manager:id,name,email,username,auth_source');
         if ($q = trim((string) $request->query('q', ''))) {
             $like = '%'.mb_strtolower($q).'%';
             $query->where(fn ($w) => $w->whereRaw('LOWER(name) LIKE ?', [$like])->orWhereRaw('LOWER(email) LIKE ?', [$like])->orWhereRaw('LOWER(upn) LIKE ?', [$like])->orWhereRaw('LOWER(username) LIKE ?', [$like]));
@@ -69,14 +69,14 @@ class UserManagementController extends ApiController
     public function show(string $id)
     {
         $this->authorizeAdmin();
-        $user = User::find($id) ?? throw ApiProblem::notFound();
+        $user = User::with('manager')->find($id) ?? throw ApiProblem::notFound();
         $credential = LocalCredential::where('user_id', $user->id)->first();
         $manual = BpmGroupMembership::with('group')->where('user_id', $user->id)->where('source', 'manual')->get();
         $events = AuditEvent::where('entity_type', 'user')->where('entity_id', $user->id)->orderByDesc('occurred_at')->paginate(20);
 
         return response()->json(['data' => [
             'identity' => ['id' => $user->id, 'name' => $user->name, 'username' => $user->username, 'email' => $user->email, 'upn' => $user->upn, 'authSource' => $user->auth_source, 'entraOid' => $user->entra_oid, 'entraTid' => $user->entra_tid],
-            'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type],
+            'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type, 'manager' => $user->manager?->name],
             'account' => ['active' => $user->is_active, 'accountEnabled' => $user->account_enabled, 'disabledReason' => $user->disabled_reason, 'createdAt' => $user->created_at?->toIso8601String(), 'updatedAt' => $user->updated_at?->toIso8601String(), 'lastLoginAt' => $credential?->last_login_at?->toIso8601String(), 'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'lockedUntil' => $credential?->locked_until?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String(), 'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists()],
             'access' => ['roles' => $user->roles ?? [], 'roleSources' => ['token' => $user->token_roles ?? [], 'directoryMapping' => $user->directory_roles ?? [], 'manual' => $user->manual_roles ?? []], 'groups' => $user->groups ?? [], 'groupSources' => ['entraToken' => $user->token_groups ?? [], 'directoryMapping' => $user->directory_groups ?? [], 'manual' => $manual->map(fn ($m) => ['key' => $m->group->key, 'name' => $m->group->name, 'createdAt' => $m->created_at?->toIso8601String(), 'createdBy' => $m->created_by_name])->values()]],
             'activity' => ['data' => $events->getCollection()->map(fn (AuditEvent $e) => ['action' => $e->action, 'label' => AuditCatalog::label($e->action), 'outcome' => $e->outcome, 'actor' => $e->actor_name, 'occurredAt' => $e->occurred_at->toIso8601String(), 'diff' => $e->diff])->values(), 'meta' => ['currentPage' => $events->currentPage(), 'lastPage' => $events->lastPage(), 'total' => $events->total()]],
@@ -183,6 +183,8 @@ class UserManagementController extends ApiController
     {
         return ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'upn' => $user->upn, 'username' => $user->username, 'area' => $user->area,
             'department' => $user->department, 'authSource' => $user->auth_source, 'isActive' => $user->is_active, 'roles' => $user->roles ?? [], 'groups' => $user->groups ?? [],
+            'manager' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'username' => $user->manager->username, 'authSource' => $user->manager->auth_source] : null,
+            'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id,
             'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists(),
             'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String()];
     }

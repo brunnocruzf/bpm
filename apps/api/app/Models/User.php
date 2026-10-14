@@ -7,6 +7,8 @@ use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -43,6 +45,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $entra_oid
  * @property string|null $entra_tid
  * @property string|null $auth_source
+ * @property string|null $manager_entra_oid
+ * @property string|null $manager_user_id
  */
 class User extends Model implements AuthenticatableContract
 {
@@ -57,7 +61,7 @@ class User extends Model implements AuthenticatableContract
     public const SOURCE_LOCAL = 'local';
 
     protected $fillable = [
-        'entra_oid', 'entra_tid', 'username', 'name', 'email', 'upn', 'area', 'department', 'user_type', 'account_enabled',
+        'entra_oid', 'entra_tid', 'manager_entra_oid', 'manager_user_id', 'username', 'name', 'email', 'upn', 'area', 'department', 'user_type', 'account_enabled',
         'roles', 'groups', 'manual_groups', 'manual_roles', 'token_roles', 'token_groups', 'directory_roles', 'directory_groups', 'directory_synced_at',
         'is_active', 'disabled_reason', 'disabled_at', 'last_seen_at', 'auth_source',
     ];
@@ -84,6 +88,16 @@ class User extends Model implements AuthenticatableContract
     public function getRememberTokenName(): string
     {
         return '';
+    }
+
+    public function manager(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'manager_user_id');
+    }
+
+    public function directReports(): HasMany
+    {
+        return $this->hasMany(self::class, 'manager_user_id');
     }
 
     public function hasRole(string ...$roleKeys): bool

@@ -42,7 +42,7 @@ class MockGraphClient implements GraphClient
             'mail' => "usuario$n@tmsa.example", 'department' => $dept, 'accountEnabled' => $enabled, 'userType' => $type,
         ];
 
-        return collect([
+        $users = collect([
             $u('1', 'Usuária Um (fictícia)', 'Qualidade'),
             $u('2', 'Usuário Dois (fictício)', 'Qualidade'),
             $u('3', 'Usuária Três (fictícia)', 'Gestão de Fornecedores'),
@@ -50,6 +50,10 @@ class MockGraphClient implements GraphClient
             $u('5', 'Convidado Cinco (fictício)', 'Externo', true, 'Guest'),
             $u('6', 'Usuária Seis (fictícia)', 'Qualidade'),
         ])->keyBy('id')->all();
+        $managerId = '9a5d0000-0000-4000-8000-000000000001';
+        $users['9a5d0000-0000-4000-8000-000000000002']['manager'] = ['id' => $managerId];
+
+        return $users;
     }
 
     public function get(string $pathOrUrl): array
@@ -59,7 +63,16 @@ class MockGraphClient implements GraphClient
         parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
 
         if (str_ends_with($path, '/users/delta')) {
-            return $this->delta('users', array_values(self::users()), $q);
+            $users = array_map(function (array $user) {
+                if (isset($user['manager'])) {
+                    $user['manager@delta'] = [$user['manager'] + ['@odata.type' => '#microsoft.graph.user']];
+                    unset($user['manager']);
+                }
+
+                return $user;
+            }, array_values(self::users()));
+
+            return $this->delta('users', $users, $q);
         }
         if (str_ends_with($path, '/groups/delta')) {
             $ids = $this->filterIds((string) ($q['$filter'] ?? ''), $q);

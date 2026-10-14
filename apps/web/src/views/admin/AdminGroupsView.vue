@@ -12,7 +12,8 @@ import { fmtDateTime } from '@/composables/format'
 
 type Tab = 'users' | 'groups' | 'roles'
 interface Group { key: string; name: string; description: string | null; entraGroupId: string | null; email: string | null; members: number }
-interface UserRow { id: string; name: string; email: string | null; username: string | null; area: string | null; department: string | null; authSource: string | null; roles: string[]; groups: string[]; isActive: boolean; invitationPending: boolean; lastSeenAt: string | null }
+interface UserRow { id: string; name: string; email: string | null; username: string | null; area: string | null; department: string | null; authSource: string | null; roles: string[]; groups: string[]; isActive: boolean; invitationPending: boolean; lastSeenAt: string | null; manager: { id: string; name: string; email: string | null; username: string | null; authSource: string | null } | null; managerPending: boolean }
+type ProfileTarget = Pick<UserRow, 'id' | 'name'>
 interface PageMeta { currentPage: number; lastPage: number; total: number }
 interface Role { key: string; alias: string; name: string; active: boolean; userCount: number; permissions: { key: string; source: string }[]; users: { id: string; name: string; authSource: string; source: string; manual: boolean }[]; directoryMappings: { group: string | null; entraGroupId: string }[] }
 
@@ -49,7 +50,7 @@ const gateDefinitions = [
   { key: 'data.sensitive', description: 'Permite visualizar campos classificados como sensíveis em relatórios e respostas.' },
 ]
 const rolePage = ref(1)
-const selectedUser = ref<UserRow | null>(null)
+const selectedUser = ref<ProfileTarget | null>(null)
 const profile = ref<Record<string, any> | null>(null)
 const profileLoading = ref(false)
 const editing = ref<Group | null>(null)
@@ -110,7 +111,7 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
   const button = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]
   button?.focus(); selectTab(tab.id)
 }
-async function openProfile(user: UserRow) {
+async function openProfile(user: ProfileTarget) {
   selectedUser.value = user; profile.value = null; profileLoading.value = true
   try { profile.value = (await api<{ data: Record<string, any> }>(`/admin/managed-users/${user.id}`)).data } catch (e) { notify.error(e) } finally { profileLoading.value = false }
 }
@@ -285,9 +286,9 @@ onMounted(() => { void loadUsers() })
     </div>
     <p v-if="error" class="tm-error" role="alert">{{ error }}</p>
     <p v-else-if="loading" class="tm-empty" role="status">Carregando usuários…</p>
-    <div v-else class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Nome</th><th>E-mail / usuário</th><th>Origem</th><th>Estado</th><th>Grupos</th><th>Papéis</th><th>Último acesso</th><th>Ações</th></tr></thead><tbody>
-      <tr v-for="u in users" :key="u.id"><td class="tm-strong">{{ u.name }}<div class="tm-flow-sub">{{ u.department || u.area || 'Centro de Custo não informado' }}</div></td><td>{{ u.email || u.username || '—' }}<div class="tm-flow-sub">{{ u.username }}</div></td><td>{{ u.authSource === 'entra' ? 'Entra ID' : u.authSource === 'local' ? 'Conta local' : u.authSource || 'Indisponível' }}</td><td><span class="tm-pill" :class="u.isActive ? 'green' : 'amber'">{{ u.isActive ? 'Ativo' : u.invitationPending ? 'Convite pendente' : 'Inativo' }}</span></td><td>{{ u.groups?.length ?? 0 }}</td><td>{{ u.roles?.length ?? 0 }}</td><td>{{ fmtDateTime(u.lastSeenAt) }}</td><td><div class="tm-actions"><button class="tm-btn small" @click="openProfile(u)">Perfil</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && !u.isActive && !u.invitationPending" class="tm-btn small" @click="resendInvitation(u)">Reenviar convite</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && (u.isActive || !u.invitationPending)" class="tm-btn small" @click="toggleUser(u)">{{ u.isActive ? 'Desativar' : 'Ativar' }}</button></div></td></tr>
-      <tr v-if="!users.length"><td colspan="8" class="tm-empty">Nenhum usuário encontrado.</td></tr>
+    <div v-else class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Nome</th><th>Manager</th><th>E-mail / usuário</th><th>Origem</th><th>Estado</th><th>Grupos</th><th>Papéis</th><th>Último acesso</th><th>Ações</th></tr></thead><tbody>
+      <tr v-for="u in users" :key="u.id"><td class="tm-strong">{{ u.name }}<div class="tm-flow-sub">{{ u.department || u.area || 'Centro de Custo não informado' }}</div></td><td><Button v-if="u.manager" class="tm-link-btn" :label="u.manager.name" link :aria-label="`Abrir perfil de ${u.manager.name}, manager de ${u.name}`" @click="openProfile(u.manager)" /><span v-else-if="u.managerPending" class="tm-flow-sub" title="A referência será vinculada quando o manager for importado">Aguardando importação</span><span v-else>—</span><div v-if="u.manager?.email" class="tm-flow-sub">{{ u.manager.email }}</div></td><td>{{ u.email || u.username || '—' }}<div class="tm-flow-sub">{{ u.username }}</div></td><td>{{ u.authSource === 'entra' ? 'Entra ID' : u.authSource === 'local' ? 'Conta local' : u.authSource || 'Indisponível' }}</td><td><span class="tm-pill" :class="u.isActive ? 'green' : 'amber'">{{ u.isActive ? 'Ativo' : u.invitationPending ? 'Convite pendente' : 'Inativo' }}</span></td><td>{{ u.groups?.length ?? 0 }}</td><td>{{ u.roles?.length ?? 0 }}</td><td>{{ fmtDateTime(u.lastSeenAt) }}</td><td><div class="tm-actions"><button class="tm-btn small" @click="openProfile(u)">Perfil</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && !u.isActive && !u.invitationPending" class="tm-btn small" @click="resendInvitation(u)">Reenviar convite</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && (u.isActive || !u.invitationPending)" class="tm-btn small" @click="toggleUser(u)">{{ u.isActive ? 'Desativar' : 'Ativar' }}</button></div></td></tr>
+      <tr v-if="!users.length"><td colspan="9" class="tm-empty">Nenhum usuário encontrado.</td></tr>
     </tbody></table></div>
     <div class="tm-pager" style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 16px"><span>Página {{ meta.currentPage }} de {{ meta.lastPage }}</span><button class="tm-btn small" :disabled="meta.currentPage <= 1 || loading" @click="loadUsers(meta.currentPage - 1)">Anterior</button><button class="tm-btn small" :disabled="meta.currentPage >= meta.lastPage || loading" @click="loadUsers(meta.currentPage + 1)">Próxima</button></div>
   </section>
