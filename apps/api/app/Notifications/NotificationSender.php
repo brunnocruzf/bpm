@@ -29,6 +29,7 @@ class NotificationSender
     public function __construct(
         private readonly SettingsRepository $settings,
         private readonly MailProviderFactory $factory,
+        private readonly EmailLayoutRenderer $emailLayout,
     ) {}
 
     public function send(string $id): void
@@ -63,7 +64,7 @@ class NotificationSender
                 $message->recipient_name,
                 $message->subject,
                 $body,
-                NotificationTemplate::html($body, (string) $brand['appName'], (string) config('app.frontend_url', config('app.url'))),
+                $this->emailLayout->render($message->event, $message->subject, $body, (array) ($cfg['layout'] ?? []), $brand),
                 (string) ($message->idempotency_key ?? $message->id),
                 $message->correlation_id,
             );

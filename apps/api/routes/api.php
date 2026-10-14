@@ -177,6 +177,7 @@ Route::prefix('v1')->group(function () {
             Route::post('entra/auth/deactivate', [SettingsController::class, 'deactivateEntraAuth']);
             Route::post('entra/directory-sync/test', [SettingsController::class, 'testDirectory'])->middleware('throttle:10,1');
             Route::post('email/test-connection', [SettingsController::class, 'testEmailConnection'])->middleware('throttle:10,1');
+            Route::post('email/preview-template', [SettingsController::class, 'previewEmailTemplate'])->middleware('throttle:30,1');
             Route::post('email/test', [SettingsController::class, 'sendTestEmail'])->middleware('throttle:10,1');
             Route::get('email/test/{id}', [SettingsController::class, 'testEmailStatus'])->whereUuid('id');
             Route::post('reports/carbone-health', [SettingsController::class, 'carboneHealth'])->middleware('throttle:10,1');

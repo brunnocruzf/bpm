@@ -7,6 +7,7 @@ use App\Mail\HostPolicy;
 use App\Mail\MailException;
 use App\Models\AppSetting;
 use App\Models\User;
+use App\Notifications\EmailLayout;
 use App\Settings\SecretStore;
 use App\Settings\SettingType;
 use App\Support\ApiProblem;
@@ -51,6 +52,7 @@ class EmailSettings extends SettingType
             'fromName' => 'BPM TMSA',
             'replyTo' => '',
             'timeout' => (int) config('bpm.mail.timeout', 15),
+            'layout' => EmailLayout::defaults(),
             'smtp' => ['host' => '', 'port' => 587, 'encryption' => 'starttls', 'auth' => true, 'username' => '', 'passwordRef' => null],
             'm365' => [
                 'tenantId' => '', 'clientId' => '', 'authorityHost' => 'login.microsoftonline.com', 'credentialType' => 'certificate',
@@ -87,6 +89,9 @@ class EmailSettings extends SettingType
         }
         if (array_key_exists('timeout', $input)) {
             $v['timeout'] = max(5, min(60, (int) $input['timeout']));
+        }
+        if (isset($input['layout']) && is_array($input['layout'])) {
+            $v['layout'] = EmailLayout::normalize($input['layout'], (array) ($v['layout'] ?? EmailLayout::defaults()));
         }
 
         $smtp = (array) ($input['smtp'] ?? []);

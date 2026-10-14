@@ -10,12 +10,16 @@ use App\Models\AppSettingRevision;
 use App\Models\AuditEvent;
 use App\Models\NotificationMessage;
 use App\Models\SecretEntry;
+use App\Notifications\EmailLayout;
+use App\Notifications\EmailLayoutRenderer;
 use App\Notifications\NotificationSender;
 use App\Notifications\Notifier;
 use App\Settings\Types\EmailSettings;
 use App\Support\ApiProblem;
 use App\Support\Correlation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -123,6 +127,66 @@ class EmailSettingsTest extends TestCase
         $this->assertSame(['teste@tmsa.example'], $this->mail->recipients());
         $this->as('admin')->getJson("/api/v1/admin/settings/email/test/$id")->assertOk()->assertJsonPath('state', 'sent')->assertJsonPath('providerMessageId', 'fake-1');
         $this->as('admin')->getJson('/api/v1/admin/settings/email')->assertJsonPath('status', 'configured')->assertJsonPath('lastValidation.code', 'test_email_sent');
+    }
+
+    public function test_email_layout_is_configurable_and_previewed_as_email_safe_html(): void
+    {
+        $this->as('admin')->putJson('/api/v1/admin/settings/email', [
+            'layout' => ['accentColor' => '#245b8f', 'headerTitle' => 'Operações TMSA', 'footerText' => 'Mensagem automática.'],
+        ])->assertOk()->assertJsonPath('value.layout.headerTitle', 'Operações TMSA');
+
+        $preview = $this->as('admin')->postJson('/api/v1/admin/settings/email/preview-template', [
+            'sample' => 'stage.completed',
+            'layout' => ['accentColor' => '#245b8f', 'headerTitle' => 'Operações TMSA', 'footerText' => 'Mensagem automática.'],
+        ])->assertOk()->assertJsonPath('renderer', 'native')->json('html');
+
+        $this->assertStringContainsString('role="presentation"', $preview);
+        $this->assertStringContainsString('Operações TMSA', $preview);
+        $this->assertStringContainsString('Etapa concluída', $preview);
+        $this->assertStringContainsString('Acompanhar solicitação', $preview);
+        $this->assertStringContainsString('Mensagem automática.', $preview);
+        $this->assertStringNotContainsString('<script', strtolower($preview));
+
+        $invite = $this->as('admin')->postJson('/api/v1/admin/settings/email/preview-template', [
+            'sample' => 'identity.invitation',
+            'layout' => ['accentColor' => '#245b8f', 'headerTitle' => 'Operações TMSA', 'footerText' => 'Mensagem automática.'],
+        ])->assertOk()->json('html');
+        $this->assertStringContainsString('Você recebeu um convite', $invite);
+        $this->assertStringContainsString('Ativar minha conta', $invite);
+        $this->assertStringContainsString('/invite/preview-token', $invite);
+    }
+
+    public function test_notification_delivery_uses_the_shared_professional_email_layout(): void
+    {
+        $this->saveSmtp(['password' => 'x1'])->assertOk();
+        $base = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+        app(Notifier::class)->toGroup('GEF', 'stage.completed', 'Etapa concluída', "A etapa \"Conferência\" foi concluída.\n\nAcompanhe: $base/instances/demo", null, 'k:email-layout');
+        $this->drainNotifications();
+
+        $this->assertCount(1, $this->mail->sent);
+        $html = $this->mail->sent[0]->html;
+        $this->assertStringContainsString('Etapa concluída', $html);
+        $this->assertStringContainsString('Acompanhar solicitação', $html);
+        $this->assertStringContainsString('role="presentation"', $html);
+        $this->assertStringContainsString('href="'.$base.'/instances/demo"', $html);
+    }
+
+    public function test_email_renderer_uses_carbone_html_when_enabled_and_escapes_template_data(): void
+    {
+        config(['bpm.reports.carbone' => [
+            'enabled' => true, 'base_url' => 'http://carbone.test', 'timeout' => 10, 'token_file' => null,
+        ]]);
+        Http::fake(['carbone.test/render/template*' => Http::response('<html><body>rendered by carbone</body></html>', 200, ['Content-Type' => 'text/html'])]);
+
+        $html = app(EmailLayoutRenderer::class)->render('stage.completed', 'A & B', 'Corpo seguro', EmailLayout::defaults(), ['orgName' => 'TMSA']);
+
+        $this->assertSame('<html><body>rendered by carbone</body></html>', $html);
+        Http::assertSent(fn (ClientRequest $request): bool => $request->method() === 'POST');
+        $request = Http::recorded()->first()[0];
+        $payload = $request->data();
+        $this->assertStringContainsString('/render/template', $request->url());
+        $this->assertSame('html', $payload['convertTo'] ?? null);
+        $this->assertStringContainsString('A &amp; B', (string) ($payload['data']['subject'] ?? ''));
     }
 
     public function test_transient_failures_retry_with_backoff_then_dead_letter_and_manual_retry(): void

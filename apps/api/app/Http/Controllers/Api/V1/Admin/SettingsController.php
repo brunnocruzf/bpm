@@ -13,6 +13,8 @@ use App\Mail\MailProviderFactory;
 use App\Models\AppSetting;
 use App\Models\BrandingAsset;
 use App\Models\NotificationMessage;
+use App\Notifications\EmailLayout;
+use App\Notifications\EmailLayoutRenderer;
 use App\Notifications\Notifier;
 use App\Reports\CarboneReportRenderer;
 use App\Settings\SettingsRepository;
@@ -247,6 +249,26 @@ class SettingsController extends ApiController
             "Este é um e-mail de teste enviado por {$this->user()->name} em Configurações → E-mail e notificações.\n\nProvedor: ".EmailSettings::PROVIDERS[$cfg['provider']].".\nSe você recebeu esta mensagem, o envio está funcionando.");
 
         return response()->json($this->testView($message), 202);
+    }
+
+    public function previewEmailTemplate(Request $request, EmailLayoutRenderer $renderer): JsonResponse
+    {
+        $this->authorizeSettings();
+        if (strlen((string) $request->getContent()) > 16 * 1024) {
+            throw ApiProblem::validation(['body' => ['Payload de prévia muito grande.']]);
+        }
+        $data = $request->validate([
+            'sample' => ['required', 'string', 'in:task.assigned,stage.completed,identity.invitation,identity.password_reset,admin.alert'],
+            'layout' => ['sometimes', 'array'],
+            'layout.accentColor' => ['sometimes', 'string', 'max:7'],
+            'layout.headerTitle' => ['sometimes', 'string', 'max:80'],
+            'layout.footerText' => ['sometimes', 'string', 'max:240'],
+        ]);
+        $settings = $this->settings->value(app(EmailSettings::class));
+        $layout = EmailLayout::normalize((array) ($data['layout'] ?? []), (array) ($settings['layout'] ?? EmailLayout::defaults()));
+        $branding = $this->settings->value(app(BrandingSettings::class));
+
+        return response()->json($renderer->preview((string) $data['sample'], $layout, $branding));
     }
 
     public function testEmailStatus(string $id): JsonResponse

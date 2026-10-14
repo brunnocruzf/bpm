@@ -13,6 +13,7 @@ const notify = useNotify()
 
 const form = reactive({
   provider: 'disabled', fromAddress: '', fromName: '', replyTo: '', timeout: 15,
+  layout: { accentColor: '#f36d32', headerTitle: 'BPM TMSA', footerText: 'Mensagem automática do BPM TMSA. Não responda a este e-mail.' },
   smtp: { host: '', port: 587, encryption: 'starttls', auth: true, username: '' },
   m365: { tenantId: '', clientId: '', credentialType: 'certificate', senderMailbox: '', saveToSentItems: false, checklist: { mailSendPermission: false, mailboxRestricted: false, smtpAuthEnabled: false } as Record<string, boolean> },
 })
@@ -20,6 +21,10 @@ const secret = reactive({ smtpPassword: '', smtpPasswordFileRef: '', m365Certifi
 const testTo = ref('')
 interface TestMsg { id: string; state: string; provider: string | null; providerMessageId: string | null; errorCode: string | null; error: string | null; attempts: number; createdAt: string; sentAt: string | null; durationMs: number | null }
 const testMsg = ref<TestMsg | null>(null)
+const previewSample = ref('stage.completed')
+const previewHtml = ref('')
+const previewRenderer = ref('')
+const previewLoading = ref(false)
 // recarrega o log depois de salvar/testar
 const logKey = ref(0)
 let poll: number | undefined
@@ -32,12 +37,17 @@ function fill() {
   if (!v) return
   Object.assign(form, {
     provider: v.provider, fromAddress: v.fromAddress, fromName: v.fromName, replyTo: v.replyTo, timeout: v.timeout,
+    layout: { ...form.layout, ...(v.layout ?? {}) },
     smtp: { host: v.smtp.host, port: v.smtp.port, encryption: v.smtp.encryption, auth: v.smtp.auth, username: v.smtp.username },
     m365: { tenantId: v.m365.tenantId, clientId: v.m365.clientId, credentialType: v.m365.credentialType, senderMailbox: v.m365.senderMailbox, saveToSentItems: v.m365.saveToSentItems, checklist: { ...form.m365.checklist, ...(v.m365.checklist ?? {}) } },
   })
 }
 watch(setting, fill)
-onMounted(load)
+onMounted(async () => {
+  await load()
+  fill()
+  await refreshPreview()
+})
 onBeforeUnmount(() => window.clearTimeout(poll))
 
 watch(() => form.smtp.encryption, (e) => {
@@ -46,7 +56,7 @@ watch(() => form.smtp.encryption, (e) => {
 })
 
 async function submit() {
-  const body: any = { provider: form.provider, fromAddress: form.fromAddress, fromName: form.fromName, replyTo: form.replyTo, timeout: form.timeout, smtp: { ...form.smtp }, m365: { ...form.m365 } }
+  const body: any = { provider: form.provider, fromAddress: form.fromAddress, fromName: form.fromName, replyTo: form.replyTo, timeout: form.timeout, layout: { ...form.layout }, smtp: { ...form.smtp }, m365: { ...form.m365 } }
   if (secret.smtpPassword) body.smtp.password = secret.smtpPassword
   if (secret.smtpPasswordFileRef) body.smtp.passwordFileRef = secret.smtpPasswordFileRef
   if (secret.m365CertificatePem) body.m365.certificatePem = secret.m365CertificatePem
@@ -57,6 +67,21 @@ async function submit() {
     emit('changed')
   }
   logKey.value++
+}
+
+async function refreshPreview() {
+  previewLoading.value = true
+  try {
+    const result = await api<{ html: string; renderer: string }>('/admin/settings/email/preview-template', {
+      method: 'POST', body: { sample: previewSample.value, layout: { ...form.layout } },
+    })
+    previewHtml.value = result.html
+    previewRenderer.value = result.renderer
+  } catch (e) {
+    notify.error(e)
+  } finally {
+    previewLoading.value = false
+  }
 }
 
 async function testConnection() {
@@ -170,6 +195,55 @@ const STATE_LABEL: Record<string, string> = { queued: 'Na fila', sending: 'Envia
     </section>
   </div>
 
+  <section class="tm-panel layout-panel">
+    <div class="tm-panel-head">
+      <div>
+        <div class="tm-panel-title">Layout dos e-mails</div>
+        <div class="tm-hint">Um modelo responsivo e compatível com Outlook, usado em notificações de etapas, aprovações, convites e mensagens operacionais.</div>
+      </div>
+    </div>
+    <div class="tm-panel-body">
+      <div class="layout-editor">
+        <div class="layout-fields">
+          <div class="tm-field">
+            <label for="email-header-title">Identificação do cabeçalho</label>
+            <input id="email-header-title" v-model="form.layout.headerTitle" maxlength="80" placeholder="BPM TMSA" />
+          </div>
+          <div class="tm-field">
+            <label for="email-accent">Cor de destaque</label>
+            <div class="color-control"><input id="email-accent" v-model="form.layout.accentColor" type="color" /><input v-model="form.layout.accentColor" aria-label="Código hexadecimal da cor" maxlength="7" /></div>
+            <div v-if="err('layout.accentColor')" class="tm-hint err">{{ err('layout.accentColor') }}</div>
+            <div class="tm-hint">A cor é verificada para manter contraste legível nos principais clientes de e-mail.</div>
+          </div>
+          <div class="tm-field">
+            <label for="email-footer">Rodapé</label>
+            <textarea id="email-footer" v-model="form.layout.footerText" maxlength="240" rows="3" placeholder="Mensagem automática do BPM TMSA. Não responda a este e-mail." />
+            <div class="tm-hint">{{ form.layout.footerText.length }}/240 caracteres</div>
+          </div>
+          <div class="tm-field">
+            <label for="email-preview-type">Exemplo para pré-visualização</label>
+            <select id="email-preview-type" v-model="previewSample">
+              <option value="stage.completed">Avanço de etapa</option>
+              <option value="task.assigned">Tarefa / aprovação pendente</option>
+              <option value="identity.invitation">Convite de usuário externo</option>
+              <option value="identity.password_reset">Redefinição de senha</option>
+              <option value="admin.alert">Alerta operacional</option>
+            </select>
+          </div>
+          <div class="tm-actions">
+            <button class="tm-btn" :disabled="previewLoading" @click="refreshPreview"><i class="pi pi-eye" aria-hidden="true" /> {{ previewLoading ? 'Gerando prévia…' : 'Atualizar prévia' }}</button>
+            <span v-if="previewRenderer" class="renderer-note"><i class="pi pi-check-circle" aria-hidden="true" /> Renderizador: {{ previewRenderer === 'carbone' ? 'Carbone' : 'template HTML padrão' }}</span>
+          </div>
+        </div>
+        <div class="email-preview" aria-label="Pré-visualização do e-mail">
+          <div v-if="!previewHtml" class="preview-empty"><i class="pi pi-envelope" aria-hidden="true" /> A prévia do e-mail aparecerá aqui.</div>
+          <iframe v-else :key="previewHtml" :srcdoc="previewHtml" title="Prévia do layout do e-mail" sandbox="" />
+        </div>
+      </div>
+      <div class="tm-actions layout-save"><button class="tm-btn primary" :disabled="saving" @click="submit">Salvar configuração e layout</button></div>
+    </div>
+  </section>
+
   <IntegrationLog
     area="email"
     title="Log de e-mail e notificações"
@@ -187,6 +261,19 @@ const STATE_LABEL: Record<string, string> = { queued: 'Na fila', sending: 'Envia
 h2 { margin: 14px 0 8px; }
 .check { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; margin-bottom: 8px; color: #43586a; }
 .steps { display: flex; flex-direction: column; gap: 9px; }
+.layout-panel { margin: 16px 0; }
+.layout-editor { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.layout-fields { display: flex; flex-direction: column; gap: 12px; }
+.layout-fields .tm-field { margin: 0; }
+.color-control { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; }
+.color-control input[type="color"] { width: 48px; height: 38px; padding: 3px; }
+.renderer-note { display: inline-flex; gap: 6px; align-items: center; color: var(--muted, #64748b); font-size: 12px; }
+.email-preview { min-height: 580px; overflow: hidden; border: 1px solid var(--line, #e7ebef); border-radius: 10px; background: #f1f4f7; }
+.email-preview iframe { display: block; width: 100%; height: 640px; border: 0; background: #f1f4f7; }
+.preview-empty { min-height: 580px; display: grid; place-content: center; gap: 10px; text-align: center; color: var(--muted, #64748b); font-size: 13px; }
+.preview-empty .pi { font-size: 28px; }
+.layout-save { justify-content: flex-end; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line, #e7ebef); }
 .err { color: var(--red); }
 code { font-size: 11px; background: #eef2f5; padding: 1px 4px; border-radius: 4px; }
+@media (max-width: 900px) { .layout-editor { grid-template-columns: 1fr; } .email-preview, .preview-empty { min-height: 480px; } .email-preview iframe { height: 520px; } }
 </style>
