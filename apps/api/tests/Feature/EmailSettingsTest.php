@@ -8,6 +8,7 @@ use App\Mail\SmtpMailProvider;
 use App\Models\AppSetting;
 use App\Models\AppSettingRevision;
 use App\Models\AuditEvent;
+use App\Models\BrandingAsset;
 use App\Models\NotificationMessage;
 use App\Models\SecretEntry;
 use App\Notifications\EmailLayout;
@@ -131,25 +132,35 @@ class EmailSettingsTest extends TestCase
 
     public function test_email_layout_is_configurable_and_previewed_as_email_safe_html(): void
     {
-        $this->as('admin')->putJson('/api/v1/admin/settings/email', [
-            'layout' => ['accentColor' => '#245b8f', 'headerTitle' => 'Operações TMSA', 'footerText' => 'Mensagem automática.'],
+        $layout = [
+            'accentColor' => '#245b8f', 'headerTitle' => 'Operações TMSA', 'footerText' => 'Mensagem automática.',
+            'linkHelpText' => 'Link alternativo:',
+            'texts' => ['stage.completed' => [
+                'eyebrow' => 'Atualização importante', 'headline' => 'Conferência finalizada',
+                'actionLabel' => 'Abrir solicitação', 'bodyIntro' => 'Confira a atualização a seguir.',
+            ]],
+        ];
+        $saved = $this->as('admin')->putJson('/api/v1/admin/settings/email', [
+            'layout' => $layout,
         ])->assertOk()->assertJsonPath('value.layout.headerTitle', 'Operações TMSA');
+        $this->assertSame('Conferência finalizada', $saved->json('value.layout.texts')['stage.completed']['headline']);
 
         $preview = $this->as('admin')->postJson('/api/v1/admin/settings/email/preview-template', [
-            'sample' => 'stage.completed',
-            'layout' => ['accentColor' => '#245b8f', 'headerTitle' => 'Operações TMSA', 'footerText' => 'Mensagem automática.'],
+            'sample' => 'stage.completed', 'layout' => $layout,
         ])->assertOk()->assertJsonPath('renderer', 'native')->json('html');
 
         $this->assertStringContainsString('role="presentation"', $preview);
         $this->assertStringContainsString('Operações TMSA', $preview);
-        $this->assertStringContainsString('Etapa concluída', $preview);
-        $this->assertStringContainsString('Acompanhar solicitação', $preview);
+        $this->assertStringContainsString('Conferência finalizada', $preview);
+        $this->assertStringContainsString('Abrir solicitação', $preview);
+        $this->assertStringContainsString('Confira a atualização a seguir.', $preview);
+        $this->assertStringContainsString('Link alternativo:', $preview);
         $this->assertStringContainsString('Mensagem automática.', $preview);
         $this->assertStringNotContainsString('<script', strtolower($preview));
 
         $invite = $this->as('admin')->postJson('/api/v1/admin/settings/email/preview-template', [
             'sample' => 'identity.invitation',
-            'layout' => ['accentColor' => '#245b8f', 'headerTitle' => 'Operações TMSA', 'footerText' => 'Mensagem automática.'],
+            'layout' => $layout,
         ])->assertOk()->json('html');
         $this->assertStringContainsString('Você recebeu um convite', $invite);
         $this->assertStringContainsString('Ativar minha conta', $invite);
@@ -171,6 +182,32 @@ class EmailSettingsTest extends TestCase
         $this->assertStringContainsString('href="'.$base.'/instances/demo"', $html);
     }
 
+    public function test_email_layout_uses_the_published_primary_logo_and_custom_event_texts(): void
+    {
+        $asset = BrandingAsset::create([
+            'kind' => 'logo_main', 'disk' => 'local', 'object_key' => 'branding/logo-main.png', 'content_type' => 'image/png',
+            'size' => 1200, 'width' => 240, 'height' => 80, 'sha256' => str_repeat('a', 64), 'av_status' => 'clean',
+            'created_by' => $this->dev('admin')->id, 'created_at' => now('UTC'),
+        ]);
+        $layout = EmailLayout::normalize([
+            'texts' => ['stage.completed' => [
+                'eyebrow' => 'Etapa atualizada', 'headline' => 'A conferência foi concluída',
+                'actionLabel' => 'Ver processo', 'bodyIntro' => 'Confira os detalhes abaixo.',
+            ]],
+        ], EmailLayout::defaults());
+        $base = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+
+        $html = app(EmailLayoutRenderer::class)->render('stage.completed', 'Assunto', 'A etapa foi concluída.', $layout, [
+            'orgName' => 'TMSA', 'logos' => ['main' => $asset->id],
+        ]);
+
+        $this->assertStringContainsString('src="'.$base.'/api/v1/public/branding/assets/'.$asset->id.'?v='.str_repeat('a', 12).'"', $html);
+        $this->assertStringContainsString('alt="Logo TMSA"', $html);
+        $this->assertStringContainsString('A conferência foi concluída', $html);
+        $this->assertStringContainsString('Confira os detalhes abaixo.', $html);
+        $this->assertStringContainsString('Ver processo', $html);
+    }
+
     public function test_email_renderer_uses_carbone_html_when_enabled_and_escapes_template_data(): void
     {
         config(['bpm.reports.carbone' => [
@@ -187,6 +224,7 @@ class EmailSettingsTest extends TestCase
         $this->assertStringContainsString('/render/template', $request->url());
         $this->assertSame('html', $payload['convertTo'] ?? null);
         $this->assertStringContainsString('A &amp; B', (string) ($payload['data']['subject'] ?? ''));
+        $this->assertStringContainsString('<span', (string) ($payload['data']['logoHtml'] ?? ''));
     }
 
     public function test_transient_failures_retry_with_backoff_then_dead_letter_and_manual_retry(): void

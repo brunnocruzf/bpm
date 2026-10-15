@@ -11,9 +11,23 @@ const emit = defineEmits<{ changed: [] }>()
 const { setting, saving, err, load, save, action } = useSetting<any>('email')
 const notify = useNotify()
 
+type EmailTextConfig = { eyebrow: string; headline: string; actionLabel: string; bodyIntro: string }
+const DEFAULT_EMAIL_TEXTS: Record<string, EmailTextConfig> = {
+  'task.assigned': { eyebrow: 'Ação necessária', headline: 'Uma tarefa aguarda sua atenção', actionLabel: 'Acessar tarefa', bodyIntro: '' },
+  'stage.completed': { eyebrow: 'Atualização do processo', headline: 'Etapa concluída', actionLabel: 'Acompanhar solicitação', bodyIntro: '' },
+  'instance.ended': { eyebrow: 'Processo finalizado', headline: 'Solicitação encerrada', actionLabel: 'Ver solicitação', bodyIntro: '' },
+  'identity.invitation': { eyebrow: 'Acesso ao BPM', headline: 'Você recebeu um convite', actionLabel: 'Ativar minha conta', bodyIntro: '' },
+  'identity.password_reset': { eyebrow: 'Segurança da conta', headline: 'Redefina sua senha', actionLabel: 'Criar nova senha', bodyIntro: '' },
+  'admin.alert': { eyebrow: 'Operação do sistema', headline: 'Alerta do BPM', actionLabel: 'Abrir o BPM', bodyIntro: '' },
+  'email.test': { eyebrow: 'Verificação de entrega', headline: 'E-mail de teste', actionLabel: 'Acessar o BPM', bodyIntro: '' },
+}
 const form = reactive({
   provider: 'disabled', fromAddress: '', fromName: '', replyTo: '', timeout: 15,
-  layout: { accentColor: '#f36d32', headerTitle: 'BPM TMSA', footerText: 'Mensagem automática do BPM TMSA. Não responda a este e-mail.' },
+  layout: {
+    accentColor: '#f36d32', headerTitle: 'BPM TMSA', footerText: 'Mensagem automática do BPM TMSA. Não responda a este e-mail.',
+    linkHelpText: 'Se o botão não abrir, copie este endereço no navegador:',
+    texts: Object.fromEntries(Object.entries(DEFAULT_EMAIL_TEXTS).map(([key, value]) => [key, { ...value }])) as Record<string, EmailTextConfig>,
+  },
   smtp: { host: '', port: 587, encryption: 'starttls', auth: true, username: '' },
   m365: { tenantId: '', clientId: '', credentialType: 'certificate', senderMailbox: '', saveToSentItems: false, checklist: { mailSendPermission: false, mailboxRestricted: false, smtpAuthEnabled: false } as Record<string, boolean> },
 })
@@ -25,6 +39,7 @@ const previewSample = ref('stage.completed')
 const previewHtml = ref('')
 const previewRenderer = ref('')
 const previewLoading = ref(false)
+const selectedEmailText = computed(() => form.layout.texts[previewSample.value] ?? DEFAULT_EMAIL_TEXTS[previewSample.value])
 // recarrega o log depois de salvar/testar
 const logKey = ref(0)
 let poll: number | undefined
@@ -35,9 +50,11 @@ const isM365 = computed(() => form.provider === 'm365_graph' || form.provider ==
 function fill() {
   const v = setting.value?.value
   if (!v) return
+  const savedTexts = v.layout?.texts ?? {}
+  const texts = Object.fromEntries(Object.entries(DEFAULT_EMAIL_TEXTS).map(([key, defaults]) => [key, { ...defaults, ...(savedTexts[key] ?? {}) }])) as Record<string, EmailTextConfig>
   Object.assign(form, {
     provider: v.provider, fromAddress: v.fromAddress, fromName: v.fromName, replyTo: v.replyTo, timeout: v.timeout,
-    layout: { ...form.layout, ...(v.layout ?? {}) },
+    layout: { ...form.layout, ...(v.layout ?? {}), texts },
     smtp: { host: v.smtp.host, port: v.smtp.port, encryption: v.smtp.encryption, auth: v.smtp.auth, username: v.smtp.username },
     m365: { tenantId: v.m365.tenantId, clientId: v.m365.clientId, credentialType: v.m365.credentialType, senderMailbox: v.m365.senderMailbox, saveToSentItems: v.m365.saveToSentItems, checklist: { ...form.m365.checklist, ...(v.m365.checklist ?? {}) } },
   })
@@ -199,12 +216,13 @@ const STATE_LABEL: Record<string, string> = { queued: 'Na fila', sending: 'Envia
     <div class="tm-panel-head">
       <div>
         <div class="tm-panel-title">Layout dos e-mails</div>
-        <div class="tm-hint">Um modelo responsivo e compatível com Outlook, usado em notificações de etapas, aprovações, convites e mensagens operacionais.</div>
+        <div class="tm-hint">Um modelo responsivo usado em notificações de etapas, aprovações, convites e mensagens operacionais.</div>
       </div>
     </div>
     <div class="tm-panel-body">
       <div class="layout-editor">
         <div class="layout-fields">
+          <div class="tm-note"><i class="pi pi-image" aria-hidden="true" /><span>O cabeçalho usa automaticamente o <strong>Logo principal</strong> publicado em Organização e identidade visual. A imagem é carregada pela rota pública e versionada da própria plataforma.</span></div>
           <div class="tm-field">
             <label for="email-header-title">Identificação do cabeçalho</label>
             <input id="email-header-title" v-model="form.layout.headerTitle" maxlength="80" placeholder="BPM TMSA" />
@@ -221,14 +239,40 @@ const STATE_LABEL: Record<string, string> = { queued: 'Na fila', sending: 'Envia
             <div class="tm-hint">{{ form.layout.footerText.length }}/240 caracteres</div>
           </div>
           <div class="tm-field">
-            <label for="email-preview-type">Exemplo para pré-visualização</label>
+            <label for="email-link-help">Orientação para abrir o link</label>
+            <input id="email-link-help" v-model="form.layout.linkHelpText" maxlength="160" />
+          </div>
+          <div class="tm-field">
+            <label for="email-preview-type">Tipo de e-mail para editar e pré-visualizar</label>
             <select id="email-preview-type" v-model="previewSample">
               <option value="stage.completed">Avanço de etapa</option>
               <option value="task.assigned">Tarefa / aprovação pendente</option>
+              <option value="instance.ended">Solicitação encerrada</option>
               <option value="identity.invitation">Convite de usuário externo</option>
               <option value="identity.password_reset">Redefinição de senha</option>
               <option value="admin.alert">Alerta operacional</option>
+              <option value="email.test">E-mail de teste</option>
             </select>
+          </div>
+          <div v-if="selectedEmailText" class="message-customization">
+            <div class="message-customization-title">Textos deste e-mail</div>
+            <div class="tm-field">
+              <label for="email-eyebrow">Texto de contexto</label>
+              <input id="email-eyebrow" v-model="selectedEmailText.eyebrow" maxlength="80" />
+            </div>
+            <div class="tm-field">
+              <label for="email-headline">Título principal</label>
+              <input id="email-headline" v-model="selectedEmailText.headline" maxlength="140" />
+            </div>
+            <div class="tm-field">
+              <label for="email-action-label">Texto do botão</label>
+              <input id="email-action-label" v-model="selectedEmailText.actionLabel" maxlength="80" />
+            </div>
+            <div class="tm-field">
+              <label for="email-body-intro">Mensagem complementar</label>
+              <textarea id="email-body-intro" v-model="selectedEmailText.bodyIntro" maxlength="500" rows="3" placeholder="Opcional: uma orientação adicional antes dos detalhes da solicitação." />
+              <div class="tm-hint">Até 500 caracteres. O conteúdo dinâmico da solicitação continua no e-mail.</div>
+            </div>
           </div>
           <div class="tm-actions">
             <button class="tm-btn" :disabled="previewLoading" @click="refreshPreview"><i class="pi pi-eye" aria-hidden="true" /> {{ previewLoading ? 'Gerando prévia…' : 'Atualizar prévia' }}</button>
@@ -265,6 +309,8 @@ h2 { margin: 14px 0 8px; }
 .layout-editor { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
 .layout-fields { display: flex; flex-direction: column; gap: 12px; }
 .layout-fields .tm-field { margin: 0; }
+.message-customization { display: flex; flex-direction: column; gap: 10px; padding: 13px; border: 1px solid var(--line, #e7ebef); border-radius: 9px; background: #fbfcfd; }
+.message-customization-title { font-size: 13px; font-weight: 700; color: var(--ink, #172230); }
 .color-control { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 8px; }
 .color-control input[type="color"] { width: 48px; height: 38px; padding: 3px; }
 .renderer-note { display: inline-flex; gap: 6px; align-items: center; color: var(--muted, #64748b); font-size: 12px; }

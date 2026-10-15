@@ -258,7 +258,7 @@ class SettingsController extends ApiController
             throw ApiProblem::validation(['body' => ['Payload de prévia muito grande.']]);
         }
         $data = $request->validate([
-            'sample' => ['required', 'string', 'in:task.assigned,stage.completed,identity.invitation,identity.password_reset,admin.alert'],
+            'sample' => ['required', 'string', 'in:task.assigned,stage.completed,instance.ended,identity.invitation,identity.password_reset,admin.alert,email.test'],
             'layout' => ['sometimes', 'array'],
             'layout.accentColor' => ['sometimes', 'string', 'max:7'],
             'layout.headerTitle' => ['sometimes', 'string', 'max:80'],

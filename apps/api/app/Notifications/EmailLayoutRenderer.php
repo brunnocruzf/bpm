@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Branding\Contrast;
+use App\Models\BrandingAsset;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -14,17 +15,6 @@ use Illuminate\Support\Facades\Log;
  */
 final class EmailLayoutRenderer
 {
-    /** @var array<string,array{eyebrow:string,headline:string,action:string}> */
-    private const EVENTS = [
-        'task.assigned' => ['eyebrow' => 'Ação necessária', 'headline' => 'Uma tarefa aguarda sua atenção', 'action' => 'Acessar tarefa'],
-        'stage.completed' => ['eyebrow' => 'Atualização do processo', 'headline' => 'Etapa concluída', 'action' => 'Acompanhar solicitação'],
-        'instance.ended' => ['eyebrow' => 'Processo finalizado', 'headline' => 'Solicitação encerrada', 'action' => 'Ver solicitação'],
-        'identity.invitation' => ['eyebrow' => 'Acesso ao BPM', 'headline' => 'Você recebeu um convite', 'action' => 'Ativar minha conta'],
-        'identity.password_reset' => ['eyebrow' => 'Segurança da conta', 'headline' => 'Redefina sua senha', 'action' => 'Criar nova senha'],
-        'admin.alert' => ['eyebrow' => 'Operação do sistema', 'headline' => 'Alerta do BPM', 'action' => 'Abrir o BPM'],
-        'email.test' => ['eyebrow' => 'Verificação de entrega', 'headline' => 'E-mail de teste', 'action' => 'Acessar o BPM'],
-    ];
-
     /** @param array<string,mixed> $layout @param array<string,mixed> $branding */
     public function render(string $event, string $subject, string $text, array $layout, array $branding): string
     {
@@ -34,7 +24,7 @@ final class EmailLayoutRenderer
     /** @param array<string,mixed> $layout @param array<string,mixed> $branding @return array{html:string,renderer:string} */
     public function preview(string $sample, array $layout, array $branding): array
     {
-        $sample = in_array($sample, ['task.assigned', 'stage.completed', 'identity.invitation', 'identity.password_reset', 'admin.alert'], true)
+        $sample = array_key_exists($sample, EmailLayout::defaultTexts())
             ? $sample
             : 'task.assigned';
         $base = rtrim((string) config('app.frontend_url', config('app.url')), '/');
@@ -43,7 +33,9 @@ final class EmailLayoutRenderer
             'stage.completed' => ['subject' => '[TMSA] IRR-000123/26: etapa concluída', 'text' => "A etapa \"Conferência inicial\" da solicitação IRR-000123/26 (Recebimento de materiais) foi concluída.\n\nAcompanhe (login necessário): $base/instances/preview-instance"],
             'identity.invitation' => ['subject' => 'Ative sua conta BPM TMSA', 'text' => "Olá, Bruno.\n\nSeu acesso ao BPM TMSA foi preparado. Este convite é válido por 60 minutos e pode ser usado uma única vez.\n\nUse o botão para ativar sua conta: $base/invite/preview-token"],
             'identity.password_reset' => ['subject' => 'Redefina sua senha BPM TMSA', 'text' => "Recebemos uma solicitação para redefinir sua senha. O link é válido por 60 minutos e pode ser usado uma única vez.\n\nContinue com segurança: $base/password/reset/preview-token"],
+            'instance.ended' => ['subject' => '[TMSA] IRR-000123/26 encerrada', 'text' => "A solicitação IRR-000123/26 (Recebimento de materiais) foi encerrada.\n\nConsulte (login necessário): $base/instances/preview-instance"],
             'admin.alert' => ['subject' => '[BPM TMSA] Atenção necessária', 'text' => "Uma verificação operacional precisa de atenção da equipe administradora.\n\nConsulte o painel do BPM: $base/settings"],
+            'email.test' => ['subject' => '[TMSA] E-mail de teste', 'text' => "Este é um e-mail de teste enviado pela configuração de notificações.\n\nSe recebeu esta mensagem, o envio está funcionando.\n\nAcesse o BPM: $base"],
         ];
         $example = $examples[$sample];
 
@@ -58,22 +50,33 @@ final class EmailLayoutRenderer
         if (! Contrast::isHex($accent) || Contrast::bestForeground($accent)[1] < Contrast::TEXT_MIN) {
             $accent = EmailLayout::defaults()['accentColor'];
         }
-        $preset = self::EVENTS[$event] ?? ['eyebrow' => 'Notificação do processo', 'headline' => 'Atualização do BPM', 'action' => 'Abrir o BPM'];
+        $eventTexts = array_replace(
+            ['eyebrow' => 'Notificação do processo', 'headline' => 'Atualização do BPM', 'actionLabel' => 'Abrir o BPM', 'bodyIntro' => ''],
+            EmailLayout::defaultTexts()[$event] ?? [],
+            (array) ($layout['texts'][$event] ?? []),
+        );
         $appUrl = rtrim((string) config('app.frontend_url', config('app.url')), '/');
         [$actionUrl, $content] = $this->extractAction($text, $appUrl);
+        $bodyIntro = trim(strip_tags((string) ($eventTexts['bodyIntro'] ?? '')));
+        if ($bodyIntro !== '') {
+            $content = $bodyIntro."\n\n".$content;
+        }
+        $orgName = $this->plainText((string) ($branding['orgName'] ?? 'TMSA'));
         $data = [
             'preheader' => $this->plainText($subject),
             'headerTitle' => $this->plainText((string) $layout['headerTitle']),
-            'orgName' => $this->plainText((string) ($branding['orgName'] ?? 'TMSA')),
+            'orgName' => $orgName,
+            'logoHtml' => $this->logoHtml($branding, $appUrl, $orgName, (string) $layout['headerTitle']),
             'accentColor' => $accent,
             'accentTextColor' => Contrast::bestForeground($accent)[0],
-            'eyebrow' => $preset['eyebrow'],
-            'headline' => $preset['headline'],
+            'eyebrow' => $this->plainText((string) $eventTexts['eyebrow']),
+            'headline' => $this->plainText((string) $eventTexts['headline']),
             'subject' => $this->plainText($subject),
             'contentHtml' => $this->contentHtml($content),
             'actionUrl' => $actionUrl ?: $appUrl,
-            'actionLabel' => $actionUrl ? $preset['action'] : 'Acessar o BPM',
+            'actionLabel' => $this->plainText((string) $eventTexts['actionLabel']),
             'footerText' => $this->plainText((string) $layout['footerText']),
+            'linkHelpText' => $this->plainText((string) $layout['linkHelpText']),
             'year' => date('Y'),
         ];
         $template = (string) file_get_contents(resource_path('email/notification.html'));
@@ -117,6 +120,21 @@ final class EmailLayoutRenderer
         return implode('', $out);
     }
 
+    private function logoHtml(array $branding, string $appUrl, string $orgName, string $headerTitle): string
+    {
+        $id = (string) ($branding['logos']['main'] ?? '');
+        $asset = $id !== ''
+            ? BrandingAsset::query()->whereKey($id)->where('kind', 'logo_main')->where('av_status', '!=', 'infected')->first()
+            : null;
+        if (! $asset) {
+            return '<span style="font-family:Arial,Helvetica,sans-serif;font-size:20px;line-height:1.2;font-weight:700;color:#172230;">'.e($headerTitle).'</span>';
+        }
+
+        $url = $appUrl.'/api/v1/public/branding/assets/'.$asset->id.'?v='.substr($asset->sha256, 0, 12);
+
+        return '<img src="'.e($url).'" alt="'.e('Logo '.$orgName).'" height="48" style="display:block;height:48px;max-width:190px;width:auto;border:0;outline:none;text-decoration:none;">';
+    }
+
     private function renderWithCarbone(string $template, array $data): ?string
     {
         $cfg = (array) config('bpm.reports.carbone');
@@ -128,7 +146,7 @@ final class EmailLayoutRenderer
             $token = $tokenFile && is_readable((string) $tokenFile) ? trim((string) file_get_contents((string) $tokenFile)) : null;
             $carboneData = [];
             foreach ($data as $key => $value) {
-                $carboneData[$key] = $key === 'contentHtml'
+                $carboneData[$key] = in_array($key, ['contentHtml', 'logoHtml'], true)
                     ? (string) $value
                     : htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             }
@@ -166,10 +184,10 @@ final class EmailLayoutRenderer
 
     private function renderLocally(string $template, array $data): string
     {
-        $rawKeys = ['contentHtml'];
+        $rawKeys = ['contentHtml', 'logoHtml'];
         foreach ($data as $key => $value) {
             $replacement = in_array($key, $rawKeys, true) ? (string) $value : e((string) $value);
-            $template = str_replace('{d.'.$key.($key === 'contentHtml' ? ':html' : '').'}', $replacement, $template);
+            $template = str_replace('{d.'.$key.(in_array($key, $rawKeys, true) ? ':html' : '').'}', $replacement, $template);
         }
 
         return $template;

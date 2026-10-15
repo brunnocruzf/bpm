@@ -13,15 +13,18 @@
       <td align="center" style="padding:34px 14px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="620" style="width:100%;max-width:620px;border-collapse:separate;border-spacing:0;">
           <tr>
-            <td bgcolor="{d.accentColor}" style="padding:23px 30px;background-color:{d.accentColor};border-radius:12px 12px 0 0;">
+            <td bgcolor="#ffffff" style="padding:18px 25px;background-color:#ffffff;border:1px solid #dfe6ed;border-bottom:0;border-radius:12px 12px 0 0;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
                 <tr>
-                  <td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:20px;line-height:1.2;font-weight:700;letter-spacing:.2px;color:{d.accentTextColor};">{d.headerTitle}</td>
-                  <td align="right" valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:1.4;letter-spacing:1.1px;text-transform:uppercase;color:{d.accentTextColor};opacity:.88;">{d.orgName}</td>
+                  <td valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:20px;line-height:1.2;font-weight:700;letter-spacing:.2px;color:#172230;">{d.logoHtml:html}</td>
+                  <td align="right" valign="middle" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.4;color:#64748b;">
+                    <strong style="font-size:14px;color:#172230;">{d.headerTitle}</strong><br>{d.orgName}
+                  </td>
                 </tr>
               </table>
             </td>
           </tr>
+          <tr><td bgcolor="{d.accentColor}" height="4" style="height:4px;line-height:4px;font-size:0;background-color:{d.accentColor};">&nbsp;</td></tr>
           <tr>
             <td bgcolor="#ffffff" style="padding:32px 34px 30px;background-color:#ffffff;border:1px solid #dfe6ed;border-top:0;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
@@ -46,7 +49,7 @@
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:24px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#64748b;">Se o botão não abrir, copie este endereço no navegador:<br><a href="{d.actionUrl}" style="color:#245b8f;word-break:break-all;">{d.actionUrl}</a></td>
+                  <td style="padding:24px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#64748b;">{d.linkHelpText}<br><a href="{d.actionUrl}" style="color:#245b8f;word-break:break-all;">{d.actionUrl}</a></td>
                 </tr>
               </table>
             </td>
