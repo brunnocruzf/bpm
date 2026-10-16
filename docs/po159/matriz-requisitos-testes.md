@@ -129,4 +129,20 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | Diretório fictício serve fotos geradas (nunca de pessoas reais) | `UserPhotoTest::test_mock_transport_serves_generated_photos_and_404_for_the_others` | ✅ |
 | Avatar do topo: baixa a foto só quando a versão muda, revoga a URL e volta às iniciais | `apps/web/src/stores/session.spec.ts` | ✅ |
 
+## Armazenamento de anexos em Azure Blob (ADR-0018)
+
+| Requisito | Evidência | Status |
+|---|---|---|
+| Assinatura Shared Key conforme a especificação (exemplo documentado, `Content-Length` zero, emulador) | `SharedKeySignerTest` | ✅ |
+| Validação (conta, contêiner, prefixo, chave base64), anti-SSRF e emulador/produção | `AttachmentStorageSettingsTest::test_validation_ssrf_and_production_guards` | ✅ |
+| Chave somente escrita, nunca em resposta, revisão, auditoria ou log; estado por completude | `AttachmentStorageSettingsTest::test_status_follows_completeness_and_secret_is_write_only_and_never_logged` | ✅ |
+| Teste real grava, lê e apaga e relata cada etapa; falhas viram códigos estáveis; limpeza após falha | `AttachmentStorageSettingsTest::test_connection_test_really_writes_reads_and_deletes_and_reports_each_step` · `::test_connection_test_failures_become_stable_codes_and_no_secret_leaks` | ✅ |
+| Ativação exige teste aprovado na mesma versão; editar não troca o destino em vigor | `AttachmentStorageSettingsTest::test_activation_requires_a_passing_test_on_the_same_version_and_editing_keeps_the_active_target` | ✅ |
+| Novos anexos vão ao Azure, antigos seguem legíveis, voltar ao padrão mantém os do Azure | `AttachmentStorageSettingsTest::test_new_uploads_go_to_azure_old_ones_stay_readable_and_deactivating_returns_to_the_platform_disk` | ✅ |
+| Rotação mantém o destino; outro contêiner cria destino novo | `AttachmentStorageSettingsTest::test_key_rotation_keeps_the_target_and_a_different_container_creates_a_new_one` | ✅ |
+| Falha de upload = 503 sem fallback; limpeza de órfãos sobrevive a destino quebrado | `AttachmentStorageSettingsTest::test_upload_failure_is_a_503_without_falling_back_and_cleanup_survives_a_broken_target` | ✅ |
+| Assinatura, adaptador e prefixo contra o Azurite real | `tests/Integration/AzuriteBlobTest.php` (com `AZURITE_IT_ENDPOINT`) | ✅ |
+| Tela: chave nunca preenchida, "Ativar" depende do teste da versão; SPA não fala com o Azure | `AttachmentStorageSettings.spec.ts` · `boundaries.spec.ts` | ✅ |
+| Teste/ativação com conta real do Azure | Não executado (sem autorização/credencial) | ⏳ |
+
 Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web).

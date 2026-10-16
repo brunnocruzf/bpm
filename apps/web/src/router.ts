@@ -38,6 +38,7 @@ const routes: RouteRecordRaw[] = [
           { path: 'email', name: 'settings-email', component: () => import('./views/settings/EmailSettings.vue') },
           { path: 'audit-retention', name: 'settings-audit', component: () => import('./views/settings/AuditRetentionSettings.vue') },
           { path: 'reports', name: 'settings-reports', component: () => import('./views/settings/ReportSettings.vue') },
+          { path: 'attachments-storage', name: 'settings-attachments-storage', component: () => import('./views/settings/AttachmentStorageSettings.vue') },
         ],
       },
       { path: ':pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFoundView.vue') },

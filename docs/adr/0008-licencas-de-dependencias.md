@@ -24,6 +24,16 @@ Toda atualização de dependência passa por verificação de licença (campo `l
 - **Extensão PHP GD** (licença BSD-like) adicionada à imagem para recodificar logos.
 - Nenhuma dependência npm nova no SPA (MSAL já presente).
 
+## Atualização (armazenamento de anexos em Azure Blob — ADR-0018)
+
+- **Nenhuma dependência nova** (PHP ou npm): o transporte Shared Key é código próprio sobre o cliente HTTP do Laravel e o Flysystem 3 já instalado.
+- Avaliados e não adotados: `microsoft/azure-storage-blob` (SDK **aposentado em 17/03/2024**; exige Guzzle `~6|^7`, incompatível com o Guzzle 8 do projeto), `league/flysystem-azure-blob-storage` (abandonado) e `azure-oss/storage-blob-flysystem` (MIT, mantido pela comunidade; traz 6 pacotes e o `azure-oss/identity`, cujo `composer.json` não declara `license`, embora o repositório tenha LICENSE MIT — reprovaria a regra desta ADR sem exceção registrada, e usa Guzzle direto, fora do `Http::fake`).
+- **Azurite** (emulador do Azure Storage, licença **MIT**), imagem `mcr.microsoft.com/azure-storage/azurite:3.37.0` fixada por digest, **somente perfis dev/test** do Compose, rede interna.
+
+## Atualização (foto do Entra ID — ADR-0013)
+
+- Sem dependência nova: GD (JPEG/WebP) já faz parte da imagem da API; o SPA usa `fetch`/`Blob`/`URL.createObjectURL` nativos.
+
 ## Atualização (tela de login — ADR-0015)
 
 - **`@fontsource-variable/inter` 5.3.0** e **`@fontsource-variable/manrope` 5.3.0** — fontes sob **SIL Open Font License 1.1** (arquivo LICENSE conferido nos pacotes), versões fixadas; servidas pela própria aplicação (sem Google Fonts em runtime). A OFL permite empacotar com software, proibindo apenas a venda das fontes isoladamente.

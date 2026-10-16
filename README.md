@@ -26,7 +26,7 @@ Navegador ── HTTP(S) ──> reverse-proxy (Nginx) ──> web (Vue SPA est�
 - **Form.io** (builder/renderer) roda no navegador; schemas e submissões são persistidos e **validados no servidor** (ADR-0003).
 - **Login** (ADR-0004/0015): **Microsoft Entra ID** (MSAL no SPA, JWT validado no Laravel) como método principal; **visitante** (ambiente de demonstração com usuários fictícios — nunca em produção) e **SuperAdmin** (usuário e senha de emergência, desabilitado por padrão, IPs restritos em produção). Guia completo: `.claude/login/INSTRUCOES_DE_LOGIN.md`.
 - **AX 2012 R3**: adaptador com transporte por operação; nesta entrega só **mock** (nenhum contrato inventado) (ADR-0006).
-- **Configurações** (menu exclusivo de `settings.manage`): identidade visual, login Entra, importação de usuários/grupos via Graph, e-mail, auditoria/retenção e relatórios — valores versionados, segredos somente escrita no cofre criptografado (ADR-0013/0014).
+- **Configurações** (menu exclusivo de `settings.manage`): identidade visual, login Entra, importação de usuários/grupos via Graph, e-mail, auditoria/retenção, relatórios e armazenamento de anexos (plataforma ou Azure Blob) — valores versionados, segredos somente escrita no cofre criptografado (ADR-0013/0014).
 - **Auditoria** funcional append-only, tipada e correlacionada (ADR-0010); **notificação por etapa** e outbox de e-mail (ADR-0012); **relatórios** assíncronos com PDF/CSV/XLSX nativos e Carbone opcional (ADR-0011).
 
 ## Estrutura

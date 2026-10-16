@@ -24,6 +24,13 @@ describe('fronteiras do SPA', () => {
     expect(offenders).toEqual([])
   })
 
+  it('não fala com o Azure Blob Storage nem manipula SAS no browser (anexos passam pela API)', () => {
+    for (const { f, code } of sources) {
+      expect(code, f).not.toMatch(/https?:\/\/[^\s'"`]*blob\.core\.windows\.net/)
+      expect(code, f).not.toMatch(/[?&]sig=|SharedAccessSignature|x-ms-blob-type/)
+    }
+  })
+
   it('não usa client credentials nem envia client_secret ao Entra', () => {
     for (const { f, code } of sources) {
       expect(code, f).not.toMatch(/oauth2\/v2\.0\/token/)

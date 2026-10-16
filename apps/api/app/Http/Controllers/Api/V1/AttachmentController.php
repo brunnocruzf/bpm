@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\Attachment;
 use App\Models\TaskProjection;
 use App\Runtime\AttachmentService;
+use App\Storage\AttachmentStorage;
 use App\Support\ApiProblem;
+use App\Support\Masker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class AttachmentController extends ApiController
 {
@@ -50,11 +53,18 @@ class AttachmentController extends ApiController
     public function download(Attachment $attachment): StreamedResponse
     {
         abort_if($attachment->av_status === 'infected', 403);
-        $disk = Storage::disk($attachment->disk);
-        abort_unless($disk->exists($attachment->object_key), 404);
+        try {
+            $disk = app(AttachmentStorage::class)->disk($attachment->disk);
+            $exists = $disk->exists($attachment->object_key);
+        } catch (Throwable $e) {
+            Log::warning('Anexo: armazenamento indisponível no download', ['disk' => $attachment->disk, 'reason' => Masker::error($e)]);
+            abort(503, 'Armazenamento indisponível.');
+        }
+        abort_unless($exists, 404);
 
         return $disk->download($attachment->object_key, $attachment->original_name, [
             'Content-Type' => $attachment->content_type,
+            'Content-Length' => (string) $attachment->size,
             'X-Content-Type-Options' => 'nosniff',
             'Content-Security-Policy' => "default-src 'none'; sandbox",
         ]);

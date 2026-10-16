@@ -4,7 +4,7 @@
 
 ## Configurações tipadas e versionadas
 
-- `app_setting` (uma linha por seção: `branding`, `entra.auth`, `entra.directory`, `email`, `audit.retention`, `reports`) guarda **somente valores não secretos**, `version`, estado (`configured | incomplete | test_pending | error | disabled`), detalhe, última validação sanitizada e quem alterou. Cada gravação gera `app_setting_revision` (valor redigido) e evento `settings.updated` com diff.
+- `app_setting` (uma linha por seção: `branding`, `entra.auth`, `entra.directory`, `email`, `audit.retention`, `reports`, `attachments.storage`) guarda **somente valores não secretos**, `version`, estado (`configured | incomplete | test_pending | error | disabled`), detalhe, última validação sanitizada e quem alterou. Cada gravação gera `app_setting_revision` (valor redigido) e evento `settings.updated` com diff.
 - Cada seção é um `SettingType` (validação server-side, normalização, estado calculado, apresentação sem segredos). Validações/testes reais gravam `last_validation` — nunca um "sucesso fixo".
 - Organização **única** (TMSA); não há multi-tenancy.
 

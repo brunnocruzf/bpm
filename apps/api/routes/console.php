@@ -14,6 +14,10 @@ use App\Notifications\NotificationSender;
 use App\Notifications\Notifier;
 use App\Reports\ReportService;
 use App\Settings\SecretStore;
+use App\Settings\SettingsRepository;
+use App\Settings\Types\AttachmentStorageSettings;
+use App\Storage\AttachmentStorage;
+use App\Storage\Azure\AzureBlobClient;
 use App\Support\Masker;
 use Illuminate\Filesystem\AwsS3V3Adapter;
 use Illuminate\Support\Facades\Artisan;
@@ -134,12 +138,43 @@ Artisan::command('bpm:secrets-rotate', function (SecretStore $secrets) {
 Artisan::command('bpm:cleanup-orphans', function () {
     $ttl = (int) config('bpm.attachments.orphan_ttl_hours', 24);
     $orphans = Attachment::whereNull('process_instance_id')->whereNull('task_projection_id')->where('created_at', '<', now()->subHours($ttl))->get();
+    $removed = 0;
     foreach ($orphans as $a) {
-        Storage::disk($a->disk)->delete($a->object_key);
-        $a->delete();
+        try {
+            app(AttachmentStorage::class)->disk($a->disk)->delete($a->object_key);
+            $a->delete();
+            $removed++;
+        } catch (Throwable $e) {
+            $this->warn("Anexo {$a->id}: não removido do armazenamento — ".Masker::error($e));
+        }
     }
-    $this->info('Anexos órfãos removidos: '.$orphans->count());
+    $this->info("Anexos órfãos removidos: $removed de ".$orphans->count());
 })->purpose('Remove anexos enviados e nunca vinculados a uma solicitação');
+
+Artisan::command('bpm:storage-azure-init', function (SettingsRepository $settings, SecretStore $secrets) {
+    if (app()->environment('production')) {
+        $this->error('Comando recusado em produção: o contêiner é criado no portal do Azure.');
+
+        return 1;
+    }
+    $cfg = $settings->value(app(AttachmentStorageSettings::class));
+    $a = (array) $cfg['azure'];
+    if (($a['endpointMode'] ?? '') !== 'emulator' || ! AttachmentStorageSettings::emulatorAvailable()) {
+        $this->error('Salve o destino com o endpoint "emulador" em Configurações → Armazenamento de anexos (BPM_AZURITE_BLOB_ENDPOINT).');
+
+        return 1;
+    }
+    $key = $secrets->get($a['credentialRef'] ?? null);
+    if ($key === null || ($a['container'] ?? '') === '') {
+        $this->error('Informe contêiner e chave do emulador na configuração antes de criar o contêiner.');
+
+        return 1;
+    }
+    (new AzureBlobClient(AttachmentStorageSettings::account($cfg), $key, AttachmentStorageSettings::endpoint($cfg), (string) $a['container'], (string) config('bpm.storage.azure.api_version')))->createContainerIfMissing();
+    $this->info("Contêiner {$a['container']} pronto no emulador.");
+
+    return 0;
+})->purpose('Cria o contêiner privado no emulador Azurite (somente desenvolvimento/teste)');
 
 Artisan::command('bpm:storage-init', function () {
     $disk = (string) config('bpm.attachments.disk');

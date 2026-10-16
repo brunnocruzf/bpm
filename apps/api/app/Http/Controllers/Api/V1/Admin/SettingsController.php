@@ -19,12 +19,15 @@ use App\Notifications\Notifier;
 use App\Reports\CarboneReportRenderer;
 use App\Settings\SettingsRepository;
 use App\Settings\SettingType;
+use App\Settings\Types\AttachmentStorageSettings;
 use App\Settings\Types\AuditRetentionSettings;
 use App\Settings\Types\BrandingSettings;
 use App\Settings\Types\DirectorySyncSettings;
 use App\Settings\Types\EmailSettings;
 use App\Settings\Types\EntraAuthSettings;
 use App\Settings\Types\ReportSettings;
+use App\Storage\StorageProbe;
+use App\Storage\StorageTargetService;
 use App\Support\ApiProblem;
 use App\Support\AuditLogger;
 use Illuminate\Http\JsonResponse;
@@ -47,6 +50,7 @@ class SettingsController extends ApiController
         'email' => EmailSettings::class,
         'audit-retention' => AuditRetentionSettings::class,
         'reports' => ReportSettings::class,
+        'attachments-storage' => AttachmentStorageSettings::class,
     ];
 
     public function __construct(private readonly SettingsRepository $settings) {}
@@ -99,7 +103,7 @@ class SettingsController extends ApiController
             throw ApiProblem::validation(['body' => ['Payload inválido.']]);
         }
         $this->settings->update($type, $input, $this->user());
-        if (array_filter([$input['clientSecret'] ?? null, $input['certificatePem'] ?? null, $input['smtp']['password'] ?? null, $input['m365']['clientSecret'] ?? null, $input['m365']['certificatePem'] ?? null])) {
+        if (array_filter([$input['clientSecret'] ?? null, $input['certificatePem'] ?? null, $input['smtp']['password'] ?? null, $input['m365']['clientSecret'] ?? null, $input['m365']['certificatePem'] ?? null, $input['azure']['accountKey'] ?? null])) {
             AuditLogger::record('settings.secret_updated', 'app_setting', $type->key(), ['setting' => $type->key()], null, $this->user(), context: ['object_name' => $type->label()]);
         }
 
@@ -199,6 +203,59 @@ class SettingsController extends ApiController
         $this->settings->recordValidation($type, (bool) $result['ok'], $result, $this->user(), $setting->version);
 
         return $this->show($type);
+    }
+
+    // ------------------------------------------------------------------ armazenamento de anexos
+
+    public function testAttachmentStorage(StorageProbe $probe): JsonResponse
+    {
+        $this->authorizeSettings();
+        $type = app(AttachmentStorageSettings::class);
+        $setting = $this->settings->get($type->key());
+        $cfg = $this->settings->value($type);
+        if ($cfg['provider'] !== 'azure_blob') {
+            throw ApiProblem::validation(['provider' => ['Selecione o Azure Blob Storage para testar.']]);
+        }
+        if ($missing = $type->missing($cfg)) {
+            throw ApiProblem::validation(['azure' => ['Configuração incompleta: '.implode(', ', $missing).'.']]);
+        }
+        $result = $probe->run($cfg);
+        $this->settings->recordValidation($type, (bool) $result['ok'], $result, $this->user(), $setting->version);
+
+        return $this->show($type);
+    }
+
+    public function activateAttachmentStorage(StorageTargetService $targets): JsonResponse
+    {
+        $this->authorizeSettings();
+        $type = app(AttachmentStorageSettings::class);
+        $setting = $this->settings->get($type->key());
+        if ($setting->status !== AppSetting::CONFIGURED || ($setting->last_validation['code'] ?? null) !== 'storage_ok' || ($setting->last_validation['version'] ?? null) !== $setting->version) {
+            throw ApiProblem::conflict('Ative somente após um teste de gravação, leitura e exclusão bem-sucedido nesta versão da configuração.', 'validation_required');
+        }
+        $targets->activate($this->settings->value($type), $setting->version, $this->user());
+        $this->settings->activate($type, $this->user());
+
+        return $this->show($type);
+    }
+
+    public function deactivateAttachmentStorage(StorageTargetService $targets): JsonResponse
+    {
+        $this->authorizeSettings();
+        $type = app(AttachmentStorageSettings::class);
+        $targets->deactivate();
+        if (AppSetting::where('key', $type->key())->exists()) {
+            $this->settings->deactivate($type, $this->user());
+        }
+
+        return $this->show($type);
+    }
+
+    public function attachmentStorageUsage(StorageTargetService $targets): JsonResponse
+    {
+        $this->authorizeSettings();
+
+        return response()->json(['data' => $targets->usage()]);
     }
 
     // ------------------------------------------------------------------ e-mail

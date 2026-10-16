@@ -157,6 +157,13 @@ return [
         ],
     ],
 
+    // Destino dos anexos em Azure Blob Storage (configurado em Configurações → Armazenamento de anexos)
+    'storage' => [
+        'azure' => ['api_version' => '2023-11-03', 'timeout' => (int) env('BPM_STORAGE_TIMEOUT', 30), 'connect_timeout' => 5],
+        // somente desenvolvimento/teste (Azurite); proibido em produção. Formato: http://host:10000/{conta}
+        'emulator' => ['endpoint' => env('BPM_AZURITE_BLOB_ENDPOINT')],
+    ],
+
     'reports' => [
         'disk' => env('BPM_REPORTS_DISK', env('BPM_ATTACHMENTS_DISK', 'attachments_local')),
         'max_rows' => (int) env('BPM_REPORTS_MAX_ROWS', 20000),

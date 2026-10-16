@@ -31,7 +31,8 @@ O container `api` executa migrations, cria o bucket de anexos e (com `SEED_ON_ST
 | `scheduler` | `bpm:outbox` (10 s), `bpm:external-jobs` (15 s), `bpm:reconcile` (30 s), `bpm:notifications` (30 s), `bpm:directory-sync` (5 min, dispara conforme periodicidade), `bpm:reports-expire` (15 min), `bpm:cleanup-orphans` (1 h), `bpm:audit-retention` (03:30) |
 | `flowable-rest` | engine BPMN (rede interna) |
 | `postgres` | bancos `bpm_app` e `flowable` |
-| `storage` | RustFS (S3): anexos, logos, relatórios, arquivo de auditoria |
+| `storage` | RustFS (S3): anexos (padrão), logos, relatórios, arquivo de auditoria |
+| `azurite` (perfis dev/test) | Emulador do Azure Blob para testar o destino de anexos sem tocar na nuvem |
 | `mailpit` | perfil `dev`/`test`: captura de e-mails, sem rota de saída |
 | `carbone` | perfil `carbone`: somente após aprovação da licença (rede interna, porta não publicada) |
 
@@ -146,7 +147,16 @@ docker compose exec postgres pg_dump -U postgres -Fc flowable > flowable.dump
 # restaurar: pg_restore -U postgres -d <db> --clean <arquivo>
 ```
 
-Faça backup dos dois bancos **e** do volume `storagedata` no mesmo ponto no tempo; guarde a chave do cofre em local separado. Teste a restauração periodicamente. Em produção, use banco gerenciado/HA e política de backup imutável/offsite.
+## Armazenamento de anexos (Azure Blob)
+
+1. **Pré-requisitos (plataforma/Azure):** conta de armazenamento dedicada ao BPM, contêiner **privado**, Shared Key permitido na conta, soft delete/versionamento conforme a retenção, firewall liberando o servidor e o host `<conta>.blob.core.windows.net` declarado em `BPM_INTEGRATION_ALLOWED_HOSTS`.
+2. Configurações → Armazenamento de anexos → Azure Blob: conta, contêiner, prefixo, chave (ou `file:<nome>` de segredo montado — recomendado), referência da aprovação → **Salvar** → **Testar** → **Ativar**. Só os **novos** anexos mudam de destino; a tabela "Onde estão os anexos" mostra o uso por destino.
+3. **Rotação da chave:** gere a chave 2 no portal, informe-a aqui e salve, teste e ative (mesma conta/contêiner/prefixo = mesmo destino; anexos antigos seguem legíveis); depois regenere a chave 1.
+4. **Falhas:** `credential_invalid` (conta/chave), `container_not_found`, `container_public`, `storage_forbidden` (firewall/permissão), `shared_key_disabled` (Azure Policy), `clock_skew` (NTP), `target_blocked` (declarar o host). Cada código é explicado no log da tela. Upload com destino fora do ar devolve 503 (sem gravar em outro lugar).
+5. **Rollback:** "Voltar ao padrão" faz os novos anexos voltarem ao disco do ambiente; os anexos no Azure continuam legíveis enquanto a chave existir. **Não apague** a chave/conta enquanto houver anexos nela. Arquivos **não são migrados** automaticamente.
+6. **Desenvolvimento:** `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d azurite`, `BPM_AZURITE_BLOB_ENDPOINT=http://azurite:10000/devstoreaccount1` na API, endpoint "Emulador" na tela (chave pública documentada do Azurite) e `php artisan bpm:storage-azure-init` para criar o contêiner. Teste de integração: `AZURITE_IT_ENDPOINT=http://127.0.0.1:10000/devstoreaccount1 php artisan test --testsuite=Integration --filter=AzuriteBlobTest`.
+
+Faça backup dos dois bancos **e** do volume `storagedata` (e, com Azure, da política de soft delete/versionamento da conta) no mesmo ponto no tempo; guarde a chave do cofre em local separado. Teste a restauração periodicamente. Em produção, use banco gerenciado/HA e política de backup imutável/offsite.
 
 ## Rollback de versão da aplicação
 

@@ -172,7 +172,7 @@ Route::prefix('v1')->group(function () {
 
         // Configurações (settings.manage). Segredos são somente escrita.
         Route::prefix('admin/settings')->group(function () {
-            $slug = 'branding|entra/auth|entra/directory-sync|email|audit-retention|reports';
+            $slug = 'branding|entra/auth|entra/directory-sync|email|audit-retention|reports|attachments-storage';
             Route::get('/', [SettingsController::class, 'index']);
             Route::post('branding/assets', [SettingsController::class, 'uploadAsset'])->middleware('throttle:20,1');
             Route::get('branding/assets/{id}', [SettingsController::class, 'previewAsset'])->whereUuid('id');
@@ -186,9 +186,13 @@ Route::prefix('v1')->group(function () {
             Route::post('email/preview-template', [SettingsController::class, 'previewEmailTemplate'])->middleware('throttle:30,1');
             Route::post('email/test', [SettingsController::class, 'sendTestEmail'])->middleware('throttle:10,1');
             Route::get('email/test/{id}', [SettingsController::class, 'testEmailStatus'])->whereUuid('id');
+            Route::post('attachments-storage/test', [SettingsController::class, 'testAttachmentStorage'])->middleware('throttle:10,1');
+            Route::post('attachments-storage/activate', [SettingsController::class, 'activateAttachmentStorage']);
+            Route::post('attachments-storage/deactivate', [SettingsController::class, 'deactivateAttachmentStorage']);
+            Route::get('attachments-storage/usage', [SettingsController::class, 'attachmentStorageUsage']);
             Route::post('reports/carbone-health', [SettingsController::class, 'carboneHealth'])->middleware('throttle:10,1');
             // log das integrações: testes, configuração, entregas de e-mail, importação e acessos Entra
-            Route::get('logs/{area}', [IntegrationLogController::class, 'index'])->where('area', 'email|entra')->middleware('throttle:60,1');
+            Route::get('logs/{area}', [IntegrationLogController::class, 'index'])->where('area', 'email|entra|storage')->middleware('throttle:60,1');
             Route::get('{slug}', [SettingsController::class, 'get'])->where('slug', $slug);
             Route::put('{slug}', [SettingsController::class, 'update'])->where('slug', $slug)->middleware('throttle:30,1');
         });

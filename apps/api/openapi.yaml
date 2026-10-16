@@ -422,6 +422,14 @@ paths:
   /admin/roles/{roleKey}/users/{userId}:
     parameters: [{ name: roleKey, in: path, required: true, schema: { type: string } }, { name: userId, in: path, required: true, schema: { type: string, format: uuid } }]
     delete: { summary: "Removes only a manual role and preserves Entra/token sources", responses: { '204': { description: Removed }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/settings/attachments-storage/test:
+    post: { summary: "Teste real do Azure Blob (gravação, leitura SHA-256 e exclusão de um arquivo de prova) sobre a versão salva (settings.manage)", responses: { '200': { description: Setting }, '403': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } } }
+  /admin/settings/attachments-storage/activate:
+    post: { summary: "Ativa o destino para NOVOS anexos; exige teste aprovado na mesma versão (409 validation_required)", responses: { '200': { description: Setting }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/settings/attachments-storage/deactivate:
+    post: { summary: "Volta ao armazenamento da plataforma para novos anexos (os destinos aposentados continuam legíveis)", responses: { '200': { description: Setting } } }
+  /admin/settings/attachments-storage/usage:
+    get: { summary: "Arquivos e tamanho por destino", responses: { '200': { description: OK } } }
   /admin/integrations:
     get: { summary: "Saúde do engine/AX, outbox e notificações (sem segredos)", responses: { '200': { description: OK } } }
   /admin/engine-commands:
@@ -463,7 +471,7 @@ paths:
         in: path
         required: true
         description: Seção de configuração (aceita barras)
-        schema: { type: string, enum: [branding, entra/auth, entra/directory-sync, email, audit-retention, reports] }
+        schema: { type: string, enum: [branding, entra/auth, entra/directory-sync, email, audit-retention, reports, attachments-storage] }
     get: { summary: "Lê a configuração (segredos substituídos por metadados)", responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Setting' } } } } } }
     put:
       summary: Grava nova versão (validação server-side; segredos somente escrita; auditoria com diff redigido)

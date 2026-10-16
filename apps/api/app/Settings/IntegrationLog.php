@@ -24,15 +24,16 @@ use InvalidArgumentException;
  */
 final class IntegrationLog
 {
-    public const AREAS = ['email', 'entra'];
+    public const AREAS = ['email', 'entra', 'storage'];
 
     /** kinds por área */
     public const KINDS = [
         'email' => ['test', 'delivery', 'config'],
         'entra' => ['test', 'sync', 'access', 'config', 'mapping', 'user'],
+        'storage' => ['test', 'config'],
     ];
 
-    private const SETTINGS = ['email' => ['email'], 'entra' => ['entra.auth', 'entra.directory']];
+    private const SETTINGS = ['email' => ['email'], 'entra' => ['entra.auth', 'entra.directory'], 'storage' => ['attachments.storage']];
 
     private const CONFIG_ACTIONS = ['settings.updated', 'settings.secret_updated', 'settings.activated', 'settings.disabled'];
 
@@ -205,12 +206,13 @@ final class IntegrationLog
             'entra.auth/config' => 'Validação do login',
             'entra.directory/connection' => 'Teste de conexão e permissões (Graph)',
             'entra.directory/sync' => 'Alerta da sincronização',
+            'attachments.storage/connection' => 'Teste do armazenamento de anexos',
             default => 'Validação da configuração',
         };
         $d = (array) ($v->details ?? []);
         $facts = [];
         if ($v->provider) {
-            $facts[] = ['label' => $v->setting_key === 'email' ? 'Provedor' : 'Transporte', 'value' => EmailSettings::PROVIDERS[$v->provider] ?? ($v->provider === 'mock' ? 'Diretório fictício' : ($v->provider === 'graph' ? 'Microsoft Graph' : $v->provider))];
+            $facts[] = ['label' => $v->setting_key === 'email' ? 'Provedor' : 'Transporte', 'value' => EmailSettings::PROVIDERS[$v->provider] ?? ($v->provider === 'mock' ? 'Diretório fictício' : ($v->provider === 'graph' ? 'Microsoft Graph' : ($v->provider === 'azure_blob' ? 'Azure Blob Storage' : $v->provider)))];
         }
         if ($v->setting_version) {
             $facts[] = ['label' => 'Versão da configuração', 'value' => 'v'.$v->setting_version];
@@ -248,7 +250,7 @@ final class IntegrationLog
     {
         $data = (array) $e->data;
         $setting = (string) ($data['setting'] ?? '');
-        $settingLabel = ['email' => 'E-mail e notificações', 'entra.auth' => 'Entra ID — login', 'entra.directory' => 'Entra ID — importação'][$setting] ?? $setting;
+        $settingLabel = ['email' => 'E-mail e notificações', 'entra.auth' => 'Entra ID — login', 'entra.directory' => 'Entra ID — importação', 'attachments.storage' => 'Armazenamento de anexos'][$setting] ?? $setting;
         [$kind, $title, $level, $summary] = match ($e->action) {
             'settings.updated' => ['config', 'Configuração salva — '.$settingLabel, 'info', 'Versão '.($data['version'] ?? '?').' salva; estado: '.($data['status'] ?? '—').($e->diff ? ' · '.count($e->diff).' campo(s) alterado(s)' : '').'.'],
             'settings.secret_updated' => ['config', 'Segredo substituído — '.$settingLabel, 'info', 'Credencial gravada no cofre (o valor nunca é exibido nem registrado).'],
@@ -388,7 +390,7 @@ final class IntegrationLog
         $out = ['since' => $since->toIso8601String(), 'testsOk' => (int) ($tests[1] ?? $tests['1'] ?? 0), 'testsFailed' => (int) ($tests[0] ?? $tests['0'] ?? 0)];
         if ($area === 'email') {
             $out['deliveries'] = NotificationMessage::where('created_at', '>=', $since)->selectRaw('state, count(*) as total')->groupBy('state')->pluck('total', 'state')->map(fn ($v) => (int) $v)->all();
-        } else {
+        } elseif ($area === 'entra') {
             $out['runs'] = DirectorySyncRun::where('created_at', '>=', $since)->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status')->map(fn ($v) => (int) $v)->all();
             $out['logins'] = AuditEvent::where('action', 'auth.login')->where('data->method', 'entra')->where('occurred_at', '>=', $since)->count();
             $out['rejectedTokens'] = AuditEvent::where('action', 'auth.token_rejected')->where('occurred_at', '>=', $since)->count();
@@ -413,6 +415,7 @@ final class IntegrationLog
         return match ($settingKey) {
             'entra.auth' => 'login',
             'entra.directory' => 'directory',
+            'attachments.storage' => 'storage',
             default => 'email',
         };
     }

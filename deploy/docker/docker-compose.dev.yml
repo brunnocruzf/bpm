@@ -15,6 +15,10 @@ services:
     ports:
       - "127.0.0.1:${DEV_S3_PORT:-9100}:9000"
     networks: [backend, devhost]
+  azurite:
+    ports:
+      - "127.0.0.1:${DEV_AZURITE_PORT:-10000}:10000"
+    networks: [backend, devhost]
   mailpit:
     ports:
       - "127.0.0.1:${DEV_SMTP_PORT:-1025}:1025"

@@ -46,4 +46,5 @@ Transcrição do §2.2 da especificação e decisões que ficaram como premissa 
 ## Plataforma
 
 22. Alvo de produção (Kubernetes/OpenShift/plataforma corporativa), banco gerenciado/HA, storage redundante, secrets manager, backup/restore testado, observabilidade (OpenTelemetry/Prometheus/Grafana).
+22b. **Armazenamento de anexos em Azure Blob (ADR-0018):** provisionar conta/contêiner privado, confirmar com segurança o uso de Shared Key (Azure Policy pode desligá-lo), egress/firewall e declaração do host, retenção/soft delete/versionamento, residência dos dados e se os arquivos já gravados no RustFS/disco devem ser migrados.
 23. Estratégia para alteração de processo com instâncias em andamento (migração entre versões — fora do MVP).

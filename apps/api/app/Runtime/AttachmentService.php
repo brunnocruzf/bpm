@@ -6,12 +6,15 @@ use App\Models\Attachment;
 use App\Models\ProcessInstance;
 use App\Models\TaskProjection;
 use App\Models\User;
+use App\Storage\AttachmentStorage;
 use App\Support\ApiProblem;
 use App\Support\AuditLogger;
+use App\Support\Masker;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Anexos: metadados e permissões no SQL; binário no storage S3-compatível.
@@ -61,9 +64,18 @@ class AttachmentService
             throw ApiProblem::validation(['file' => ['O arquivo foi bloqueado pelo antivírus.']]);
         }
 
-        $disk = (string) $cfg['disk'];
+        $storage = app(AttachmentStorage::class);
+        $disk = $storage->currentDisk();
         $objectKey = 'attachments/'.now()->format('Y/m').'/'.Str::uuid()->toString();
-        Storage::disk($disk)->putFileAs(dirname($objectKey), $file, basename($objectKey));
+        try {
+            if ($storage->disk($disk)->putFileAs(dirname($objectKey), $file, basename($objectKey)) === false) {
+                throw new \RuntimeException('putFileAs devolveu false');
+            }
+        } catch (Throwable $e) {
+            // sem fallback silencioso para outro destino: o administrador precisa ver e corrigir o armazenamento
+            Log::warning('Anexo: falha ao gravar no armazenamento', ['disk' => $disk, 'reason' => Masker::error($e)]);
+            throw new ApiProblem(503, 'Armazenamento indisponível', 'Não foi possível gravar o arquivo no armazenamento. Tente novamente em instantes.', 'storage_unavailable');
+        }
 
         $name = preg_replace('/[^\pL\pN ._()\-]/u', '_', $file->getClientOriginalName()) ?: 'arquivo';
 
