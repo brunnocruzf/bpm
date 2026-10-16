@@ -378,6 +378,7 @@ paths:
         - { name: source, in: query, schema: { type: string, enum: [entra, local, demo, superadmin] } }
         - { name: active, in: query, schema: { type: boolean } }
         - { name: category, in: query, schema: { type: string, enum: [supplier, customer, internal, none] } }
+        - { name: attention, in: query, schema: { type: string, enum: [entra_disabled, guest, login_only, manager_pending, invitation_pending, invitation_expired, locked] } }
         - { name: area, in: query, schema: { type: string } }
         - { name: role, in: query, schema: { type: string } }
         - { name: group, in: query, schema: { type: string } }
@@ -387,9 +388,14 @@ paths:
       summary: "Cria conta local pendente e envia convite (settings.manage)"
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name, email, username, userCategory], properties: { name: { type: string, maxLength: 200 }, email: { type: string, format: email }, username: { type: string, maxLength: 120 }, area: { type: string, nullable: true }, department: { type: string, nullable: true }, userCategory: { type: string, enum: [supplier, customer, internal] } } } } } }
       responses: { '201': { description: Created }, '403': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/managed-users/facets:
+    get: { summary: "Contagens por origem, situação, tipo e pendência de integração; áreas e papéis (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
+  /admin/managed-users/{id}/activity:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }, { name: page, in: query, schema: { type: integer, minimum: 1 } }]
+    get: { summary: "Atividade de auditoria da identidade, paginada (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' } } }
   /admin/managed-users/{id}:
     parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
-    get: { summary: "Perfil da identidade (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' } } }
+    get: { summary: "Perfil da identidade com bloco integration.{entra|local} lido do banco (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' } } }
     patch:
       summary: "Ativa/desativa ou reclassifica uma conta local (settings.manage)"
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { active: { type: boolean }, userCategory: { type: string, enum: [supplier, customer, internal] } } } } } }

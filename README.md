@@ -197,7 +197,7 @@ No Linux/macOS/Git Bash, use `curl -i` com as mesmas URLs. Resultados esperados:
 ### 6. Validar o ambiente funcionalmente
 
 1. Abra <http://localhost:8080/login> ou <http://localhost:8080/login/visitante> e escolha **Acessar como visitante**. Entre com **Ana Administradora** para verificar áreas administrativas. Os perfis fictícios e seus usos estão descritos na tabela de demonstração acima.
-2. Acesse **Administração → Usuários e grupos** e confirme que a página carrega. Verifique as abas de usuários, grupos/raias e papéis. Os dados iniciais aparecem quando `SEED_ON_START=true`.
+2. Acesse **Administração → Usuários e grupos** e confirme que a página carrega. Verifique as abas de usuários, grupos/raias e papéis. A aba de usuários tem filtros à esquerda, a lista no centro e, ao selecionar alguém, o painel com origem, integração (Entra ID ou conta local), acesso efetivo e atividade. Os dados iniciais aparecem quando `SEED_ON_START=true`.
 3. Para validar o engine e o worker, entre como **Carla — CQ** (ou outro perfil de operação), inicie o fluxo de demonstração **PO 159 — Item Reprovado no Recebimento**, envie uma solicitação fictícia e confirme que a tarefa aparece na caixa de tarefas da raia responsável. Use somente valores de teste; as consultas ao AX neste ambiente são simuladas.
 4. Para validar e-mail local, entre como administradora, use a opção de teste de e-mail nas configurações e confira a mensagem em <http://localhost:8025>. O Mailpit captura mensagens e não as envia para destinatários externos.
 5. Confira worker e scheduler e investigue erros repetidos:

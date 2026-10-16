@@ -108,6 +108,9 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | Reenviar o convite não permite ativar conta que nunca o aceitou (`activated_at`); conta que aceitou pode ser desativada e reativada | `LocalIdentityTest::test_resending_the_invitation_does_not_allow_activating_an_account_that_never_accepted_it` · `::test_an_account_that_accepted_the_invitation_can_be_disabled_and_reactivated_by_the_admin` | ✅ |
 | Tipo de usuário (fornecedor/cliente/interno) obrigatório e validado na criação | `LocalIdentityTest::test_user_category_is_required_and_validated_on_creation` | ✅ |
 | Filtro por tipo, alteração só em conta local, auditoria com diff e permissão `settings.manage` | `LocalIdentityTest::test_user_category_can_be_filtered_changed_for_local_accounts_only_and_is_audited` | ✅ |
-| Tipo de usuário no diálogo "Novo usuário local" (RadioButton) | Verificação manual com Playwright (MCP) contra o Compose | 🟡 manual |
+| Facetas e filtros de integração (convite pendente/expirado, bloqueio, convidado, só login); detalhe da conta local sem IP/hash e da atividade paginada; 403 sem permissão | `LocalIdentityTest::test_facets_attention_filters_and_local_integration_details_without_sensitive_data` | ✅ |
+| Detalhe Entra (grupos importados, o que cada um concede, estado do sync) lido só do banco, sem chamar o Graph | `DirectorySyncTest::test_user_detail_exposes_entra_integration_groups_grants_and_sync_state_from_the_database` | ✅ |
+| Aba Usuários em 3 colunas: busca com debounce no servidor, seleção grava `?user`, painel de integração, tipo de usuário obrigatório, sem permissão não chama a API | `apps/web/src/components/admin/users/UsersWorkspace.spec.ts` | ✅ |
+| Layout em 3 colunas, Drawer em telas médias/pequenas e foco/Esc | Verificação manual com Playwright (MCP) contra o Compose | 🟡 manual |
 
 Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web).

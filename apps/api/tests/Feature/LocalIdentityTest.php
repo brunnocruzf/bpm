@@ -223,4 +223,55 @@ class LocalIdentityTest extends TestCase
         $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$entra->id, ['userCategory' => 'internal'])->assertStatus(422);
         $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$legacy->id)->assertOk()->assertJsonPath('data.organization.userCategory', 'customer');
     }
+
+    public function test_facets_attention_filters_and_local_integration_details_without_sensitive_data(): void
+    {
+        $this->as('cq')->getJson('/api/v1/admin/managed-users/facets')->assertForbidden();
+
+        $this->as('admin')->postJson('/api/v1/admin/managed-users', ['name' => 'Convite Pendente', 'email' => 'pend@example.test', 'username' => 'convite.pendente', 'userCategory' => 'supplier'])->assertCreated();
+        $pending = User::where('username', 'convite.pendente')->firstOrFail();
+        $this->as('admin')->postJson('/api/v1/admin/managed-users', ['name' => 'Convite Vencido', 'email' => 'venc@example.test', 'username' => 'convite.vencido', 'userCategory' => 'customer'])->assertCreated();
+        $expired = User::where('username', 'convite.vencido')->firstOrFail();
+        LocalIdentityToken::where('user_id', $expired->id)->update(['expires_at' => now()->subMinute()]);
+        $locked = User::create(['name' => 'Bloqueada', 'email' => 'bloq@example.test', 'username' => 'bloqueada', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true, 'roles' => [], 'groups' => []]);
+        LocalCredential::create(['user_id' => $locked->id, 'password_hash' => 'x', 'password_changed_at' => now(), 'activated_at' => now(), 'failed_attempts' => 5, 'locked_until' => now()->addMinutes(10), 'last_login_ip' => '203.0.113.9']);
+        $guest = User::create(['name' => 'Convidado', 'email' => 'g@example.test', 'entra_oid' => 'g-oid', 'entra_tid' => 't', 'auth_source' => User::SOURCE_ENTRA, 'user_type' => 'Guest', 'is_active' => true, 'roles' => [], 'groups' => []]);
+
+        $facets = $this->as('admin')->getJson('/api/v1/admin/managed-users/facets')->assertOk()->json('data');
+        $this->assertSame(1, $facets['attention']['invitation_pending']);
+        $this->assertSame(1, $facets['attention']['invitation_expired']);
+        $this->assertSame(1, $facets['attention']['locked']);
+        $this->assertSame(1, $facets['attention']['guest']);
+        $this->assertSame(1, $facets['attention']['login_only']);
+        $this->assertSame(1, $facets['category']['supplier']);
+        $this->assertContains('Bpm.Admin', array_column($facets['roles'], 'key'));
+
+        $ids = fn (string $a) => collect($this->as('admin')->getJson('/api/v1/admin/managed-users?attention='.$a)->assertOk()->json('data'))->pluck('id')->all();
+        $this->assertSame([$pending->id], $ids('invitation_pending'));
+        $this->assertSame([$expired->id], $ids('invitation_expired'));
+        $this->assertSame([$locked->id], $ids('locked'));
+        $this->assertSame([$guest->id], $ids('guest'));
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?attention=bogus')->assertStatus(422);
+
+        $row = collect($this->as('admin')->getJson('/api/v1/admin/managed-users?attention=invitation_expired')->json('data'))->first();
+        $this->assertSame('expired', $row['invitationStatus']);
+        $this->assertFalse($row['invitationPending']);
+
+        $detail = $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$pending->id)->assertOk()
+            ->assertJsonPath('data.integration.source', 'local')->assertJsonPath('data.integration.entra', null)
+            ->assertJsonPath('data.integration.local.invitation.status', 'pending')
+            ->assertJsonPath('data.integration.local.invitation.invitedBy', 'Ana Administradora')
+            ->assertJsonPath('data.integration.local.sessions.active', 0)->json('data.integration.local');
+        $this->assertNull($detail['invitation']['acceptedAt']);
+        $this->assertContains($detail['invitation']['delivery']['state'], ['queued', 'skipped', 'sent']);
+
+        $lockedDetail = $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$locked->id)->assertOk()
+            ->assertJsonPath('data.integration.local.invitation.status', 'accepted')->json('data.integration.local');
+        $this->assertNotNull($lockedDetail['credential']['lockedUntil']);
+        $this->assertSame(5, $lockedDetail['credential']['failedAttempts']);
+        $this->assertStringNotContainsString('203.0.113.9', json_encode($lockedDetail));
+        $this->assertStringNotContainsString('password_hash', json_encode($lockedDetail));
+
+        $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$pending->id.'/activity')->assertOk()->assertJsonStructure(['data', 'meta' => ['currentPage', 'lastPage', 'total']]);
+    }
 }

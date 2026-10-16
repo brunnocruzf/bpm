@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $expires_at
  * @property Carbon|null $used_at
  * @property string|null $created_by
+ * @property Carbon|null $created_at
  * @property-read User $user
  */
 class LocalIdentityToken extends Model

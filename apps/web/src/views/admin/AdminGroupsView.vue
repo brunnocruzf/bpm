@@ -1,45 +1,28 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { ref } from 'vue'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
-import Select from 'primevue/select'
 import AutoComplete from 'primevue/autocomplete'
 import Button from 'primevue/button'
-import RadioButton from 'primevue/radiobutton'
-import { api, ApiError, errorMessage } from '@/api/http'
+import { api, errorMessage } from '@/api/http'
 import { useSession } from '@/stores/session'
 import { useNotify } from '@/composables/notify'
-import { fmtDateTime, USER_CATEGORY, USER_CATEGORY_OPTIONS } from '@/composables/format'
+import { fmtDateTime } from '@/composables/format'
+import UsersWorkspace from '@/components/admin/users/UsersWorkspace.vue'
+import type { UserRow } from '@/components/admin/users/types'
 
 type Tab = 'users' | 'groups' | 'roles'
 interface Group { key: string; name: string; description: string | null; entraGroupId: string | null; email: string | null; members: number }
-interface UserRow { id: string; name: string; email: string | null; username: string | null; area: string | null; department: string | null; authSource: string | null; userCategory: string | null; roles: string[]; groups: string[]; isActive: boolean; invitationPending: boolean; lastSeenAt: string | null; manager: { id: string; name: string; email: string | null; username: string | null; authSource: string | null } | null; managerPending: boolean }
-type ProfileTarget = Pick<UserRow, 'id' | 'name'>
-interface PageMeta { currentPage: number; lastPage: number; total: number }
 interface Role { key: string; alias: string; name: string; active: boolean; userCount: number; permissions: { key: string; source: string }[]; users: { id: string; name: string; authSource: string; source: string; manual: boolean }[]; directoryMappings: { group: string | null; entraGroupId: string }[] }
 
 const session = useSession()
 const notify = useNotify()
 const tabs: { id: Tab; label: string }[] = [{ id: 'users', label: 'Usuários' }, { id: 'groups', label: 'Grupos/Raias' }, { id: 'roles', label: 'Papéis' }]
 const activeTab = ref<Tab>('users')
-const users = ref<UserRow[]>([])
 const groups = ref<Group[]>([])
 const roles = ref<Role[]>([])
-const meta = ref<PageMeta>({ currentPage: 1, lastPage: 1, total: 0 })
 const loading = ref(false)
 const error = ref('')
-const search = ref('')
-const sourceFilter = ref('')
-const statusFilter = ref('')
-const areaFilter = ref('')
-const groupFilter = ref('')
-const roleFilter = ref('')
-const sourceOptions = [
-  { label: 'Todas as origens', value: '' }, { label: 'Microsoft Entra ID', value: 'entra' },
-  { label: 'Conta local', value: 'local' }, { label: 'Visitante', value: 'demo' }, { label: 'SuperAdmin', value: 'superadmin' },
-]
-const statusOptions = [{ label: 'Todos os estados', value: '' }, { label: 'Ativos', value: 'true' }, { label: 'Inativos', value: 'false' }]
-const groupFilterOptions = computed(() => [{ label: 'Todos os grupos', value: '' }, ...(session.meta?.groups ?? []).map((group) => ({ label: group.name, value: group.key }))])
 const gateDefinitions = [
   { key: 'settings.manage', description: 'Permite administrar configurações globais, identidade visual, Entra ID, e-mail, retenção e gestão de usuários, grupos e papéis.' },
   { key: 'processes.manage', description: 'Permite operar processos: reatribuir tarefas, reprocessar instâncias e administrar notificações operacionais.' },
@@ -51,9 +34,6 @@ const gateDefinitions = [
   { key: 'data.sensitive', description: 'Permite visualizar campos classificados como sensíveis em relatórios e respostas.' },
 ]
 const rolePage = ref(1)
-const selectedUser = ref<ProfileTarget | null>(null)
-const profile = ref<Record<string, any> | null>(null)
-const profileLoading = ref(false)
 const editing = ref<Group | null>(null)
 const membersGroup = ref<Group | null>(null)
 const groupMembers = ref<any[]>([])
@@ -75,19 +55,6 @@ const expandedRoleKey = ref<string | null>(null)
 const newGroupOpen = ref(false)
 const creatingGroup = ref(false)
 const newGroupDraft = ref({ key: '', name: '', description: '', entraGroupId: '', email: '' })
-const newUserOpen = ref(false)
-const emptyUser = () => ({ name: '', email: '', username: '', area: '', department: '', userCategory: '' })
-const newUser = ref(emptyUser())
-const newUserCategoryError = ref('')
-const creatingUser = ref(false)
-
-async function loadUsers(page = 1) {
-  loading.value = true; error.value = ''
-  try {
-    const res = await api<{ data: UserRow[]; meta: PageMeta }>('/admin/managed-users', { query: { q: search.value, source: sourceFilter.value, active: statusFilter.value, area: areaFilter.value, group: groupFilter.value, role: roleFilter.value, page, perPage: 25 } })
-    users.value = res.data; meta.value = res.meta
-  } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
-}
 async function loadGroups() {
   loading.value = true; error.value = ''
   try { groups.value = (await api<{ data: Group[] }>('/admin/groups')).data } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
@@ -98,7 +65,6 @@ async function loadRoles(page = 1) {
 }
 function selectTab(tab: Tab) {
   activeTab.value = tab
-  if (tab === 'users') void loadUsers()
   if (tab === 'groups') void loadGroups()
   if (tab === 'roles') void loadRoles()
 }
@@ -113,10 +79,6 @@ function onTabKeydown(event: KeyboardEvent, index: number) {
   const tab = tabs[next]
   const button = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]
   button?.focus(); selectTab(tab.id)
-}
-async function openProfile(user: ProfileTarget) {
-  selectedUser.value = user; profile.value = null; profileLoading.value = true
-  try { profile.value = (await api<{ data: Record<string, any> }>(`/admin/managed-users/${user.id}`)).data } catch (e) { notify.error(e) } finally { profileLoading.value = false }
 }
 async function saveGroup() {
   if (!editing.value) return
@@ -248,30 +210,6 @@ async function createGroup() {
     } else notify.error(e)
   } finally { creatingGroup.value = false }
 }
-async function createLocalUser() {
-  newUserCategoryError.value = ''
-  if (!newUser.value.userCategory) { newUserCategoryError.value = 'Selecione o tipo de usuário.'; return }
-  creatingUser.value = true
-  try {
-    const res = await api<{ message: string }>('/admin/managed-users', { method: 'POST', body: newUser.value })
-    notify.success(res.message || 'Conta criada pendente de ativação.')
-    newUser.value = emptyUser(); newUserOpen.value = false; await loadUsers()
-  } catch (e) {
-    if (e instanceof ApiError && e.errors.userCategory?.[0]) newUserCategoryError.value = e.errors.userCategory[0]
-    notify.error(e)
-  } finally { creatingUser.value = false }
-}
-async function toggleUser(user: UserRow) {
-  if (user.authSource !== 'local') return
-  const active = !user.isActive
-  if (!window.confirm(`${active ? 'Ativar' : 'Desativar'} a conta de ${user.name}?`)) return
-  try { await api(`/admin/managed-users/${user.id}`, { method: 'PATCH', body: { active } }); notify.success('Estado da conta atualizado.'); await loadUsers(meta.value.currentPage) } catch (e) { notify.error(e) }
-}
-async function resendInvitation(user: UserRow) {
-  try { const result = await api<{ message: string }>(`/admin/managed-users/${user.id}/invitation`, { method: 'POST' }); notify.success(result.message); await loadUsers(meta.value.currentPage) } catch (e) { notify.error(e) }
-}
-watch([search, sourceFilter, statusFilter, areaFilter, groupFilter, roleFilter], () => { if (activeTab.value === 'users') void loadUsers(1) })
-onMounted(() => { void loadUsers() })
 </script>
 
 <template>
@@ -282,24 +220,7 @@ onMounted(() => { void loadUsers() })
     <button v-for="(item, index) in tabs" :id="`identity-tab-${item.id}`" :key="item.id" class="tm-tab" :class="{ active: activeTab === item.id }" role="tab" :aria-selected="activeTab === item.id" :aria-controls="`identity-panel-${item.id}`" :tabindex="activeTab === item.id ? 0 : -1" @click="selectTab(item.id)" @keydown="onTabKeydown($event, index)">{{ item.label }}</button>
   </div>
 
-  <section v-if="activeTab === 'users'" id="identity-panel-users" role="tabpanel" aria-labelledby="identity-tab-users" tabindex="0" class="tm-panel">
-    <div class="tm-panel-head"><div><div class="tm-panel-title">Usuários</div><div class="tm-panel-caption">{{ meta.total }} identidade(s) · busca e filtros no servidor</div></div><button v-if="session.can('settingsManage')" class="tm-btn primary" @click="newUserOpen = true">Novo usuário</button></div>
-    <div class="tm-filter-row">
-      <InputText v-model="search" class="tm-filter-search" aria-label="Buscar usuário por nome, e-mail ou identificador" placeholder="Buscar nome, e-mail ou usuário" />
-      <Select v-model="sourceFilter" class="tm-filter-select" :options="sourceOptions" option-label="label" option-value="value" aria-label="Filtrar por origem" />
-      <Select v-model="statusFilter" class="tm-filter-select" :options="statusOptions" option-label="label" option-value="value" aria-label="Filtrar por situação" />
-      <InputText v-model="areaFilter" class="tm-filter-input" aria-label="Filtrar por área" placeholder="Área" />
-      <Select v-model="groupFilter" class="tm-filter-select" :options="groupFilterOptions" option-label="label" option-value="value" aria-label="Filtrar por grupo" />
-      <InputText v-model="roleFilter" class="tm-filter-input" aria-label="Filtrar por papel técnico" placeholder="Papel técnico" />
-    </div>
-    <p v-if="error" class="tm-error" role="alert">{{ error }}</p>
-    <p v-else-if="loading" class="tm-empty" role="status">Carregando usuários…</p>
-    <div v-else class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Nome</th><th>Manager</th><th>E-mail / usuário</th><th>Origem</th><th>Estado</th><th>Grupos</th><th>Papéis</th><th>Último acesso</th><th>Ações</th></tr></thead><tbody>
-      <tr v-for="u in users" :key="u.id"><td class="tm-strong">{{ u.name }}<div class="tm-flow-sub">{{ u.department || u.area || 'Centro de Custo não informado' }}</div></td><td><Button v-if="u.manager" class="tm-link-btn" :label="u.manager.name" link :aria-label="`Abrir perfil de ${u.manager.name}, manager de ${u.name}`" @click="openProfile(u.manager)" /><span v-else-if="u.managerPending" class="tm-flow-sub" title="A referência será vinculada quando o manager for importado">Aguardando importação</span><span v-else>—</span><div v-if="u.manager?.email" class="tm-flow-sub">{{ u.manager.email }}</div></td><td>{{ u.email || u.username || '—' }}<div class="tm-flow-sub">{{ u.username }}</div></td><td>{{ u.authSource === 'entra' ? 'Entra ID' : u.authSource === 'local' ? 'Conta local' : u.authSource || 'Indisponível' }}<div v-if="u.userCategory"><span class="tm-pill" :class="USER_CATEGORY[u.userCategory]?.tone ?? 'neutral'">{{ USER_CATEGORY[u.userCategory]?.label ?? u.userCategory }}</span></div></td><td><span class="tm-pill" :class="u.isActive ? 'green' : 'amber'">{{ u.isActive ? 'Ativo' : u.invitationPending ? 'Convite pendente' : 'Inativo' }}</span></td><td>{{ u.groups?.length ?? 0 }}</td><td>{{ u.roles?.length ?? 0 }}</td><td>{{ fmtDateTime(u.lastSeenAt) }}</td><td><div class="tm-actions"><button class="tm-btn small" @click="openProfile(u)">Perfil</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && !u.isActive && !u.invitationPending" class="tm-btn small" @click="resendInvitation(u)">Reenviar convite</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && (u.isActive || !u.invitationPending)" class="tm-btn small" @click="toggleUser(u)">{{ u.isActive ? 'Desativar' : 'Ativar' }}</button></div></td></tr>
-      <tr v-if="!users.length"><td colspan="9" class="tm-empty">Nenhum usuário encontrado.</td></tr>
-    </tbody></table></div>
-    <div class="tm-pager" style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 16px"><span>Página {{ meta.currentPage }} de {{ meta.lastPage }}</span><button class="tm-btn small" :disabled="meta.currentPage <= 1 || loading" @click="loadUsers(meta.currentPage - 1)">Anterior</button><button class="tm-btn small" :disabled="meta.currentPage >= meta.lastPage || loading" @click="loadUsers(meta.currentPage + 1)">Próxima</button></div>
-  </section>
+  <div v-if="activeTab === 'users'" id="identity-panel-users" role="tabpanel" aria-labelledby="identity-tab-users" tabindex="0"><UsersWorkspace /></div>
 
   <section v-else-if="activeTab === 'groups'" id="identity-panel-groups" role="tabpanel" aria-labelledby="identity-tab-groups" tabindex="0" class="tm-panel">
     <div class="tm-panel-head"><div><div class="tm-panel-title">Grupos/Raias internos e associações</div><div class="tm-panel-caption">Vínculos manuais afetam somente o BPM TMSA; a sincronização Entra permanece independente. Raias usam hoje a chave global do grupo: o acesso alcança tarefas abertas que compartilham essa chave.</div></div><Button v-if="session.can('settingsManage')" class="tm-btn primary" label="Novo grupo/raia" @click="startNewGroup" /></div>
@@ -322,15 +243,6 @@ onMounted(() => { void loadUsers() })
     </tbody></table></div><div class="tm-pager" style="display:flex;justify-content:flex-end;gap:10px;padding:12px 16px"><button class="tm-btn small" :disabled="rolePage <= 1 || loading" @click="loadRoles(rolePage - 1)">Anterior</button><span>Página {{ rolePage }}</span><button class="tm-btn small" :disabled="roles.every((r) => r.userCount <= rolePage * 25) || loading" @click="loadRoles(rolePage + 1)">Próxima</button></div>
   </section>
 
-  <Dialog :visible="!!selectedUser" modal header="Perfil do usuário" :style="{ width: 'min(760px, 96vw)' }" @update:visible="(v) => { if (!v) { selectedUser = null; profile = null } }">
-    <p v-if="profileLoading" role="status">Carregando perfil…</p><template v-else-if="profile">
-      <section v-for="(section, key) in profile" :key="key" class="tm-panel" style="margin:0 0 12px;padding:14px"><h2 style="margin:0 0 10px;font-size:15px">{{ key === 'identity' ? 'Identificação' : key === 'organization' ? 'Dados organizacionais' : key === 'account' ? 'Conta e segurança' : key === 'access' ? 'Acesso e origem' : 'Atividade de auditoria' }}</h2>
-        <template v-if="key === 'activity'"><div v-for="item in (section as any).data" :key="item.action + item.occurredAt" class="tm-flow-sub">{{ item.label }} · {{ item.actor || 'Sistema' }} · {{ fmtDateTime(item.occurredAt) }}</div><p v-if="!(section as any).data.length">Sem eventos registrados.</p></template>
-        <template v-else-if="key === 'access'"><p><strong>Papéis efetivos:</strong> {{ (section as any).roles.join(', ') || '—' }}</p><p><strong>Por token:</strong> {{ (section as any).roleSources.token.join(', ') || '—' }}</p><p><strong>Por mapeamento Entra:</strong> {{ (section as any).roleSources.directoryMapping.join(', ') || '—' }}</p><p><strong>Manuais (BPM TMSA):</strong> {{ (section as any).roleSources.manual.join(', ') || '—' }}</p><p><strong>Grupos efetivos:</strong> {{ (section as any).groups.join(', ') || '—' }}</p><p><strong>Vínculos manuais:</strong> {{ (section as any).groupSources.manual.map((g: any) => `${g.name} (${g.createdBy || 'ator indisponível'})`).join(', ') || '—' }}</p></template>
-        <dl v-else style="display:grid;grid-template-columns:minmax(140px, 1fr) 2fr;gap:6px 14px;margin:0"><template v-for="(value, field) in section" :key="field"><dt class="tm-flow-sub">{{ field }}</dt><dd style="margin:0;overflow-wrap:anywhere">{{ value ?? 'Indisponível' }}</dd></template></dl>
-      </section>
-    </template><p v-else>Não foi possível carregar o perfil.</p>
-  </Dialog>
 
   <Dialog :visible="!!membersGroup" modal header="Membros do grupo TMSA" :style="{ width: 'min(850px, 96vw)' }" @update:visible="(v) => { if (!v) membersGroup = null }">
     <template v-if="membersGroup"><p>{{ membersGroup.name }} · <code>{{ membersGroup.key }}</code>. Alterações manuais não escrevem no Entra ID.</p>
@@ -350,20 +262,6 @@ onMounted(() => { void loadUsers() })
     </template>
   </Dialog>
 
-  <Dialog :visible="newUserOpen" modal header="Novo usuário local" :style="{ width: 'min(520px, 96vw)' }" @update:visible="(v) => { newUserOpen = v }">
-    <form class="tm-form" @submit.prevent="createLocalUser"><p class="tm-flow-sub">A conta começa pendente e só ganha acesso depois de ativada pelo link de uso único enviado ao e-mail.</p>
-      <div class="tm-field"><label for="new-user-name">Nome completo</label><input id="new-user-name" v-model="newUser.name" required maxlength="200" /></div>
-      <div class="tm-field"><label for="new-user-email">E-mail</label><input id="new-user-email" v-model="newUser.email" required type="email" maxlength="200" /></div>
-      <div class="tm-field"><label for="new-user-username">Usuário</label><input id="new-user-username" v-model="newUser.username" required maxlength="120" autocomplete="off" /></div>
-      <div class="tm-field"><label for="new-user-area">Área</label><input id="new-user-area" v-model="newUser.area" maxlength="200" /></div>
-      <div class="tm-field"><label for="new-user-department">Departamento</label><input id="new-user-department" v-model="newUser.department" maxlength="200" /></div>
-      <fieldset class="tm-radio-group" :aria-invalid="!!newUserCategoryError" aria-describedby="new-user-category-error"><legend>Tipo de usuário <span class="tm-req" aria-hidden="true">*</span></legend>
-        <label v-for="opt in USER_CATEGORY_OPTIONS" :key="opt.value" class="tm-radio-option" :for="`new-user-category-${opt.value}`"><RadioButton v-model="newUser.userCategory" name="new-user-category" :input-id="`new-user-category-${opt.value}`" :value="opt.value" /><span><strong>{{ opt.label }}</strong><small>{{ opt.hint }}</small></span></label>
-        <div id="new-user-category-error" class="tm-hint err" role="alert">{{ newUserCategoryError }}</div>
-      </fieldset>
-      <div class="tm-actions" style="justify-content:flex-end"><button type="button" class="tm-btn" @click="newUserOpen = false">Cancelar</button><button class="tm-btn primary" type="submit" :disabled="creatingUser">{{ creatingUser ? 'Criando…' : 'Criar conta pendente' }}</button></div>
-    </form>
-  </Dialog>
 
   <Dialog :visible="newGroupOpen" modal header="Novo grupo/raia" :style="{ width: 'min(720px, 96vw)' }" @update:visible="(v) => { newGroupOpen = v }"><form v-if="newGroupOpen" class="tm-form tm-group-create-form" @submit.prevent="createGroup"><p class="tm-flow-sub">Cadastre a raia e, se desejar, vincule usuários ativos já existentes. O vínculo é interno ao BPM TMSA e não altera o Microsoft Entra ID.</p><div class="tm-field"><label for="new-group-key">Chave</label><InputText id="new-group-key" v-model="newGroupDraft.key" required maxlength="40" class="tm-identity-input" placeholder="Ex.: RH ou COMPRAS" /><small>Inicie com uma letra; use letras maiúsculas, números e _.</small></div><div class="tm-field"><label for="new-group-name">Nome</label><InputText id="new-group-name" v-model="newGroupDraft.name" required maxlength="120" class="tm-identity-input" /></div><div class="tm-field"><label for="new-group-description">Descrição</label><InputText id="new-group-description" v-model="newGroupDraft.description" maxlength="400" class="tm-identity-input" /></div><div class="tm-field"><label for="new-group-entra">Object ID do grupo no Entra ID (opcional)</label><InputText id="new-group-entra" v-model="newGroupDraft.entraGroupId" class="tm-identity-input" placeholder="UUID" /></div><div class="tm-field"><label for="new-group-email">E-mail de notificação (opcional)</label><InputText id="new-group-email" v-model="newGroupDraft.email" type="email" maxlength="200" class="tm-identity-input" /></div><div class="tm-field"><label for="new-group-member-lookup">Vincular membros cadastrados</label><AutoComplete id="new-group-member-lookup" v-model="memberLookup" class="tm-identity-autocomplete" input-class="tm-identity-input" :suggestions="candidateUsers" option-label="name" :delay="300" :min-length="2" :loading="loadingCandidates" force-selection aria-label="Buscar usuários ativos para vincular ao novo grupo" placeholder="Digite ao menos 2 caracteres do nome ou e-mail" @complete="searchCandidates" @item-select="selectGroupCandidate"><template #option="{ option }"><div class="tm-user-option"><span>{{ option.name }}</span><small>{{ option.email || option.username || option.authSource }}</small></div></template></AutoComplete><div class="tm-selected-users"><span class="tm-selected-label">{{ selectedGroupUsers.length }} selecionado(s)</span><div v-for="user in selectedGroupUsers" :key="user.id" class="tm-selected-user"><span>{{ user.name }}<small>{{ user.email || user.username }}</small></span><Button class="tm-btn small" label="Remover" aria-label="Remover usuário selecionado" @click="removeSelectedGroupUser(user)" /></div></div></div><div class="tm-actions" style="justify-content:flex-end"><Button type="button" class="tm-btn" label="Cancelar" @click="newGroupOpen = false" /><Button type="submit" class="tm-btn primary" label="Criar grupo e vincular" :disabled="creatingGroup" :loading="creatingGroup" /></div></form></Dialog>
 
@@ -373,17 +271,6 @@ onMounted(() => { void loadUsers() })
 </template>
 
 <style scoped>
-.tm-radio-group { margin: 0 0 12px; padding: 0; border: 0; min-width: 0; display: grid; gap: 8px; }
-.tm-radio-group legend { padding: 0; margin-bottom: 6px; color: #53677b; font-size: 12px; font-weight: 600; }
-.tm-radio-option { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line, #d5dde6); border-radius: 8px; cursor: pointer; font-size: 13px; }
-.tm-radio-option:has(input:checked) { border-color: var(--brand, #086b77); background: var(--brand-softer, #f3f9fa); }
-.tm-radio-option span { display: grid; gap: 1px; }
-.tm-radio-option small { color: #738397; font-size: 11px; }
-.tm-filter-row { display: grid; grid-template-columns: minmax(220px, 1.6fr) repeat(2, minmax(155px, 1fr)) minmax(130px, .75fr) minmax(175px, 1.1fr) minmax(150px, 1fr); gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line, #e7ebef); }
-.tm-filter-search, .tm-filter-input, .tm-filter-select { width: 100%; min-width: 0; }
-.tm-filter-row :deep(.p-inputtext), .tm-filter-row :deep(.p-select) { min-height: 38px; border-radius: 7px; border-color: var(--line, #d5dde6); font-size: 12px; }
-.tm-filter-row :deep(.p-select-label) { display: flex; align-items: center; padding-top: 8px; padding-bottom: 8px; }
-.tm-filter-row :deep(.p-inputtext:focus), .tm-filter-row :deep(.p-select.p-focus) { border-color: #f47b43; box-shadow: 0 0 0 2px rgb(244 123 67 / 14%); }
 .tm-membership-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; }
 .tm-membership-title { grid-column: 1 / -1; margin: 0 0 2px; color: #344455; font-size: 14px; }
 .tm-identity-input { width: 100%; min-height: 38px; font-size: 12px; }
@@ -420,7 +307,6 @@ onMounted(() => { void loadUsers() })
 .tm-group-create-form > .tm-flow-sub, .tm-group-create-form > .tm-actions { grid-column: 1 / -1; }
 .tm-group-create-form .tm-field { margin: 0; }
 .tm-group-create-form .tm-field > small { color: #7c8b9b; font-size: 11px; }
-@media (max-width: 1180px) { .tm-filter-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 760px) { .tm-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tm-filter-search { grid-column: 1 / -1; } .tm-membership-form { grid-template-columns: 1fr; } .tm-membership-title, .tm-membership-error, .tm-selected-users { grid-column: auto; } .tm-membership-submit { justify-self: start; } .tm-gate-list { grid-template-columns: 1fr; } .tm-gate-item:nth-child(odd) { border-right: 0; } .tm-expanded-role-head { align-items: flex-start; flex-direction: column; } }
-@media (max-width: 480px) { .tm-filter-row { grid-template-columns: 1fr; } .tm-filter-search { grid-column: auto; } .tm-gate-item { grid-template-columns: 1fr; gap: 4px; } }
+@media (max-width: 760px) { .tm-membership-form { grid-template-columns: 1fr; } .tm-membership-title, .tm-membership-error, .tm-selected-users { grid-column: auto; } .tm-membership-submit { justify-self: start; } .tm-gate-list { grid-template-columns: 1fr; } .tm-gate-item:nth-child(odd) { border-right: 0; } .tm-expanded-role-head { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 480px) { .tm-gate-item { grid-template-columns: 1fr; gap: 4px; } }
 </style>

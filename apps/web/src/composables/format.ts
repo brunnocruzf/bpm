@@ -62,3 +62,14 @@ export const DISABLED_REASON: Record<string, string> = {
   admin: 'Desativada pelo administrador', directory_disabled: 'Desabilitada no Entra ID',
   directory_deleted: 'Removida do Entra ID', superadmin_disabled: 'SuperAdmin desativado',
 }
+
+/** Iniciais (até 2) de um nome, para avatares. */
+export function initialsOf(name?: string | null): string {
+  return (name ?? '?').split(/\s+/).filter((w) => /^[A-Za-zÀ-ú]/.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+}
+
+export const INVITATION_DELIVERY: Record<string, { label: string; tone: string }> = {
+  queued: { label: 'Na fila de envio', tone: 'blue' }, sending: { label: 'Enviando', tone: 'blue' }, sent: { label: 'Aceito pelo provedor de e-mail', tone: 'green' },
+  retrying: { label: 'Aguardando nova tentativa', tone: 'amber' }, failed: { label: 'Falha no envio', tone: 'red' }, skipped: { label: 'Não enviado', tone: 'amber' },
+}
+export const DELIVERY_ERROR: Record<string, string> = { provider_disabled: 'o serviço de e-mail está desabilitado', no_recipient: 'a conta não tem e-mail' }

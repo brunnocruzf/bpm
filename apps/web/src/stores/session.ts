@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { api } from '@/api/http'
 import type { Me, Meta } from '@/api/types'
 import { auth } from '@/auth'
+import { initialsOf } from '@/composables/format'
 
 export const useSession = defineStore('session', {
   state: () => ({
@@ -12,7 +13,7 @@ export const useSession = defineStore('session', {
   getters: {
     can: (state) => (perm: keyof Me['permissions']) => !!state.me?.permissions[perm],
     groupName: (state) => (key: string | null | undefined) => (key ? state.meta?.groups.find((g) => g.key === key)?.name ?? key : '—'),
-    initials: (state) => (state.me?.name ?? '?').split(/\s+/).filter((w) => /^[A-Za-zÀ-ú]/.test(w)).slice(0, 2).map((w) => w[0]).join('').toUpperCase(),
+    initials: (state) => initialsOf(state.me?.name),
   },
   actions: {
     async load() {

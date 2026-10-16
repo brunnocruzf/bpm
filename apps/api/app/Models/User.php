@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -98,6 +99,18 @@ class User extends Model implements AuthenticatableContract
     public function getRememberTokenName(): string
     {
         return '';
+    }
+
+    /** @return HasOne<LocalCredential, $this> */
+    public function localCredential(): HasOne
+    {
+        return $this->hasOne(LocalCredential::class);
+    }
+
+    /** @return HasMany<LocalIdentityToken, $this> */
+    public function invitationTokens(): HasMany
+    {
+        return $this->hasMany(LocalIdentityToken::class);
     }
 
     /** @return BelongsTo<User, $this> */

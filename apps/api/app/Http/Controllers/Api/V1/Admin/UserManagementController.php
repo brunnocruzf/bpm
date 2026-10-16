@@ -8,6 +8,7 @@ use App\Auth\LocalUserAuth;
 use App\Auth\PasswordPolicy;
 use App\Authorization\Permissions;
 use App\Http\Controllers\Api\V1\ApiController;
+use App\Identity\ManagedUserDetails;
 use App\Models\AuditEvent;
 use App\Models\AuthSession;
 use App\Models\BpmGroupMembership;
@@ -17,14 +18,19 @@ use App\Models\LocalIdentityToken;
 use App\Models\User;
 use App\Support\ApiProblem;
 use App\Support\AuditLogger;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 class UserManagementController extends ApiController
 {
-    public function __construct(private readonly LocalUserAuth $local) {}
+    /** Pendências de integração filtráveis na listagem. */
+    private const ATTENTION = ['entra_disabled', 'guest', 'login_only', 'manager_pending', 'invitation_pending', 'invitation_expired', 'locked'];
+
+    public function __construct(private readonly LocalUserAuth $local, private readonly ManagedUserDetails $details) {}
 
     private function authorizeAdmin(): void
     {
@@ -40,7 +46,7 @@ class UserManagementController extends ApiController
                 $request->query->set('active', in_array($active, ['true', '1'], true));
             }
         }
-        $request->validate(['q' => ['nullable', 'string', 'max:200'], 'source' => ['nullable', 'in:entra,local,demo,superadmin'], 'active' => ['nullable', 'boolean'], 'area' => ['nullable', 'string', 'max:200'], 'role' => ['nullable', 'in:'.implode(',', array_values((array) config('bpm.roles')))], 'group' => ['nullable', 'exists:bpm_groups,key'], 'category' => ['nullable', Rule::in([...User::CATEGORIES, 'none'])], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100']]);
+        $request->validate(['q' => ['nullable', 'string', 'max:200'], 'source' => ['nullable', 'in:entra,local,demo,superadmin'], 'active' => ['nullable', 'boolean'], 'area' => ['nullable', 'string', 'max:200'], 'role' => ['nullable', 'in:'.implode(',', array_values((array) config('bpm.roles')))], 'group' => ['nullable', 'exists:bpm_groups,key'], 'category' => ['nullable', Rule::in([...User::CATEGORIES, 'none'])], 'attention' => ['nullable', Rule::in(self::ATTENTION)], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100']]);
         $query = User::query()->with('manager:id,name,email,username,auth_source');
         if ($q = trim((string) $request->query('q', ''))) {
             $like = '%'.mb_strtolower($q).'%';
@@ -58,6 +64,9 @@ class UserManagementController extends ApiController
         if ($role = $request->query('role')) {
             $query->whereJsonContains('roles', $role);
         }
+        if ($attention = $request->query('attention')) {
+            $this->applyAttention($query, (string) $attention);
+        }
         if ($category = $request->query('category')) {
             $category === 'none' ? $query->whereNull('user_category') : $query->where('user_category', $category);
         }
@@ -66,7 +75,9 @@ class UserManagementController extends ApiController
         }
         $page = $query->orderBy('name')->paginate(min(100, max(1, (int) $request->query('perPage', 25))));
 
-        return response()->json(['data' => $page->getCollection()->map(fn (User $u) => $this->row($u))->values(), 'meta' => ['currentPage' => $page->currentPage(), 'lastPage' => $page->lastPage(), 'perPage' => $page->perPage(), 'total' => $page->total()]]);
+        $states = $this->details->listStates($page->getCollection());
+
+        return response()->json(['data' => $page->getCollection()->map(fn (User $u) => $this->row($u, $states[$u->id] ?? null))->values(), 'meta' => ['currentPage' => $page->currentPage(), 'lastPage' => $page->lastPage(), 'perPage' => $page->perPage(), 'total' => $page->total()]]);
     }
 
     public function show(string $id)
@@ -79,11 +90,71 @@ class UserManagementController extends ApiController
 
         return response()->json(['data' => [
             'identity' => ['id' => $user->id, 'name' => $user->name, 'username' => $user->username, 'email' => $user->email, 'upn' => $user->upn, 'authSource' => $user->auth_source, 'entraOid' => $user->entra_oid, 'entraTid' => $user->entra_tid],
-            'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type, 'userCategory' => $user->user_category, 'manager' => $user->manager?->name],
-            'account' => ['active' => $user->is_active, 'accountEnabled' => $user->account_enabled, 'disabledReason' => $user->disabled_reason, 'createdAt' => $user->created_at?->toIso8601String(), 'updatedAt' => $user->updated_at?->toIso8601String(), 'lastLoginAt' => $credential?->last_login_at?->toIso8601String(), 'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'lockedUntil' => $credential?->locked_until?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String(), 'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists()],
+            'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type, 'userCategory' => $user->user_category, 'manager' => $user->manager?->name,
+                'managerInfo' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'authSource' => $user->manager->auth_source] : null,
+                'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id, 'directReports' => $user->directReports()->count()],
+            'account' => ['disabledAt' => $user->disabled_at?->toIso8601String(), 'active' => $user->is_active, 'accountEnabled' => $user->account_enabled, 'disabledReason' => $user->disabled_reason, 'createdAt' => $user->created_at?->toIso8601String(), 'updatedAt' => $user->updated_at?->toIso8601String(), 'lastLoginAt' => $credential?->last_login_at?->toIso8601String(), 'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'lockedUntil' => $credential?->locked_until?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String(), 'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists()],
             'access' => ['roles' => $user->roles ?? [], 'roleSources' => ['token' => $user->token_roles ?? [], 'directoryMapping' => $user->directory_roles ?? [], 'manual' => $user->manual_roles ?? []], 'groups' => $user->groups ?? [], 'groupSources' => ['entraToken' => $user->token_groups ?? [], 'directoryMapping' => $user->directory_groups ?? [], 'manual' => $manual->map(fn ($m) => ['key' => $m->group->key, 'name' => $m->group->name, 'createdAt' => $m->created_at?->toIso8601String(), 'createdBy' => $m->created_by_name])->values()]],
-            'activity' => ['data' => $events->getCollection()->map(fn (AuditEvent $e) => ['action' => $e->action, 'label' => AuditCatalog::label($e->action), 'outcome' => $e->outcome, 'actor' => $e->actor_name, 'occurredAt' => $e->occurred_at->toIso8601String(), 'diff' => $e->diff])->values(), 'meta' => ['currentPage' => $events->currentPage(), 'lastPage' => $events->lastPage(), 'total' => $events->total()]],
+            'integration' => ['source' => $user->auth_source, 'entra' => $this->details->entra($user), 'local' => $this->details->local($user)],
+            'activity' => $this->activityPayload($events),
         ]]);
+    }
+
+    public function activity(Request $request, string $id)
+    {
+        $this->authorizeAdmin();
+        $user = User::find($id) ?? throw ApiProblem::notFound();
+        $events = AuditEvent::where('entity_type', 'user')->where('entity_id', $user->id)->orderByDesc('occurred_at')->paginate(20);
+
+        return response()->json($this->activityPayload($events));
+    }
+
+    /** Contagens por faceta para os filtros da tela (settings.manage). */
+    public function facets()
+    {
+        $this->authorizeAdmin();
+        $count = fn (array $where) => User::where($where)->count();
+        $attention = [];
+        foreach (self::ATTENTION as $key) {
+            $q = User::query();
+            $this->applyAttention($q, $key);
+            $attention[$key] = $q->count();
+        }
+
+        return response()->json(['data' => [
+            'total' => User::count(),
+            'source' => collect(['entra', 'local', 'demo', 'superadmin'])->mapWithKeys(fn ($s) => [$s => $count(['auth_source' => $s])])->all(),
+            'active' => ['true' => $count(['is_active' => true]), 'false' => $count(['is_active' => false])],
+            'category' => [...collect(User::CATEGORIES)->mapWithKeys(fn ($c) => [$c => $count(['user_category' => $c])])->all(), 'none' => User::whereNull('user_category')->count()],
+            'attention' => $attention,
+            'areas' => User::whereNotNull('area')->where('area', '!=', '')->distinct()->orderBy('area')->limit(200)->pluck('area')->values(),
+            'roles' => collect((array) config('bpm.roles'))->values()->map(fn ($r) => ['key' => $r, 'label' => str($r)->after('Bpm.')->replace('.', ' ')->value()])->all(),
+        ]]);
+    }
+
+    /**
+     * @param  LengthAwarePaginator<int, AuditEvent>  $events
+     * @return array<string,mixed>
+     */
+    private function activityPayload($events): array
+    {
+        return ['data' => $events->getCollection()->map(fn (AuditEvent $e) => ['action' => $e->action, 'label' => AuditCatalog::label($e->action), 'outcome' => $e->outcome, 'actor' => $e->actor_name, 'occurredAt' => $e->occurred_at->toIso8601String(), 'diff' => $e->diff])->values(), 'meta' => ['currentPage' => $events->currentPage(), 'lastPage' => $events->lastPage(), 'total' => $events->total()]];
+    }
+
+    /** @param Builder<User> $query */
+    private function applyAttention($query, string $attention): void
+    {
+        $pending = fn ($t) => $t->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now());
+        match ($attention) {
+            'entra_disabled' => $query->where('auth_source', User::SOURCE_ENTRA)->where(fn ($w) => $w->where('account_enabled', false)->orWhereIn('disabled_reason', ['directory_disabled', 'directory_deleted'])),
+            'guest' => $query->where('user_type', 'Guest'),
+            'login_only' => $query->where('auth_source', User::SOURCE_ENTRA)->whereNull('directory_synced_at'),
+            'manager_pending' => $query->whereNotNull('manager_entra_oid')->whereNull('manager_user_id'),
+            'invitation_pending' => $query->where('auth_source', User::SOURCE_LOCAL)->where('is_active', false)->whereHas('invitationTokens', $pending),
+            'invitation_expired' => $query->where('auth_source', User::SOURCE_LOCAL)->where('is_active', false)->whereDoesntHave('invitationTokens', $pending)->whereDoesntHave('localCredential', fn ($c) => $c->whereNotNull('activated_at')),
+            'locked' => $query->where('auth_source', User::SOURCE_LOCAL)->whereHas('localCredential', fn ($c) => $c->where('locked_until', '>', now())),
+            default => null,
+        };
     }
 
     public function store(Request $request)
@@ -197,13 +268,18 @@ class UserManagementController extends ApiController
         return response()->json(['data' => $data, 'meta' => ['currentPage' => $page, 'perPage' => $perPage]]);
     }
 
-    private function row(User $user): array
+    /** @param array{status:string, locked:bool}|null $state */
+    private function row(User $user, ?array $state = null): array
     {
+        $state ??= $this->details->listStates(collect([$user]))[$user->id] ?? null;
+
         return ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'upn' => $user->upn, 'username' => $user->username, 'area' => $user->area,
             'department' => $user->department, 'userCategory' => $user->user_category, 'authSource' => $user->auth_source, 'isActive' => $user->is_active, 'roles' => $user->roles ?? [], 'groups' => $user->groups ?? [],
             'manager' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'username' => $user->manager->username, 'authSource' => $user->manager->auth_source] : null,
             'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id,
-            'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists(),
+            'invitationPending' => $state !== null && ! $user->is_active && $state['status'] === ManagedUserDetails::INVITATION_PENDING,
+            'invitationStatus' => $state['status'] ?? null, 'locked' => $state['locked'] ?? false,
+            'userType' => $user->user_type, 'accountEnabled' => $user->account_enabled, 'disabledReason' => $user->disabled_reason,
             'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String()];
     }
 }

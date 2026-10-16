@@ -361,4 +361,29 @@ class DirectorySyncTest extends TestCase
         $this->assertSame(4, $run->totals['created'], '6 fictícios: guest e desabilitado excluídos por padrão');
         $this->assertSame(MockGraphClient::TENANT, User::whereNotNull('directory_synced_at')->value('entra_tid'));
     }
+
+    public function test_user_detail_exposes_entra_integration_groups_grants_and_sync_state_from_the_database(): void
+    {
+        $ids = $this->seedDirectory();
+        $this->as('admin')->postJson('/api/v1/admin/entra/mappings', ['entraGroupId' => FakeGraph::G1, 'entraGroupName' => 'BPM-CQ', 'tmsaGroupKey' => 'CQ', 'tmsaRoles' => ['Bpm.TaskWorker']])->assertCreated();
+        $run = $this->sync();
+        $this->assertSame(DirectorySyncRun::COMPLETED, $run->status, (string) $run->error_message);
+        $calls = count($this->graph->requests);
+
+        $user = User::where('entra_oid', $ids['a'])->firstOrFail();
+        $entra = $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$user->id)->assertOk()
+            ->assertJsonPath('data.integration.source', 'entra')->assertJsonPath('data.integration.local', null)
+            ->assertJsonPath('data.integration.entra.oid', $ids['a'])->assertJsonPath('data.integration.entra.importedBySync', true)
+            ->assertJsonPath('data.integration.entra.groups.0.grants.0.groupKey', 'CQ')
+            ->assertJsonPath('data.integration.entra.groups.0.grants.0.roles.0', 'Bpm.TaskWorker')
+            ->json('data.integration.entra');
+        $this->assertNotNull($entra['sync']['lastSuccessAt']);
+        $this->assertSame([], $entra['sync']['alerts']);
+        $this->assertSame($calls, count($this->graph->requests), 'o painel lê somente o banco: nenhuma chamada ao Graph');
+
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?attention=guest')->assertOk()->assertJsonCount(0, 'data');
+        $other = User::where('entra_oid', $ids['b'])->firstOrFail();
+        $other->forceFill(['user_type' => 'Guest'])->save();
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?attention=guest')->assertOk()->assertJsonPath('data.0.id', $other->id)->assertJsonPath('data.0.userType', 'Guest');
+    }
 }

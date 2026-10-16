@@ -152,6 +152,8 @@ Route::prefix('v1')->group(function () {
         Route::post('admin/groups', [AdminController::class, 'storeGroup']);
         Route::patch('admin/groups/{key}', [AdminController::class, 'updateGroup']);
         Route::get('admin/users', [AdminController::class, 'users']);
+        Route::get('admin/managed-users/facets', [UserManagementController::class, 'facets']);
+        Route::get('admin/managed-users/{id}/activity', [UserManagementController::class, 'activity'])->whereUuid('id');
         Route::get('admin/managed-users', [UserManagementController::class, 'index']);
         Route::post('admin/managed-users', [UserManagementController::class, 'store']);
         Route::get('admin/managed-users/{id}', [UserManagementController::class, 'show'])->whereUuid('id');
