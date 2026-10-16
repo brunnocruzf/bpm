@@ -8,9 +8,9 @@ use App\Settings\SettingType;
 use App\Support\ApiProblem;
 
 /**
- * Relatórios: renderer ativo e parâmetros. O Carbone só pode ser selecionado com aprovação
- * registrada da licença (Community Edition sob "CCL Agreement"; recursos Enterprise exigem licença)
- * e com o serviço habilitado pela plataforma (BPM_CARBONE_ENABLED). Padrão: renderer nativo.
+ * Relatórios: renderer ativo e parâmetros. O Carbone pode ser selecionado livremente (o uso foi liberado pelo
+ * responsável do projeto, que assumiu a decisão de licenciamento — ver ADR-0011); o serviço continua dependendo de
+ * a plataforma habilitá-lo (BPM_CARBONE_ENABLED e perfil carbone do Compose). Padrão: renderer nativo.
  */
 class ReportSettings extends SettingType
 {
@@ -31,7 +31,7 @@ class ReportSettings extends SettingType
         return [
             'renderer' => 'native',
             'confidentialityLabel' => 'Uso interno — TMSA',
-            'carbone' => ['licenseApproved' => false, 'approvalReference' => '', 'edition' => 'community'],
+            'carbone' => ['edition' => 'community'],
         ];
     }
 
@@ -50,18 +50,11 @@ class ReportSettings extends SettingType
             $v['confidentialityLabel'] = mb_substr(trim(strip_tags((string) $input['confidentialityLabel'])), 0, 80);
         }
         $c = (array) ($input['carbone'] ?? []);
-        if (array_key_exists('licenseApproved', $c)) {
-            $v['carbone']['licenseApproved'] = (bool) $c['licenseApproved'];
-        }
-        if (array_key_exists('approvalReference', $c)) {
-            $v['carbone']['approvalReference'] = mb_substr(trim(strip_tags((string) $c['approvalReference'])), 0, 200);
-        }
         if (array_key_exists('edition', $c)) {
             $v['carbone']['edition'] = in_array($c['edition'], ['community', 'enterprise'], true) ? $c['edition'] : 'community';
         }
-        if ($v['renderer'] === 'carbone' && (! $v['carbone']['licenseApproved'] || mb_strlen($v['carbone']['approvalReference']) < 5)) {
-            $errors['renderer'][] = 'Carbone exige aprovação registrada da licença (jurídico/segurança) antes de ser selecionado.';
-        }
+        // campos de aprovação de licença de versões anteriores deixam de existir
+        unset($v['carbone']['licenseApproved'], $v['carbone']['approvalReference']);
         if ($errors) {
             throw ApiProblem::validation($errors);
         }
@@ -72,7 +65,7 @@ class ReportSettings extends SettingType
     public function statusAfterSave(array $value): array
     {
         if ($value['renderer'] === 'carbone' && ! config('bpm.reports.carbone.enabled')) {
-            return [AppSetting::ERROR, 'Carbone aprovado, mas o serviço não está habilitado pela plataforma (BPM_CARBONE_ENABLED).'];
+            return [AppSetting::ERROR, 'Carbone selecionado, mas o serviço não está habilitado pela plataforma (BPM_CARBONE_ENABLED=true e perfil carbone do Compose).'];
         }
 
         return $value['renderer'] === 'carbone'

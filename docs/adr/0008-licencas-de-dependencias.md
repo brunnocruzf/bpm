@@ -18,7 +18,7 @@ Toda atualização de dependência passa por verificação de licença (campo `l
 
 ## Atualização (customizações fase 2)
 
-- **Carbone**: Community Edition sob "CCL Agreement" (não permissiva; restringe oferta como serviço) e recursos Enterprise sob licença comercial. **Não habilitado** até aprovação jurídica/segurança — ver [ADR-0011](0011-relatorios-e-carbone.md). Imagem `carbone/carbone-ee:full-5.15.4` fixada por digest apenas no perfil `carbone`.
+- **Carbone**: Community Edition sob "CCL Agreement" (não permissiva; restringe oferta como serviço) e recursos Enterprise sob licença comercial. **Uso liberado em 16/10/2026 pelo responsável do projeto, sem revisão jurídica/de segurança da licença** (risco assumido por ele; trava de aprovação removida) — ver [ADR-0011](0011-relatorios-e-carbone.md). Imagem `carbone/carbone-ee:full-5.15.4` fixada por digest apenas no perfil `carbone`.
 - **PDF/CSV/XLSX nativos**: código próprio (sem novas dependências). Avaliados e não adotados: Gotenberg (MIT, imagem pesada), dompdf (LGPL-2.1, exige revisão).
 - **E-mail**: Symfony Mailer (MIT, já incluso no Laravel); nenhum transport de provedor transacional instalado.
 - **Extensão PHP GD** (licença BSD-like) adicionada à imagem para recodificar logos.

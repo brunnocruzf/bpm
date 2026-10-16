@@ -54,8 +54,9 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | §6 Append-only (model + trigger), redação de segredos/tokens/PEM/deltatoken, catálogo tipado, diff e causalidade, retenção com arquivo | `AuthorizationAndAuditTest` (7 testes) + verificação no PostgreSQL do Compose | ✅ |
 | §8 Relatório de uma etapa, várias e completo; snapshot; sensível mascarado; schema histórico | `ReportsTest::test_single_stage_multiple_stages_and_full_report`, `::test_snapshot_of_submission_and_markers_for_empty_hidden_and_sensitive_fields`, `::test_historical_schema_is_used_even_after_form_changes` | ✅ |
 | §8 PDF (preview/impressão), CSV/XLSX, fuso de negócio, idempotência, artefato expirado, link não autorizado, download auditado | `ReportsTest::test_pdf_generation_preview_print_and_audited_download`, `::test_operational_reports_in_pdf_csv_xlsx_respect_permission_and_timezone`, `::test_expired_artifact_is_gone`, `::test_idempotent_request_and_validation`, `::test_csv_neutralizes_formula_injection` | ✅ |
-| §8.1 Contrato Carbone (payload/headers), template inválido (macro, vínculo externo, hash), timeout; seleção exige aprovação | `ReportsTest::test_carbone_contract_template_validation_and_timeout`, `::test_carbone_cannot_be_selected_without_license_approval` | ✅ |
-| §8.1 Teste integrado com container/licença do Carbone | Bloqueado: licença não aprovada (perfil `carbone` desligado) | ⏳ |
+| §8.1 Contrato Carbone (payload/headers), template inválido (macro, vínculo externo, hash), timeout; token de serviço por arquivo ou ambiente | `ReportsTest::test_carbone_contract_template_validation_and_timeout` | ✅ |
+| §8.1 Carbone selecionável sem trava de licença; estado reflete o serviço da plataforma | `ReportsTest::test_carbone_can_be_selected_without_license_ceremony_and_the_status_reflects_the_platform` | ✅ |
+| §8.1 Teste integrado com o container do Carbone | Verificação manual (perfil `carbone`, "Testar serviço Carbone") | 🟡 manual |
 | §11 E2E no navegador (configurações, marca, e-mail, diretório mock, notificação no editor, relatório PDF, auditoria) | Executado com Playwright (MCP) contra o Compose; não há suíte Playwright automatizada no repositório | 🟡 manual |
 
 ## Tela de login (`.claude/login`) — Entra ID, visitante e SuperAdmin (ADR-0015)

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
  * Carbone self-hosted (rede interna, porta não publicada). Laravel envia o modelo aprovado
  * (base64, sem armazenar no Carbone) e o DTO já autorizado — o Carbone não acessa banco,
  * AX, Graph, Flowable nem o storage. API: POST /render/template?download=true (v5).
- * Usado apenas com aprovação de licença registrada e BPM_CARBONE_ENABLED=true (ADR-0011).
+ * Usado quando o renderer 'carbone' está selecionado e BPM_CARBONE_ENABLED=true (ADR-0011).
  */
 class CarboneReportRenderer implements ReportRenderer
 {
@@ -51,6 +51,7 @@ class CarboneReportRenderer implements ReportRenderer
             throw new ReportRenderException('too_large', 'Dados do relatório acima do limite para o renderer.');
         }
         $token = $cfg['token_file'] && is_readable((string) $cfg['token_file']) ? trim((string) file_get_contents((string) $cfg['token_file'])) : null;
+        $token = $token ?: ((string) ($cfg['token'] ?? '') ?: null);
         try {
             $request = Http::timeout((int) $cfg['timeout'])->connectTimeout(5)->withHeaders(['carbone-version' => '5'])->withBody($body, 'application/json');
             if ($token) {

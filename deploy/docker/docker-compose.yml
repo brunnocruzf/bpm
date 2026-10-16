@@ -67,6 +67,8 @@ x-api-env: &api-env
   BPM_CARBONE_ENABLED: ${BPM_CARBONE_ENABLED:-false}
   BPM_CARBONE_URL: http://carbone:4000
   BPM_CARBONE_TOKEN_FILE: ${BPM_CARBONE_TOKEN_FILE:-}
+  # Desenvolvimento: token service-to-service direto do .env local (não versionado). Produção: arquivo montado (BPM_CARBONE_TOKEN_FILE).
+  BPM_CARBONE_TOKEN: ${BPM_CARBONE_TOKEN:-}
 
 x-api-secrets: &api-secrets
   - bpm_secrets_key
@@ -172,8 +174,8 @@ services:
     restart: unless-stopped
 
   carbone:
-    # Somente com licença aprovada (perfil "carbone"). Rede interna, porta NÃO publicada; acesso
-    # exclusivo do Laravel (api/worker). Licença/token via Docker secrets — nunca na imagem ou no Git.
+    # Renderer de documentos (perfil "carbone"). Rede interna, porta NÃO publicada; acesso exclusivo do
+    # Laravel (api/worker). Chaves/licença Enterprise (se houver) via Docker secrets — nunca na imagem ou no Git.
     image: carbone/carbone-ee:full-5.15.4@sha256:ebf8940b68584691f90fabbe5eefed6c75d02d10e8ad5bed14ae04c3086a7392
     profiles: [carbone]
     environment:

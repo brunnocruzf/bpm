@@ -17,7 +17,7 @@ Navegador ── HTTP(S) ──> reverse-proxy (Nginx) ──> web (Vue SPA est�
                                                                        ├── postgres (bpm_app | flowable)
                                                                        ├── storage (S3: RustFS em dev)
                                                                        ├── mailpit (perfil dev/test)
-                                                                       └── carbone (perfil carbone — só com licença aprovada)
+                                                                       └── carbone (perfil carbone — opcional)
    api/worker ── saída controlada ──> Entra ID / Microsoft Graph (app-only, leitura) · SMTP / Exchange Online
 ```
 
@@ -289,7 +289,7 @@ docker run --rm --network bpm-tmsa_backend --entrypoint php -v "$PWD/apps/api:/a
 | Usuários e grupos (Graph) | Transporte "Diretório fictício" + "Usar grupos do diretório fictício" → Prévia → Sincronizar | App de sincronização separado, certificado montado (`file:<nome>`), grupos de teste, prévia antes da 1ª carga; fotos de perfil importadas por padrão (desligável) com a mesma permissão `User.Read.All` | idem com grupos reais; periodicidade; mapeamentos revisados | Sim: `User.Read.All` + `Group.Read.All` (Application) com **admin consent** |
 | E-mail | Mailpit (perfil `dev`) | SMTP corporativo/relay ou M365 (Graph `Mail.Send` / SMTP OAuth) com caixa de teste | idem; Mailpit bloqueado; egress allowlist | M365: sim (permissão + restrição de caixa no Exchange) |
 | Anexos (storage) | Disco da plataforma (RustFS); para testar Azure: serviço `azurite` (perfil `dev`) + endpoint "Emulador" em Configurações → Armazenamento de anexos | Azure Blob (conta dedicada, contêiner privado, Shared Key aprovada): Salvar → Testar → Ativar | idem; host em `BPM_INTEGRATION_ALLOWED_HOSTS`; chave por `file:<nome>` | Sim (plataforma/Azure: conta, contêiner, firewall e política de Shared Key) |
-| Relatórios | Renderer nativo | Nativo; Carbone só no perfil `carbone` após aprovação | idem | Não (jurídico/segurança para o Carbone) |
+| Relatórios | Renderer nativo | Nativo; Carbone no perfil `carbone` (`BPM_CARBONE_ENABLED=true`, chaves e token — runbook) | idem | Não |
 | AX | `MOCK` | API REST do AX (`apidax`): Integrações e entregas → Conexão → **Importar do Swagger** → saída por exemplo/teste → Mapeamentos (declarar o host em `BPM_INTEGRATION_ALLOWED_HOSTS`) | idem, conexão de produção; escritas só com aprovação | Não (time AX/plataforma) — guia `docs/integracoes/README.md` |
 
 **Rollback:** cada configuração é versionada — volte aos valores anteriores (ou desabilite a integração) pela própria tela; o login volta à configuração do ambiente com **Desativar**; mapeamentos de diretório podem ser desativados (papéis recalculados na hora). Detalhes no `docs/runbook.md`.
@@ -306,4 +306,4 @@ docker run --rm --network bpm-tmsa_backend --entrypoint php -v "$PWD/apps/api:/a
 
 ## Limites desta entrega
 
-Contratos AX reais, autenticação de fornecedores externos, registro no tenant Entra (login e app de sincronização com admin consent), provedor de e-mail corporativo, aprovação da licença do Carbone, SLAs/calendário e prazos de retenção dependem de decisões listadas em `docs/pendencias-validacao.md`. Nesta entrega Entra/Graph, SMTP corporativo e Carbone foram exercitados apenas com mocks, Mailpit e testes de contrato. Compose em servidor único é para desenvolvimento/piloto; produção exige plataforma com HA, secrets manager, backup testado e observabilidade.
+Contratos AX reais, autenticação de fornecedores externos, registro no tenant Entra (login e app de sincronização com admin consent), provedor de e-mail corporativo, revisão da licença do Carbone (uso liberado sem revisão), SLAs/calendário e prazos de retenção dependem de decisões listadas em `docs/pendencias-validacao.md`. Nesta entrega Entra/Graph, SMTP corporativo e Carbone foram exercitados apenas com mocks, Mailpit e testes de contrato. Compose em servidor único é para desenvolvimento/piloto; produção exige plataforma com HA, secrets manager, backup testado e observabilidade.

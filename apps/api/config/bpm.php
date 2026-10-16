@@ -174,6 +174,8 @@ return [
             'enabled' => (bool) env('BPM_CARBONE_ENABLED', false),
             'base_url' => rtrim((string) env('BPM_CARBONE_URL', 'http://carbone:4000'), '/'),
             'token_file' => env('BPM_CARBONE_TOKEN_FILE'),
+            // alternativa de desenvolvimento ao arquivo montado (em produção use token_file/Docker secret)
+            'token' => env('BPM_CARBONE_TOKEN'),
             'timeout' => (int) env('BPM_CARBONE_TIMEOUT', 60),
         ],
     ],

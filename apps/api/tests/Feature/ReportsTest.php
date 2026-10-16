@@ -273,6 +273,11 @@ class ReportsTest extends TestCase
         $this->assertSame('DEV-1', $payload['data']['report']['instance']['number']);
         $this->assertNotEmpty(base64_decode($payload['template'], true));
         $this->assertArrayNotHasKey('database', $payload['data'], 'Carbone recebe somente o DTO');
+        $this->assertSame([], $captured->header('Authorization'), 'sem token configurado, nenhum cabeçalho de autenticação');
+        config(['bpm.reports.carbone.token' => 'tok-de-desenvolvimento']);
+        app(CarboneReportRenderer::class)->render($doc, 'pdf', $template, ['org' => 'TMSA', 'brandColor' => '#000000', 'confidentiality' => 'Interno', 'footer' => 'f', 'logo' => null]);
+        $this->assertSame('Bearer tok-de-desenvolvimento', $captured->header('Authorization')[0], 'token de serviço vindo do ambiente');
+        config(['bpm.reports.carbone.token' => null]);
 
         Http::fake(['carbone.test:4000/*' => fn () => throw new ConnectionException('timeout')]);
         try {
@@ -288,10 +293,17 @@ class ReportsTest extends TestCase
         app(CarboneReportRenderer::class)->render($doc, 'pdf', $template, ['org' => 'TMSA', 'brandColor' => '#000000', 'confidentiality' => null, 'footer' => 'f', 'logo' => null]);
     }
 
-    public function test_carbone_cannot_be_selected_without_license_approval(): void
+    public function test_carbone_can_be_selected_without_license_ceremony_and_the_status_reflects_the_platform(): void
     {
-        $this->as('admin')->putJson('/api/v1/admin/settings/reports', ['renderer' => 'carbone'])->assertStatus(422)->assertJsonValidationErrors('renderer');
-        $this->as('admin')->putJson('/api/v1/admin/settings/reports', ['renderer' => 'carbone', 'carbone' => ['licenseApproved' => true, 'approvalReference' => 'JUR-2026-077']])->assertOk()->assertJsonPath('status', 'error');
+        // uso liberado pelo responsável do projeto: sem aprovação de licença; o serviço ainda depende da plataforma
+        $this->as('admin')->putJson('/api/v1/admin/settings/reports', ['renderer' => 'carbone'])->assertOk()->assertJsonPath('status', 'error');
+        config(['bpm.reports.carbone.enabled' => true]);
+        $this->as('admin')->putJson('/api/v1/admin/settings/reports', ['renderer' => 'carbone', 'carbone' => ['edition' => 'enterprise', 'licenseApproved' => false]])
+            ->assertOk()->assertJsonPath('status', 'test_pending')->assertJsonPath('value.carbone.edition', 'enterprise')
+            ->assertJsonMissingPath('value.carbone.licenseApproved')->assertJsonMissingPath('value.carbone.approvalReference');
+        $this->as('cq')->putJson('/api/v1/admin/settings/reports', ['renderer' => 'native'])->assertForbidden();
+        $this->as('admin')->putJson('/api/v1/admin/settings/reports', ['renderer' => 'native'])->assertOk()->assertJsonPath('status', 'configured');
+        $this->as('admin')->putJson('/api/v1/admin/settings/reports', ['renderer' => 'outro'])->assertStatus(422);
     }
 
     /** @param array<string,string> $extra */

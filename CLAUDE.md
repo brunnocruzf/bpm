@@ -15,7 +15,7 @@ Leia `README.md` e as ADRs em `docs/adr/` antes de alterar a arquitetura. A espe
 - Modo de autenticação `dev` / visitante é proibido em produção (a aplicação recusa iniciar). Login: Entra ID + visitante + SuperAdmin de emergência (ADR-0015); a senha do SuperAdmin só é definida por `php artisan bpm:superadmin` (nunca por API, tela, `.env` ou argumento) e cada método só autentica contas da sua origem (`users.auth_source`).
 - Sem segredos no frontend ou no Git (`.env` fora do versionamento). Sem PII/tokens em logs (use `Masker`).
 - Versões publicadas são imutáveis; alterar = nova versão.
-- Dependências: verificar licença antes de adicionar/atualizar (ver ADR-0008 — PrimeVue fixado na 4.x MIT; Carbone só com aprovação — ADR-0011).
+- Dependências: verificar licença antes de adicionar/atualizar (ver ADR-0008 — PrimeVue fixado na 4.x MIT; Carbone liberado pelo responsável do projeto sem revisão de licença — ADR-0011).
 - Entra/Graph, SMTP corporativo e Carbone: não conectar a tenant/servidor real, não importar diretório de produção nem enviar mensagens externas sem autorização; use mock, Mailpit e testes de contrato.
 - Configurações/integrações: permissões Graph mínimas (somente leitura, app-only), nada de permissão de escrita no diretório; segredos somente escrita; testes de conexão sempre reais (nunca "sucesso fixo").
 

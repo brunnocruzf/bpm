@@ -34,7 +34,7 @@ O container `api` executa migrations, cria o bucket de anexos e (com `SEED_ON_ST
 | `storage` | RustFS (S3): anexos (padrão), logos, relatórios, arquivo de auditoria |
 | `azurite` (perfis dev/test) | Emulador do Azure Blob para testar o destino de anexos sem tocar na nuvem |
 | `mailpit` | perfil `dev`/`test`: captura de e-mails, sem rota de saída |
-| `carbone` | perfil `carbone`: somente após aprovação da licença (rede interna, porta não publicada) |
+| `carbone` | perfil `carbone` (opcional; rede interna, porta não publicada) |
 
 ## Comandos úteis
 
@@ -117,7 +117,7 @@ Guia: `docs/integracoes/README.md` (ADR-0016).
 
 - Gerados no worker (fila `reports`); arquivos privados no storage com expiração (Configurações → Auditoria e retenção → "Arquivos de relatório (horas)", padrão 24 h). Download sempre pela API (autorizado e auditado).
 - Falha `render_timeout`: reduza o escopo/filtros; limites `BPM_REPORTS_MAX_ROWS`, `BPM_REPORTS_MAX_BYTES`, `BPM_REPORTS_TIMEOUT`.
-- **Carbone (somente após aprovação da licença):** gere o par de chaves (`docker run --rm carbone/carbone-ee:slim-5.15.4 generate-keys`), salve `secrets/carbone_key.pub`, gere o token (`generate-token`) e monte-o para a API (`BPM_CARBONE_TOKEN_FILE`), defina `BPM_CARBONE_ENABLED=true`, suba com `COMPOSE_PROFILES=dev,carbone`, registre a aprovação em Configurações → Relatórios, crie e ative um modelo Carbone e use "Testar serviço Carbone". **Rollback:** volte o renderer para "Nativo" (o perfil pode continuar parado).
+- **Carbone (uso liberado pelo responsável do projeto, sem revisão de licença — ADR-0011):** gere o par de chaves (`docker run --rm carbone/carbone-ee:slim-5.15.4 generate-keys`), salve `secrets/carbone_key.pub`, gere o token (`generate-token`) e monte-o para a API (`BPM_CARBONE_TOKEN_FILE`), defina `BPM_CARBONE_ENABLED=true`, suba com `COMPOSE_PROFILES=dev,carbone`, selecione o renderer em Configurações → Relatórios, crie e ative um modelo Carbone e use "Testar serviço Carbone". **Rollback:** volte o renderer para "Nativo" (o perfil pode continuar parado).
 
 ## Auditoria e retenção
 

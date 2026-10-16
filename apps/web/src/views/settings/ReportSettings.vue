@@ -9,7 +9,7 @@ import SettingHeader from '@/components/settings/SettingHeader.vue'
 const emit = defineEmits<{ changed: [] }>()
 const { setting, saving, err, load, save, action } = useSetting<any>('reports')
 const notify = useNotify()
-const form = reactive({ renderer: 'native', confidentialityLabel: '', carbone: { licenseApproved: false, approvalReference: '', edition: 'community' } })
+const form = reactive({ renderer: 'native', confidentialityLabel: '', carbone: { edition: 'community' } })
 
 interface Template { id: string; key: string; version: number; name: string; kind: string; engine: string; status: string; options: Record<string, any>; fileSha256: string | null; createdBy: string | null; createdAt: string; activatedAt: string | null }
 const templates = ref<Template[]>([])
@@ -64,15 +64,11 @@ async function activate(t: Template) {
       <div class="tm-panel-head"><div class="tm-panel-title">Renderer</div></div>
       <div class="tm-panel-body">
         <div class="tm-field"><label for="rp-r">Motor de geração</label>
-          <select id="rp-r" v-model="form.renderer"><option value="native">Nativo (PDF/CSV/XLSX gerados pela API — sem dependência externa)</option><option value="carbone">Carbone self-hosted (somente com licença aprovada)</option></select>
+          <select id="rp-r" v-model="form.renderer"><option value="native">Nativo (PDF/CSV/XLSX gerados pela API — sem dependência externa)</option><option value="carbone">Carbone self-hosted (modelos DOCX/ODT/XLSX — requer o serviço da plataforma)</option></select>
           <div v-if="err('renderer')" class="tm-hint err">{{ err('renderer') }}</div>
         </div>
-        <div class="tm-note warn"><i class="pi pi-exclamation-triangle" aria-hidden="true" /><span>A Community Edition do Carbone usa o "CCL Agreement" (não é licença permissiva) e recursos Enterprise exigem licença. Confirme com jurídico/segurança o uso interno e a forma de hospedagem antes de habilitar; a chave de licença nunca vai para imagem ou Git.</span></div>
-        <label class="check"><input v-model="form.carbone.licenseApproved" type="checkbox" /> <span>Licença do Carbone aprovada para o uso pretendido</span></label>
-        <div class="two">
-          <div class="tm-field"><label for="rp-a">Referência da aprovação</label><input id="rp-a" v-model="form.carbone.approvalReference" /></div>
-          <div class="tm-field"><label for="rp-e">Edição</label><select id="rp-e" v-model="form.carbone.edition"><option value="community">Community</option><option value="enterprise">Enterprise (licenciada)</option></select></div>
-        </div>
+        <div class="tm-field"><label for="rp-e">Edição</label><select id="rp-e" v-model="form.carbone.edition"><option value="community">Community</option><option value="enterprise">Enterprise (licenciada)</option></select>
+          <div class="tm-hint">O serviço Carbone precisa estar habilitado pela plataforma (<code>BPM_CARBONE_ENABLED=true</code> e perfil <code>carbone</code> do Compose); use "Testar serviço Carbone" para conferir.</div></div>
         <div class="tm-field"><label for="rp-c">Selo de confidencialidade (cabeçalho)</label><input id="rp-c" v-model="form.confidentialityLabel" maxlength="80" /></div>
         <div class="tm-actions"><button class="tm-btn primary" :disabled="saving" @click="submit">Salvar</button><button class="tm-btn" :disabled="saving" @click="health">Testar serviço Carbone</button></div>
       </div>
