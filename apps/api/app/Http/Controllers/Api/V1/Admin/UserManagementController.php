@@ -40,7 +40,7 @@ class UserManagementController extends ApiController
                 $request->query->set('active', in_array($active, ['true', '1'], true));
             }
         }
-        $request->validate(['q' => ['nullable', 'string', 'max:200'], 'source' => ['nullable', 'in:entra,local,demo,superadmin'], 'active' => ['nullable', 'boolean'], 'area' => ['nullable', 'string', 'max:200'], 'role' => ['nullable', 'in:'.implode(',', array_values((array) config('bpm.roles')))], 'group' => ['nullable', 'exists:bpm_groups,key'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100']]);
+        $request->validate(['q' => ['nullable', 'string', 'max:200'], 'source' => ['nullable', 'in:entra,local,demo,superadmin'], 'active' => ['nullable', 'boolean'], 'area' => ['nullable', 'string', 'max:200'], 'role' => ['nullable', 'in:'.implode(',', array_values((array) config('bpm.roles')))], 'group' => ['nullable', 'exists:bpm_groups,key'], 'category' => ['nullable', Rule::in([...User::CATEGORIES, 'none'])], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100']]);
         $query = User::query()->with('manager:id,name,email,username,auth_source');
         if ($q = trim((string) $request->query('q', ''))) {
             $like = '%'.mb_strtolower($q).'%';
@@ -57,6 +57,9 @@ class UserManagementController extends ApiController
         }
         if ($role = $request->query('role')) {
             $query->whereJsonContains('roles', $role);
+        }
+        if ($category = $request->query('category')) {
+            $category === 'none' ? $query->whereNull('user_category') : $query->where('user_category', $category);
         }
         if ($group = $request->query('group')) {
             $query->whereJsonContains('groups', $group);
@@ -76,7 +79,7 @@ class UserManagementController extends ApiController
 
         return response()->json(['data' => [
             'identity' => ['id' => $user->id, 'name' => $user->name, 'username' => $user->username, 'email' => $user->email, 'upn' => $user->upn, 'authSource' => $user->auth_source, 'entraOid' => $user->entra_oid, 'entraTid' => $user->entra_tid],
-            'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type, 'manager' => $user->manager?->name],
+            'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type, 'userCategory' => $user->user_category, 'manager' => $user->manager?->name],
             'account' => ['active' => $user->is_active, 'accountEnabled' => $user->account_enabled, 'disabledReason' => $user->disabled_reason, 'createdAt' => $user->created_at?->toIso8601String(), 'updatedAt' => $user->updated_at?->toIso8601String(), 'lastLoginAt' => $credential?->last_login_at?->toIso8601String(), 'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'lockedUntil' => $credential?->locked_until?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String(), 'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists()],
             'access' => ['roles' => $user->roles ?? [], 'roleSources' => ['token' => $user->token_roles ?? [], 'directoryMapping' => $user->directory_roles ?? [], 'manual' => $user->manual_roles ?? []], 'groups' => $user->groups ?? [], 'groupSources' => ['entraToken' => $user->token_groups ?? [], 'directoryMapping' => $user->directory_groups ?? [], 'manual' => $manual->map(fn ($m) => ['key' => $m->group->key, 'name' => $m->group->name, 'createdAt' => $m->created_at?->toIso8601String(), 'createdBy' => $m->created_by_name])->values()]],
             'activity' => ['data' => $events->getCollection()->map(fn (AuditEvent $e) => ['action' => $e->action, 'label' => AuditCatalog::label($e->action), 'outcome' => $e->outcome, 'actor' => $e->actor_name, 'occurredAt' => $e->occurred_at->toIso8601String(), 'diff' => $e->diff])->values(), 'meta' => ['currentPage' => $events->currentPage(), 'lastPage' => $events->lastPage(), 'total' => $events->total()]],
@@ -92,7 +95,8 @@ class UserManagementController extends ApiController
             'username' => ['required', 'string', 'max:120', 'regex:/^[A-Za-z0-9._-]+$/', Rule::unique('users', 'username')],
             'area' => ['nullable', 'string', 'max:200'],
             'department' => ['nullable', 'string', 'max:200'],
-        ]);
+            'userCategory' => ['required', Rule::in(User::CATEGORIES)],
+        ], ['userCategory.required' => 'Selecione o tipo de usuário.', 'userCategory.in' => 'Selecione o tipo de usuário.']);
         $email = mb_strtolower(trim($data['email']));
         if (User::whereRaw('LOWER(email) = ?', [$email])->exists()) {
             throw ApiProblem::validation(['email' => ['Este e-mail já está associado a uma identidade existente. Não vinculamos contas automaticamente.']]);
@@ -103,11 +107,11 @@ class UserManagementController extends ApiController
         }
         $invitationQueued = false;
         $user = DB::transaction(function () use ($data, $email, $username, &$invitationQueued) {
-            $user = User::create(['name' => trim($data['name']), 'email' => $email, 'username' => $username, 'area' => $data['area'] ?? null, 'department' => $data['department'] ?? null,
+            $user = User::create(['name' => trim($data['name']), 'email' => $email, 'username' => $username, 'area' => $data['area'] ?? null, 'department' => $data['department'] ?? null, 'user_category' => $data['userCategory'],
                 'auth_source' => User::SOURCE_LOCAL, 'is_active' => false, 'roles' => [], 'groups' => [], 'manual_groups' => [], 'manual_roles' => [], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
             LocalCredential::create(['user_id' => $user->id, 'password_hash' => PasswordPolicy::hash(bin2hex(random_bytes(48))), 'password_changed_at' => now()]);
             $invitationQueued = $this->local->issueInvitation($user, $this->user());
-            AuditLogger::record('identity.local_user_created', 'user', $user->id, ['authSource' => 'local', 'status' => 'invitation_pending'], null, $this->user(), context: ['object_name' => $user->name]);
+            AuditLogger::record('identity.local_user_created', 'user', $user->id, ['authSource' => 'local', 'status' => 'invitation_pending', 'userCategory' => $data['userCategory']], null, $this->user(), context: ['object_name' => $user->name]);
 
             return $user;
         });
@@ -119,16 +123,30 @@ class UserManagementController extends ApiController
     {
         $this->authorizeAdmin();
         $user = User::find($id) ?? throw ApiProblem::notFound();
-        $data = $request->validate(['active' => ['required', 'boolean']]);
-        $active = (bool) $data['active'];
-        if ($user->auth_source !== 'local') {
-            throw ApiProblem::validation(['active' => ['Contas Entra são gerenciadas pelo diretório.']]);
+        $data = $request->validate([
+            'active' => ['sometimes', 'boolean'],
+            'userCategory' => ['sometimes', Rule::in(User::CATEGORIES)],
+        ], ['userCategory.in' => 'Selecione o tipo de usuário.']);
+        if (! array_key_exists('active', $data) && ! array_key_exists('userCategory', $data)) {
+            throw ApiProblem::validation(['active' => ['Informe a situação ou o tipo de usuário.']]);
         }
+        if ($user->auth_source !== 'local') {
+            throw ApiProblem::validation([array_key_exists('active', $data) ? 'active' : 'userCategory' => ['Contas Entra são gerenciadas pelo diretório.']]);
+        }
+        if (array_key_exists('userCategory', $data) && $user->user_category !== $data['userCategory']) {
+            $before = ['userCategory' => $user->user_category];
+            $user->forceFill(['user_category' => $data['userCategory']])->save();
+            AuditLogger::record('identity.user_category_changed', 'user', $user->id, ['userCategory' => $user->user_category], null, $this->user(), diff: AuditDiff::between($before, ['userCategory' => $user->user_category]), context: ['object_name' => $user->name]);
+        }
+        if (! array_key_exists('active', $data)) {
+            return response()->json(['data' => $this->row($user->fresh())]);
+        }
+        $active = (bool) $data['active'];
         if ($user->is_active === $active) {
             return response()->json(['data' => $this->row($user)]);
         }
         if ($active && ! LocalCredential::where('user_id', $user->id)->whereNotNull('activated_at')->exists()) {
-            throw ApiProblem::conflict('Esta conta ainda n\u00e3o foi ativada pelo convite. Reenvie o convite para que a pessoa defina a senha.', 'invitation_activation_required');
+            throw ApiProblem::conflict('Esta conta ainda não foi ativada pelo convite. Reenvie o convite para que a pessoa defina a senha.', 'invitation_activation_required');
         }
         DB::transaction(function () use ($user, $active) {
             $before = ['active' => $user->is_active, 'disabledReason' => $user->disabled_reason];
@@ -182,7 +200,7 @@ class UserManagementController extends ApiController
     private function row(User $user): array
     {
         return ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'upn' => $user->upn, 'username' => $user->username, 'area' => $user->area,
-            'department' => $user->department, 'authSource' => $user->auth_source, 'isActive' => $user->is_active, 'roles' => $user->roles ?? [], 'groups' => $user->groups ?? [],
+            'department' => $user->department, 'userCategory' => $user->user_category, 'authSource' => $user->auth_source, 'isActive' => $user->is_active, 'roles' => $user->roles ?? [], 'groups' => $user->groups ?? [],
             'manager' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'username' => $user->manager->username, 'authSource' => $user->manager->auth_source] : null,
             'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id,
             'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists(),

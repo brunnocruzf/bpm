@@ -28,6 +28,12 @@ As contas locais não são identidades de emergência e não devem depender do M
    ou da sincronização Graph.
 6. Login, criação/ativação/desativação, convites, reset e membership manual são auditados. Senhas, hashes, tokens,
    cookies e links completos nunca entram em auditoria.
+7. Toda conta local é classificada na criação como **fornecedor**, **cliente** ou **interno** (`users.user_category`:
+   `supplier`, `customer`, `internal`). É uma classificação administrativa, separada do `user_type` do Entra
+   (Member/Guest), **não concede papéis, grupos nem raias** e pode ser alterada por quem tem `settings.manage`
+   (evento `identity.user_category_changed`). Contas anteriores ficam sem classificação até serem revisadas.
+8. A ativação manual exige que o titular tenha aceitado o convite (`local_credentials.activated_at`); reenviar um
+   convite invalida os anteriores, mas nunca equivale a aceite.
 
 ## Consequências
 

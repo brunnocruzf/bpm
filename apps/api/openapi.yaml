@@ -370,6 +370,33 @@ paths:
       summary: Consulta AX sob demanda (tpr, item, purchaseOrder, supplier)
       parameters: [{ name: source, in: path, required: true, schema: { type: string } }, { name: value, in: query, required: true, schema: { type: string } }]
       responses: { '200': { description: OK }, '503': { $ref: '#/components/responses/Problem' } }
+  /admin/managed-users:
+    get:
+      summary: "Lista identidades (settings.manage); filtros no servidor"
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: source, in: query, schema: { type: string, enum: [entra, local, demo, superadmin] } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: category, in: query, schema: { type: string, enum: [supplier, customer, internal, none] } }
+        - { name: area, in: query, schema: { type: string } }
+        - { name: role, in: query, schema: { type: string } }
+        - { name: group, in: query, schema: { type: string } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses: { '200': { description: "data[] (inclui userCategory) + meta" }, '403': { $ref: '#/components/responses/Problem' } }
+    post:
+      summary: "Cria conta local pendente e envia convite (settings.manage)"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name, email, username, userCategory], properties: { name: { type: string, maxLength: 200 }, email: { type: string, format: email }, username: { type: string, maxLength: 120 }, area: { type: string, nullable: true }, department: { type: string, nullable: true }, userCategory: { type: string, enum: [supplier, customer, internal] } } } } } }
+      responses: { '201': { description: Created }, '403': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/managed-users/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: "Perfil da identidade (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' } } }
+    patch:
+      summary: "Ativa/desativa ou reclassifica uma conta local (settings.manage)"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { active: { type: boolean }, userCategory: { type: string, enum: [supplier, customer, internal] } } } } } }
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/managed-users/{id}/invitation:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: "Reenvia o convite de uma conta local pendente", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
   /admin/roles:
     get: { summary: "Effective roles and related users (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
   /admin/roles/{roleKey}/users:

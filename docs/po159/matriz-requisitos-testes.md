@@ -100,4 +100,14 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | Prévia com o Swagger real da API do AX (v1 68 operações, v2 6) | Execução de leitura no container (sem gravar) | 🟡 manual |
 | Chamadas reais a endpoints do AX | Não executadas (sem autorização/credencial de homologação) | ⏳ |
 
+## Contas locais e gestão de usuários (ADR-0017)
+
+| Requisito | Evidência | Status |
+|---|---|---|
+| Conta local criada pendente, ativada pelo convite de uso único, sessão por cookie HttpOnly | `LocalIdentityTest::test_admin_invitation_activation_login_cookie_and_logout` | ✅ |
+| Reenviar o convite não permite ativar conta que nunca o aceitou (`activated_at`); conta que aceitou pode ser desativada e reativada | `LocalIdentityTest::test_resending_the_invitation_does_not_allow_activating_an_account_that_never_accepted_it` · `::test_an_account_that_accepted_the_invitation_can_be_disabled_and_reactivated_by_the_admin` | ✅ |
+| Tipo de usuário (fornecedor/cliente/interno) obrigatório e validado na criação | `LocalIdentityTest::test_user_category_is_required_and_validated_on_creation` | ✅ |
+| Filtro por tipo, alteração só em conta local, auditoria com diff e permissão `settings.manage` | `LocalIdentityTest::test_user_category_can_be_filtered_changed_for_local_accounts_only_and_is_audited` | ✅ |
+| Tipo de usuário no diálogo "Novo usuário local" (RadioButton) | Verificação manual com Playwright (MCP) contra o Compose | 🟡 manual |
+
 Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web).

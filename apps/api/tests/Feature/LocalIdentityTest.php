@@ -28,8 +28,8 @@ class LocalIdentityTest extends TestCase
     public function test_admin_invitation_activation_login_cookie_and_logout(): void
     {
         $created = $this->as('admin')->postJson('/api/v1/admin/managed-users', [
-            'name' => 'Pessoa Local', 'email' => 'pessoa.local@example.test', 'username' => 'pessoa.local', 'area' => 'Operações',
-        ])->assertCreated()->assertJsonPath('data.authSource', 'local')->assertJsonPath('data.isActive', false);
+            'name' => 'Pessoa Local', 'email' => 'pessoa.local@example.test', 'username' => 'pessoa.local', 'area' => 'Operações', 'userCategory' => 'supplier',
+        ])->assertCreated()->assertJsonPath('data.userCategory', 'supplier')->assertJsonPath('data.authSource', 'local')->assertJsonPath('data.isActive', false);
         $user = User::where('username', 'pessoa.local')->firstOrFail();
         $this->assertSame([], $user->roles);
         $this->assertSame(User::SOURCE_LOCAL, $user->auth_source);
@@ -68,6 +68,8 @@ class LocalIdentityTest extends TestCase
         $this->withCredentials()->withUnencryptedCookies(['bpm_local_session' => $opaque, 'bpm_local_csrf' => $csrfCookie->getValue()])
             ->withHeader('X-BPM-CSRF', $csrfCookie->getValue())->postJson('/api/v1/auth/logout')->assertNoContent();
         $this->assertNotNull(AuthSession::where('user_id', $user->id)->firstOrFail()->revoked_at);
+        $this->assertSame('supplier', $user->fresh()->user_category);
+        $this->assertSame('supplier', AuditEvent::where('action', 'identity.local_user_created')->firstOrFail()->data['userCategory']);
         $this->assertTrue(AuditEvent::where('action', 'identity.local_user_created')->exists());
         $this->assertTrue(AuditEvent::where('action', 'identity.local_user_activated')->exists());
     }
@@ -75,7 +77,7 @@ class LocalIdentityTest extends TestCase
     public function test_resending_the_invitation_does_not_allow_activating_an_account_that_never_accepted_it(): void
     {
         $this->as('admin')->postJson('/api/v1/admin/managed-users', [
-            'name' => 'Pessoa Pendente', 'email' => 'pendente@example.test', 'username' => 'pessoa.pendente',
+            'name' => 'Pessoa Pendente', 'email' => 'pendente@example.test', 'username' => 'pessoa.pendente', 'userCategory' => 'customer',
         ])->assertCreated();
         $user = User::where('username', 'pessoa.pendente')->firstOrFail();
         $this->as('admin')->postJson('/api/v1/admin/managed-users/'.$user->id.'/invitation')->assertOk();
@@ -91,7 +93,7 @@ class LocalIdentityTest extends TestCase
     public function test_an_account_that_accepted_the_invitation_can_be_disabled_and_reactivated_by_the_admin(): void
     {
         $this->as('admin')->postJson('/api/v1/admin/managed-users', [
-            'name' => 'Pessoa Ativa', 'email' => 'ativa@example.test', 'username' => 'pessoa.ativa',
+            'name' => 'Pessoa Ativa', 'email' => 'ativa@example.test', 'username' => 'pessoa.ativa', 'userCategory' => 'internal',
         ])->assertCreated();
         $user = User::where('username', 'pessoa.ativa')->firstOrFail();
         $message = NotificationMessage::where('event', 'identity.invitation')->firstOrFail();
@@ -190,5 +192,35 @@ class LocalIdentityTest extends TestCase
 
         $admin = $this->dev('admin');
         $this->as('admin')->postJson("/api/v1/admin/roles/{$role}/users", ['userIds' => [$admin->id]])->assertStatus(409)->assertJsonPath('code', 'self_role_assignment');
+    }
+
+    public function test_user_category_is_required_and_validated_on_creation(): void
+    {
+        $base = ['name' => 'Sem Tipo', 'email' => 'sem.tipo@example.test', 'username' => 'sem.tipo'];
+        $this->as('admin')->postJson('/api/v1/admin/managed-users', $base)->assertStatus(422)->assertJsonPath('errors.userCategory.0', 'Selecione o tipo de usuário.');
+        $this->as('admin')->postJson('/api/v1/admin/managed-users', [...$base, 'userCategory' => 'Entra'])->assertStatus(422)->assertJsonValidationErrorFor('userCategory', 'errors');
+        $this->assertFalse(User::where('username', 'sem.tipo')->exists());
+    }
+
+    public function test_user_category_can_be_filtered_changed_for_local_accounts_only_and_is_audited(): void
+    {
+        foreach ([['a', 'supplier'], ['b', 'customer'], ['c', 'internal']] as [$n, $cat]) {
+            $this->as('admin')->postJson('/api/v1/admin/managed-users', ['name' => "Pessoa $n", 'email' => "$n@example.test", 'username' => "pessoa.$n", 'userCategory' => $cat])->assertCreated();
+        }
+        $legacy = User::create(['name' => 'Legado', 'email' => 'legado@example.test', 'username' => 'legado', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true, 'roles' => [], 'groups' => []]);
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?category=supplier')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.userCategory', 'supplier');
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?source=local&category=none')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $legacy->id);
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?category=bogus')->assertStatus(422);
+
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$legacy->id, ['userCategory' => 'customer'])->assertOk()->assertJsonPath('data.userCategory', 'customer');
+        $event = AuditEvent::where('action', 'identity.user_category_changed')->firstOrFail();
+        $this->assertSame(['from' => null, 'to' => 'customer'], $event->diff['userCategory']);
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$legacy->id, ['userCategory' => 'nope'])->assertStatus(422);
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$legacy->id, [])->assertStatus(422);
+        $this->as('cq')->patchJson('/api/v1/admin/managed-users/'.$legacy->id, ['userCategory' => 'internal'])->assertForbidden();
+
+        $entra = User::create(['name' => 'Entra', 'email' => 'e@example.test', 'entra_oid' => 'o1', 'entra_tid' => 't1', 'auth_source' => User::SOURCE_ENTRA, 'is_active' => true, 'roles' => [], 'groups' => []]);
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$entra->id, ['userCategory' => 'internal'])->assertStatus(422);
+        $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$legacy->id)->assertOk()->assertJsonPath('data.organization.userCategory', 'customer');
     }
 }

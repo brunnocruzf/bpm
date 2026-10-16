@@ -47,3 +47,18 @@ export const TASK_STATUS: Record<string, { label: string; tone: string }> = {
   completed: { label: 'Concluída', tone: 'green' },
   cancelled: { label: 'Cancelada', tone: 'neutral' },
 }
+
+/** Classificação administrativa de contas locais (não concede acesso). */
+export const USER_CATEGORY: Record<string, { label: string; tone: string; hint: string }> = {
+  supplier: { label: 'Fornecedor', tone: 'amber', hint: 'Pessoa de empresa fornecedora' },
+  customer: { label: 'Cliente', tone: 'blue', hint: 'Pessoa de empresa cliente' },
+  internal: { label: 'Interno', tone: 'brand', hint: 'Colaborador da organização' },
+}
+export const USER_CATEGORY_OPTIONS = Object.entries(USER_CATEGORY).map(([value, v]) => ({ value, ...v }))
+
+export const AUTH_SOURCE: Record<string, string> = { entra: 'Entra ID', local: 'Conta local', demo: 'Visitante', superadmin: 'SuperAdmin' }
+export const ENTRA_USER_TYPE: Record<string, string> = { Member: 'Membro', Guest: 'Convidado (B2B)' }
+export const DISABLED_REASON: Record<string, string> = {
+  admin: 'Desativada pelo administrador', directory_disabled: 'Desabilitada no Entra ID',
+  directory_deleted: 'Removida do Entra ID', superadmin_disabled: 'SuperAdmin desativado',
+}

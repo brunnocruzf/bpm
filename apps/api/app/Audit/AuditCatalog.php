@@ -98,6 +98,7 @@ final class AuditCatalog
         'directory.sync_blocked' => ['identity', 'Sincronização bloqueada pela trava de segurança'],
         'directory.user_created' => ['identity', 'Usuário importado do diretório'],
         'identity.local_user_created' => ['identity', 'Conta local provisionada'],
+        'identity.user_category_changed' => ['identity', 'Tipo de usuário alterado'],
         'identity.local_user_activated' => ['identity', 'Conta local ativada'],
         'identity.local_user_disabled' => ['identity', 'Conta local desativada'],
         'identity.local_invitation_issued' => ['identity', 'Convite de conta local emitido'],

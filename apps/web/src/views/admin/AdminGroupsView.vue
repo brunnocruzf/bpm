@@ -5,14 +5,15 @@ import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import AutoComplete from 'primevue/autocomplete'
 import Button from 'primevue/button'
-import { api, errorMessage } from '@/api/http'
+import RadioButton from 'primevue/radiobutton'
+import { api, ApiError, errorMessage } from '@/api/http'
 import { useSession } from '@/stores/session'
 import { useNotify } from '@/composables/notify'
-import { fmtDateTime } from '@/composables/format'
+import { fmtDateTime, USER_CATEGORY, USER_CATEGORY_OPTIONS } from '@/composables/format'
 
 type Tab = 'users' | 'groups' | 'roles'
 interface Group { key: string; name: string; description: string | null; entraGroupId: string | null; email: string | null; members: number }
-interface UserRow { id: string; name: string; email: string | null; username: string | null; area: string | null; department: string | null; authSource: string | null; roles: string[]; groups: string[]; isActive: boolean; invitationPending: boolean; lastSeenAt: string | null; manager: { id: string; name: string; email: string | null; username: string | null; authSource: string | null } | null; managerPending: boolean }
+interface UserRow { id: string; name: string; email: string | null; username: string | null; area: string | null; department: string | null; authSource: string | null; userCategory: string | null; roles: string[]; groups: string[]; isActive: boolean; invitationPending: boolean; lastSeenAt: string | null; manager: { id: string; name: string; email: string | null; username: string | null; authSource: string | null } | null; managerPending: boolean }
 type ProfileTarget = Pick<UserRow, 'id' | 'name'>
 interface PageMeta { currentPage: number; lastPage: number; total: number }
 interface Role { key: string; alias: string; name: string; active: boolean; userCount: number; permissions: { key: string; source: string }[]; users: { id: string; name: string; authSource: string; source: string; manual: boolean }[]; directoryMappings: { group: string | null; entraGroupId: string }[] }
@@ -75,7 +76,9 @@ const newGroupOpen = ref(false)
 const creatingGroup = ref(false)
 const newGroupDraft = ref({ key: '', name: '', description: '', entraGroupId: '', email: '' })
 const newUserOpen = ref(false)
-const newUser = ref({ name: '', email: '', username: '', area: '', department: '' })
+const emptyUser = () => ({ name: '', email: '', username: '', area: '', department: '', userCategory: '' })
+const newUser = ref(emptyUser())
+const newUserCategoryError = ref('')
 const creatingUser = ref(false)
 
 async function loadUsers(page = 1) {
@@ -246,12 +249,17 @@ async function createGroup() {
   } finally { creatingGroup.value = false }
 }
 async function createLocalUser() {
+  newUserCategoryError.value = ''
+  if (!newUser.value.userCategory) { newUserCategoryError.value = 'Selecione o tipo de usuário.'; return }
   creatingUser.value = true
   try {
     const res = await api<{ message: string }>('/admin/managed-users', { method: 'POST', body: newUser.value })
     notify.success(res.message || 'Conta criada pendente de ativação.')
-    newUser.value = { name: '', email: '', username: '', area: '', department: '' }; newUserOpen.value = false; await loadUsers()
-  } catch (e) { notify.error(e) } finally { creatingUser.value = false }
+    newUser.value = emptyUser(); newUserOpen.value = false; await loadUsers()
+  } catch (e) {
+    if (e instanceof ApiError && e.errors.userCategory?.[0]) newUserCategoryError.value = e.errors.userCategory[0]
+    notify.error(e)
+  } finally { creatingUser.value = false }
 }
 async function toggleUser(user: UserRow) {
   if (user.authSource !== 'local') return
@@ -287,7 +295,7 @@ onMounted(() => { void loadUsers() })
     <p v-if="error" class="tm-error" role="alert">{{ error }}</p>
     <p v-else-if="loading" class="tm-empty" role="status">Carregando usuários…</p>
     <div v-else class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Nome</th><th>Manager</th><th>E-mail / usuário</th><th>Origem</th><th>Estado</th><th>Grupos</th><th>Papéis</th><th>Último acesso</th><th>Ações</th></tr></thead><tbody>
-      <tr v-for="u in users" :key="u.id"><td class="tm-strong">{{ u.name }}<div class="tm-flow-sub">{{ u.department || u.area || 'Centro de Custo não informado' }}</div></td><td><Button v-if="u.manager" class="tm-link-btn" :label="u.manager.name" link :aria-label="`Abrir perfil de ${u.manager.name}, manager de ${u.name}`" @click="openProfile(u.manager)" /><span v-else-if="u.managerPending" class="tm-flow-sub" title="A referência será vinculada quando o manager for importado">Aguardando importação</span><span v-else>—</span><div v-if="u.manager?.email" class="tm-flow-sub">{{ u.manager.email }}</div></td><td>{{ u.email || u.username || '—' }}<div class="tm-flow-sub">{{ u.username }}</div></td><td>{{ u.authSource === 'entra' ? 'Entra ID' : u.authSource === 'local' ? 'Conta local' : u.authSource || 'Indisponível' }}</td><td><span class="tm-pill" :class="u.isActive ? 'green' : 'amber'">{{ u.isActive ? 'Ativo' : u.invitationPending ? 'Convite pendente' : 'Inativo' }}</span></td><td>{{ u.groups?.length ?? 0 }}</td><td>{{ u.roles?.length ?? 0 }}</td><td>{{ fmtDateTime(u.lastSeenAt) }}</td><td><div class="tm-actions"><button class="tm-btn small" @click="openProfile(u)">Perfil</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && !u.isActive && !u.invitationPending" class="tm-btn small" @click="resendInvitation(u)">Reenviar convite</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && (u.isActive || !u.invitationPending)" class="tm-btn small" @click="toggleUser(u)">{{ u.isActive ? 'Desativar' : 'Ativar' }}</button></div></td></tr>
+      <tr v-for="u in users" :key="u.id"><td class="tm-strong">{{ u.name }}<div class="tm-flow-sub">{{ u.department || u.area || 'Centro de Custo não informado' }}</div></td><td><Button v-if="u.manager" class="tm-link-btn" :label="u.manager.name" link :aria-label="`Abrir perfil de ${u.manager.name}, manager de ${u.name}`" @click="openProfile(u.manager)" /><span v-else-if="u.managerPending" class="tm-flow-sub" title="A referência será vinculada quando o manager for importado">Aguardando importação</span><span v-else>—</span><div v-if="u.manager?.email" class="tm-flow-sub">{{ u.manager.email }}</div></td><td>{{ u.email || u.username || '—' }}<div class="tm-flow-sub">{{ u.username }}</div></td><td>{{ u.authSource === 'entra' ? 'Entra ID' : u.authSource === 'local' ? 'Conta local' : u.authSource || 'Indisponível' }}<div v-if="u.userCategory"><span class="tm-pill" :class="USER_CATEGORY[u.userCategory]?.tone ?? 'neutral'">{{ USER_CATEGORY[u.userCategory]?.label ?? u.userCategory }}</span></div></td><td><span class="tm-pill" :class="u.isActive ? 'green' : 'amber'">{{ u.isActive ? 'Ativo' : u.invitationPending ? 'Convite pendente' : 'Inativo' }}</span></td><td>{{ u.groups?.length ?? 0 }}</td><td>{{ u.roles?.length ?? 0 }}</td><td>{{ fmtDateTime(u.lastSeenAt) }}</td><td><div class="tm-actions"><button class="tm-btn small" @click="openProfile(u)">Perfil</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && !u.isActive && !u.invitationPending" class="tm-btn small" @click="resendInvitation(u)">Reenviar convite</button><button v-if="u.authSource === 'local' && session.can('settingsManage') && (u.isActive || !u.invitationPending)" class="tm-btn small" @click="toggleUser(u)">{{ u.isActive ? 'Desativar' : 'Ativar' }}</button></div></td></tr>
       <tr v-if="!users.length"><td colspan="9" class="tm-empty">Nenhum usuário encontrado.</td></tr>
     </tbody></table></div>
     <div class="tm-pager" style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 16px"><span>Página {{ meta.currentPage }} de {{ meta.lastPage }}</span><button class="tm-btn small" :disabled="meta.currentPage <= 1 || loading" @click="loadUsers(meta.currentPage - 1)">Anterior</button><button class="tm-btn small" :disabled="meta.currentPage >= meta.lastPage || loading" @click="loadUsers(meta.currentPage + 1)">Próxima</button></div>
@@ -349,6 +357,10 @@ onMounted(() => { void loadUsers() })
       <div class="tm-field"><label for="new-user-username">Usuário</label><input id="new-user-username" v-model="newUser.username" required maxlength="120" autocomplete="off" /></div>
       <div class="tm-field"><label for="new-user-area">Área</label><input id="new-user-area" v-model="newUser.area" maxlength="200" /></div>
       <div class="tm-field"><label for="new-user-department">Departamento</label><input id="new-user-department" v-model="newUser.department" maxlength="200" /></div>
+      <fieldset class="tm-radio-group" :aria-invalid="!!newUserCategoryError" aria-describedby="new-user-category-error"><legend>Tipo de usuário <span class="tm-req" aria-hidden="true">*</span></legend>
+        <label v-for="opt in USER_CATEGORY_OPTIONS" :key="opt.value" class="tm-radio-option" :for="`new-user-category-${opt.value}`"><RadioButton v-model="newUser.userCategory" name="new-user-category" :input-id="`new-user-category-${opt.value}`" :value="opt.value" /><span><strong>{{ opt.label }}</strong><small>{{ opt.hint }}</small></span></label>
+        <div id="new-user-category-error" class="tm-hint err" role="alert">{{ newUserCategoryError }}</div>
+      </fieldset>
       <div class="tm-actions" style="justify-content:flex-end"><button type="button" class="tm-btn" @click="newUserOpen = false">Cancelar</button><button class="tm-btn primary" type="submit" :disabled="creatingUser">{{ creatingUser ? 'Criando…' : 'Criar conta pendente' }}</button></div>
     </form>
   </Dialog>
@@ -361,6 +373,12 @@ onMounted(() => { void loadUsers() })
 </template>
 
 <style scoped>
+.tm-radio-group { margin: 0 0 12px; padding: 0; border: 0; min-width: 0; display: grid; gap: 8px; }
+.tm-radio-group legend { padding: 0; margin-bottom: 6px; color: #53677b; font-size: 12px; font-weight: 600; }
+.tm-radio-option { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line, #d5dde6); border-radius: 8px; cursor: pointer; font-size: 13px; }
+.tm-radio-option:has(input:checked) { border-color: var(--brand, #086b77); background: var(--brand-softer, #f3f9fa); }
+.tm-radio-option span { display: grid; gap: 1px; }
+.tm-radio-option small { color: #738397; font-size: 11px; }
 .tm-filter-row { display: grid; grid-template-columns: minmax(220px, 1.6fr) repeat(2, minmax(155px, 1fr)) minmax(130px, .75fr) minmax(175px, 1.1fr) minmax(150px, 1fr); gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line, #e7ebef); }
 .tm-filter-search, .tm-filter-input, .tm-filter-select { width: 100%; min-width: 0; }
 .tm-filter-row :deep(.p-inputtext), .tm-filter-row :deep(.p-select) { min-height: 38px; border-radius: 7px; border-color: var(--line, #d5dde6); font-size: 12px; }

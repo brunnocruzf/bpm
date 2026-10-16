@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $area
  * @property string|null $department
  * @property string|null $user_type
+ * @property string|null $user_category
  * @property bool|null $account_enabled
  * @property array<int,string> $roles
  * @property array<int,string> $groups
@@ -60,8 +61,17 @@ class User extends Model implements AuthenticatableContract
 
     public const SOURCE_LOCAL = 'local';
 
+    /** Classificação administrativa da conta (não concede papéis nem grupos); distinta do userType do Entra. */
+    public const CATEGORY_SUPPLIER = 'supplier';
+
+    public const CATEGORY_CUSTOMER = 'customer';
+
+    public const CATEGORY_INTERNAL = 'internal';
+
+    public const CATEGORIES = [self::CATEGORY_SUPPLIER, self::CATEGORY_CUSTOMER, self::CATEGORY_INTERNAL];
+
     protected $fillable = [
-        'entra_oid', 'entra_tid', 'manager_entra_oid', 'manager_user_id', 'username', 'name', 'email', 'upn', 'area', 'department', 'user_type', 'account_enabled',
+        'entra_oid', 'entra_tid', 'manager_entra_oid', 'manager_user_id', 'username', 'name', 'email', 'upn', 'area', 'department', 'user_type', 'user_category', 'account_enabled',
         'roles', 'groups', 'manual_groups', 'manual_roles', 'token_roles', 'token_groups', 'directory_roles', 'directory_groups', 'directory_synced_at',
         'is_active', 'disabled_reason', 'disabled_at', 'last_seen_at', 'auth_source',
     ];
