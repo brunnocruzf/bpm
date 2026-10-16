@@ -33,6 +33,9 @@ class DevUserSeeder extends Seeder
         ];
 
         foreach ($users as [$username, $name, $area, $roles, $groups]) {
+            // vínculos bloqueados pelo administrador continuam bloqueados quando o seed roda de novo
+            $excluded = (array) (User::where('username', $username)->value('excluded_groups') ?? []);
+            $groups = array_values(array_diff($groups, $excluded));
             User::updateOrCreate(['username' => $username], [
                 'name' => $name,
                 'area' => $area,

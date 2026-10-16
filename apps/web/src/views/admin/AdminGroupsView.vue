@@ -37,6 +37,12 @@ const rolePage = ref(1)
 const editing = ref<Group | null>(null)
 const membersGroup = ref<Group | null>(null)
 const groupMembers = ref<any[]>([])
+const groupExcluded = ref<any[]>([])
+const groupMembersTotal = ref(0)
+const removingMemberId = ref<string | null>(null)
+const MEMBER_SOURCE: Record<string, string> = {
+  manual: 'Manual — BPM TMSA', entra_sync: 'Entra ID — sincronização', entra_token: 'Entra ID — token de login', existing_mapping: 'Mapeamento / cadastro existente',
+}
 const candidateUsers = ref<UserRow[]>([])
 const memberLookup = ref<UserRow | null>(null)
 const selectedUserIds = ref<string[]>([])
@@ -89,11 +95,13 @@ async function saveGroup() {
 }
 async function openMembers(group: Group) {
   newGroupOpen.value = false
-  membersGroup.value = group; groupMembers.value = []; candidateUsers.value = []; memberLookup.value = null; selectedUserIds.value = []; selectedGroupUsers.value = []
+  membersGroup.value = group; groupMembers.value = []; groupExcluded.value = []; groupMembersTotal.value = 0; candidateUsers.value = []; memberLookup.value = null; selectedUserIds.value = []; selectedGroupUsers.value = []
   memberCandidatesError.value = ''
   try {
-    const res = await api<{ data: any[] }>(`/admin/groups/${group.key}/members`)
+    const res = await api<{ data: any[]; excluded?: any[]; meta?: { total: number } }>(`/admin/groups/${group.key}/members`, { query: { perPage: 100 } })
     groupMembers.value = res.data
+    groupExcluded.value = res.excluded ?? []
+    groupMembersTotal.value = res.meta?.total ?? res.data.length
   } catch (e) { notify.error(e) }
 }
 async function searchCandidates(event: { query: string }) {
@@ -127,11 +135,26 @@ async function addMembers() {
   } catch (e) { notify.error(e) }
 }
 async function removeMember(member: any) {
-  if (!membersGroup.value || !window.confirm(`Remover o vínculo manual de ${member.name}?`)) return
+  const group = membersGroup.value
+  if (!group) return
+  const detail = member.source === 'manual'
+    ? 'O vínculo manual será removido. Se o acesso também vier do Entra ID ou de um mapeamento, ele será bloqueado apenas neste sistema.'
+    : 'Este acesso vem do Entra ID ou de um mapeamento: será bloqueado apenas no BPM TMSA (o Entra ID não é alterado) e continuará bloqueado nas próximas sincronizações até você restaurar.'
+  if (!window.confirm(`Remover ${member.name} do grupo ${group.name}?\n\n${detail}`)) return
+  removingMemberId.value = member.id
   try {
-    await api(`/admin/groups/${membersGroup.value.key}/members/${member.id}`, { method: 'DELETE' })
-    notify.success('Vínculo manual removido.'); await openMembers(membersGroup.value); await loadGroups()
-  } catch (e) { notify.error(e) }
+    await api(`/admin/groups/${group.key}/exclusions/${member.id}`, { method: 'PUT' })
+    notify.success(`${member.name} foi removido(a) do grupo.`); await openMembers(group); await loadGroups()
+  } catch (e) { notify.error(e) } finally { removingMemberId.value = null }
+}
+async function restoreMember(member: any) {
+  const group = membersGroup.value
+  if (!group) return
+  removingMemberId.value = member.id
+  try {
+    await api(`/admin/groups/${group.key}/exclusions/${member.id}`, { method: 'DELETE' })
+    notify.success(`Bloqueio removido: ${member.name} volta a valer no grupo se a origem ainda concede o acesso.`); await openMembers(group); await loadGroups()
+  } catch (e) { notify.error(e) } finally { removingMemberId.value = null }
 }
 async function openRoleMembers(role: Role) {
   roleMembership.value = role; roleCandidateUsers.value = []; roleLookup.value = null; selectedRoleUserIds.value = []; selectedRoleUsers.value = []; roleCandidatesError.value = ''
@@ -246,7 +269,10 @@ async function createGroup() {
 
   <Dialog :visible="!!membersGroup" modal header="Membros do grupo TMSA" :style="{ width: 'min(850px, 96vw)' }" @update:visible="(v) => { if (!v) membersGroup = null }">
     <template v-if="membersGroup"><p>{{ membersGroup.name }} · <code>{{ membersGroup.key }}</code>. Alterações manuais não escrevem no Entra ID.</p>
-      <div class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Usuário</th><th>Origem do vínculo</th><th>Ator / data</th><th>Ação</th></tr></thead><tbody><tr v-for="m in groupMembers" :key="m.id"><td>{{ m.name }}<div class="tm-flow-sub">{{ m.email }}</div></td><td>{{ m.source === 'manual' ? 'Manual — BPM TMSA' : m.source }}</td><td>{{ m.createdBy || '—' }} {{ fmtDateTime(m.createdAt) }}</td><td><button v-if="m.source === 'manual' && session.can('settingsManage')" class="tm-btn small" @click="removeMember(m)">Remover vínculo</button></td></tr><tr v-if="!groupMembers.length"><td colspan="4">Nenhum membro neste grupo.</td></tr></tbody></table></div>
+      <div class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Usuário</th><th>Origem do vínculo</th><th>Ator / data</th><th>Ação</th></tr></thead><tbody><tr v-for="m in groupMembers" :key="m.id"><td>{{ m.name }}<div class="tm-flow-sub">{{ m.email }}</div></td><td>{{ MEMBER_SOURCE[m.source] ?? m.source }}</td><td>{{ m.createdBy || '—' }} {{ fmtDateTime(m.createdAt) }}</td><td><button v-if="session.can('settingsManage')" class="tm-btn small" :disabled="removingMemberId === m.id" :aria-label="`Remover ${m.name} do grupo`" @click="removeMember(m)">Remover do grupo</button></td></tr><tr v-if="!groupMembers.length"><td colspan="4">Nenhum membro neste grupo.</td></tr></tbody></table></div>
+      <p v-if="groupMembersTotal > groupMembers.length" class="tm-flow-sub" role="status">Mostrando {{ groupMembers.length }} de {{ groupMembersTotal }} membros.</p>
+      <div v-if="groupExcluded.length" class="tm-panel" style="margin-top:16px;padding:14px"><h3 class="tm-membership-title">Removidos neste sistema ({{ groupExcluded.length }})</h3><p class="tm-flow-sub">O acesso ainda pode existir no Entra ID ou no mapeamento, mas não vale no BPM TMSA enquanto o bloqueio existir. Restaurar não escreve no Entra ID.</p>
+        <div class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Usuário</th><th>Removido por / data</th><th>Ação</th></tr></thead><tbody><tr v-for="x in groupExcluded" :key="x.id"><td>{{ x.name }}<div class="tm-flow-sub">{{ x.email }}</div></td><td>{{ x.createdBy || '—' }} {{ fmtDateTime(x.createdAt) }}</td><td><button v-if="session.can('settingsManage')" class="tm-btn small" :disabled="removingMemberId === x.id" :aria-label="`Restaurar ${x.name} no grupo`" @click="restoreMember(x)">Restaurar</button></td></tr></tbody></table></div></div>
       <div v-if="session.can('settingsManage')" class="tm-panel tm-membership-form" style="margin-top:16px;padding:14px"><h3 class="tm-membership-title">Adicionar usuários ativos</h3><div class="tm-lookup-field"><label for="group-member-lookup">Buscar e selecionar usuário</label><AutoComplete id="group-member-lookup" v-model="memberLookup" class="tm-identity-autocomplete" input-class="tm-identity-input" :suggestions="candidateUsers" option-label="name" :delay="300" :min-length="2" :loading="loadingCandidates" force-selection aria-label="Buscar usuários ativos por nome ou e-mail" placeholder="Digite ao menos 2 caracteres do nome ou e-mail" @complete="searchCandidates" @item-select="selectGroupCandidate"><template #option="{ option }"><div class="tm-user-option"><span>{{ option.name }}</span><small>{{ option.email || option.username || option.authSource }}</small></div></template></AutoComplete></div><div class="tm-selected-users"><span class="tm-selected-label">{{ selectedGroupUsers.length }} selecionado(s)</span><div v-for="user in selectedGroupUsers" :key="user.id" class="tm-selected-user"><span>{{ user.name }}<small>{{ user.email || user.username }}</small></span><Button class="tm-btn small" label="Remover" aria-label="Remover usuário selecionado" @click="removeSelectedGroupUser(user)" /></div><span v-if="!selectedGroupUsers.length" class="tm-flow-sub">Os usuários escolhidos aparecerão aqui.</span></div><Button class="tm-btn primary tm-membership-submit" label="Adicionar selecionados" :disabled="!selectedUserIds.length" @click="addMembers"/><p v-if="memberCandidatesError" class="tm-error tm-membership-error" role="alert">{{ memberCandidatesError }}</p></div>
     </template>
   </Dialog>

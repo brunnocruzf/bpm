@@ -386,4 +386,36 @@ class DirectorySyncTest extends TestCase
         $other->forceFill(['user_type' => 'Guest'])->save();
         $this->as('admin')->getJson('/api/v1/admin/managed-users?attention=guest')->assertOk()->assertJsonPath('data.0.id', $other->id)->assertJsonPath('data.0.userType', 'Guest');
     }
+
+    public function test_a_locally_blocked_group_membership_survives_full_and_delta_syncs_and_does_not_touch_the_directory_source(): void
+    {
+        $ids = $this->seedDirectory();
+        $this->as('admin')->postJson('/api/v1/admin/entra/mappings', ['entraGroupId' => FakeGraph::G1, 'entraGroupName' => 'BPM-CQ', 'tmsaGroupKey' => 'CQ', 'tmsaRoles' => ['Bpm.TaskWorker']])->assertCreated();
+        $this->assertSame(DirectorySyncRun::COMPLETED, $this->sync()->status);
+        $a = User::where('entra_oid', $ids['a'])->firstOrFail();
+        $b = User::where('entra_oid', $ids['b'])->firstOrFail();
+        $this->assertContains('CQ', $a->groups);
+
+        $this->as('admin')->putJson("/api/v1/admin/groups/CQ/exclusions/{$a->id}")->assertNoContent();
+        $this->assertNotContains('CQ', $a->fresh()->groups);
+        $calls = count($this->graph->requests);
+
+        $this->assertSame(DirectorySyncRun::COMPLETED, $this->sync('full')->status);
+        // o usuário ganha uma segunda raia no Entra: o recálculo do acesso roda de verdade e o bloqueio continua valendo
+        $this->as('admin')->postJson('/api/v1/admin/entra/mappings', ['entraGroupId' => FakeGraph::G2, 'entraGroupName' => 'BPM-GEF', 'tmsaGroupKey' => 'GEF', 'tmsaRoles' => ['Bpm.TaskWorker']])->assertCreated();
+        $this->graph->members[FakeGraph::G2][] = $ids['a'];
+        $this->graph->groupChanges = [['id' => FakeGraph::G2, 'members@delta' => [['@odata.type' => '#microsoft.graph.user', 'id' => $ids['a']]]]];
+        $this->assertSame(DirectorySyncRun::COMPLETED, $this->sync()->status);
+
+        $a = $a->fresh();
+        $this->assertContains('GEF', $a->groups, 'o recálculo aplicou a nova raia');
+        $this->assertNotContains('CQ', $a->groups, 'o bloqueio local vale após a sincronização');
+        $this->assertContains('CQ', $a->directory_groups, 'a origem (diretório) continua concedendo: nada foi alterado no Entra/importação');
+        $this->assertContains('CQ', $b->fresh()->groups, 'quem não foi bloqueado segue com o vínculo');
+        $this->assertGreaterThan($calls, count($this->graph->requests));
+        $this->assertSame([], array_filter($this->graph->requests, fn ($r) => ! str_starts_with($r, 'GET ') && ! str_contains($r, '/oauth2/')), 'o bloqueio não escreve no Entra');
+
+        $this->as('admin')->deleteJson("/api/v1/admin/groups/CQ/exclusions/{$a->id}")->assertNoContent();
+        $this->assertContains('CQ', $a->fresh()->groups);
+    }
 }

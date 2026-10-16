@@ -32,6 +32,13 @@ As contas locais não são identidades de emergência e não devem depender do M
    `supplier`, `customer`, `internal`). É uma classificação administrativa, separada do `user_type` do Entra
    (Member/Guest), **não concede papéis, grupos nem raias** e pode ser alterada por quem tem `settings.manage`
    (evento `identity.user_category_changed`). Contas anteriores ficam sem classificação até serem revisadas.
+9. **Remover membros de grupos/raias** (`settings.manage`). O vínculo manual é apagado (`DELETE .../members/{userId}`). Acesso que vem do Entra
+   (token ou sincronização) ou de mapeamento não pode ser apagado na origem — o Entra ID nunca é alterado —, então é **bloqueado
+   localmente** (`PUT .../exclusions/{userId}`): `users.excluded_groups` (cache) + registro com autor e data em
+   `bpm_group_membership` (`source = excluded`). O bloqueio entra em `User::recomputeEffectiveGroups`, usado por login e
+   sincronização, e **vale sobre qualquer origem** até ser restaurado (`DELETE .../exclusions/{userId}`); adicionar o usuário
+   manualmente também o desfaz. Remover de um grupo **não altera papéis**. A conta de emergência (SuperAdmin) não participa de
+   grupos. Eventos auditados: `identity.group_member_excluded` e `identity.group_member_restored`.
 8. A ativação manual exige que o titular tenha aceitado o convite (`local_credentials.activated_at`); reenviar um
    convite invalida os anteriores, mas nunca equivale a aceite.
 

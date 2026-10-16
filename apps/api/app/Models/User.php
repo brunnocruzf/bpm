@@ -34,6 +34,7 @@ use Illuminate\Support\Carbon;
  * @property array<int,string> $roles
  * @property array<int,string> $groups
  * @property array<int,string>|null $manual_groups
+ * @property array<int,string>|null $excluded_groups
  * @property array<int,string>|null $manual_roles
  * @property array<int,string>|null $token_roles
  * @property array<int,string>|null $token_groups
@@ -73,7 +74,7 @@ class User extends Model implements AuthenticatableContract
 
     protected $fillable = [
         'entra_oid', 'entra_tid', 'manager_entra_oid', 'manager_user_id', 'username', 'name', 'email', 'upn', 'area', 'department', 'user_type', 'user_category', 'account_enabled',
-        'roles', 'groups', 'manual_groups', 'manual_roles', 'token_roles', 'token_groups', 'directory_roles', 'directory_groups', 'directory_synced_at',
+        'roles', 'groups', 'manual_groups', 'excluded_groups', 'manual_roles', 'token_roles', 'token_groups', 'directory_roles', 'directory_groups', 'directory_synced_at',
         'is_active', 'disabled_reason', 'disabled_at', 'last_seen_at', 'auth_source',
     ];
 
@@ -83,6 +84,7 @@ class User extends Model implements AuthenticatableContract
             'roles' => 'array',
             'groups' => 'array',
             'manual_groups' => 'array',
+            'excluded_groups' => 'array',
             'manual_roles' => 'array',
             'token_roles' => 'array',
             'token_groups' => 'array',
@@ -151,15 +153,35 @@ class User extends Model implements AuthenticatableContract
     /** Recalcula roles/groups efetivos a partir das origens (token + diretório). */
     public function recomputeEffectiveAccess(): void
     {
-        if ($this->token_roles === null && $this->directory_roles === null && $this->token_groups === null && $this->directory_groups === null) {
-            $this->roles = array_values(array_unique([...($this->roles ?? []), ...($this->manual_roles ?? [])]));
+        $this->roles = $this->hasTrackedAccessSources()
+            ? array_values(array_unique([...($this->token_roles ?? []), ...($this->directory_roles ?? []), ...($this->manual_roles ?? [])]))
+            : array_values(array_unique([...($this->roles ?? []), ...($this->manual_roles ?? [])])); // sem origem rastreada (seed de desenvolvimento)
+        $this->recomputeEffectiveGroups();
+    }
+
+    /**
+     * Grupos/raias efetivos = token ∪ diretório ∪ manual, menos os bloqueados localmente (excluded_groups), que valem
+     * sobre qualquer origem. Não altera papéis.
+     */
+    public function recomputeEffectiveGroups(): void
+    {
+        $excluded = $this->excluded_groups ?? [];
+        if (! $this->hasTrackedAccessSources()) {
             if ($this->manual_groups) {
                 $this->groups = array_values(array_unique([...($this->groups ?? []), ...$this->manual_groups]));
             }
+            if ($excluded) {
+                $this->groups = array_values(array_diff($this->groups ?? [], $excluded));
+            }
 
-            return; // usuário sem origem rastreada (seed de desenvolvimento)
+            return;
         }
-        $this->roles = array_values(array_unique([...($this->token_roles ?? []), ...($this->directory_roles ?? []), ...($this->manual_roles ?? [])]));
-        $this->groups = array_values(array_unique([...($this->token_groups ?? []), ...($this->directory_groups ?? []), ...($this->manual_groups ?? [])]));
+        $this->groups = array_values(array_diff(array_unique([...($this->token_groups ?? []), ...($this->directory_groups ?? []), ...($this->manual_groups ?? [])]), $excluded));
+    }
+
+    /** O acesso deste usuário é calculado de origens rastreadas (token, diretório, manual) ou veio de um seed legado. */
+    public function hasTrackedAccessSources(): bool
+    {
+        return $this->token_roles !== null || $this->directory_roles !== null || $this->token_groups !== null || $this->directory_groups !== null;
     }
 }

@@ -169,6 +169,8 @@ Route::prefix('v1')->group(function () {
         Route::get('admin/groups/{key}/members', [GroupMembershipController::class, 'index']);
         Route::post('admin/groups/{key}/members', [GroupMembershipController::class, 'store']);
         Route::delete('admin/groups/{key}/members/{userId}', [GroupMembershipController::class, 'destroy'])->whereUuid('userId');
+        Route::put('admin/groups/{key}/exclusions/{userId}', [GroupMembershipController::class, 'exclude'])->whereUuid('userId');
+        Route::delete('admin/groups/{key}/exclusions/{userId}', [GroupMembershipController::class, 'restore'])->whereUuid('userId');
 
         // Configurações (settings.manage). Segredos são somente escrita.
         Route::prefix('admin/settings')->group(function () {

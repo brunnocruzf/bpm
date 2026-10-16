@@ -11,6 +11,7 @@ use App\Models\LocalCredential;
 use App\Models\LocalIdentityToken;
 use App\Models\NotificationMessage;
 use App\Models\User;
+use Database\Seeders\DevUserSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Tests\TestCase;
@@ -273,5 +274,93 @@ class LocalIdentityTest extends TestCase
         $this->assertStringNotContainsString('password_hash', json_encode($lockedDetail));
 
         $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$pending->id.'/activity')->assertOk()->assertJsonStructure(['data', 'meta' => ['currentPage', 'lastPage', 'total']]);
+    }
+
+    public function test_admin_can_remove_a_member_whose_access_comes_from_entra_and_the_block_survives_logins_and_can_be_restored(): void
+    {
+        $user = User::create(['name' => 'Pessoa Entra', 'email' => 'entra@example.test', 'entra_oid' => 'oid-1', 'entra_tid' => 'tid-1', 'auth_source' => User::SOURCE_ENTRA, 'is_active' => true,
+            'roles' => ['Bpm.TaskWorker'], 'groups' => ['CQ', 'GEF'], 'manual_groups' => [], 'token_roles' => [], 'token_groups' => ['CQ'], 'directory_roles' => ['Bpm.TaskWorker'], 'directory_groups' => ['CQ', 'GEF']]);
+
+        $members = $this->as('admin')->getJson('/api/v1/admin/groups/CQ/members')->assertOk();
+        $this->assertSame('entra_token', collect($members->json('data'))->firstWhere('id', $user->id)['source']);
+
+        $this->as('cq')->putJson("/api/v1/admin/groups/CQ/exclusions/{$user->id}")->assertForbidden();
+        $this->as('admin')->putJson("/api/v1/admin/groups/CQ/exclusions/{$user->id}")->assertNoContent();
+        $this->as('admin')->putJson("/api/v1/admin/groups/CQ/exclusions/{$user->id}")->assertNoContent(); // idempotente
+
+        $fresh = $user->fresh();
+        $this->assertSame(['GEF'], $fresh->groups);
+        $this->assertSame(['CQ'], $fresh->excluded_groups);
+        $this->assertSame(['CQ'], $fresh->token_groups, 'a origem (Entra) não é alterada');
+        $this->assertSame(1, BpmGroupMembership::where('source', 'excluded')->count());
+        $event = AuditEvent::where('action', 'identity.group_member_excluded')->firstOrFail();
+        $this->assertSame(['entra_token', 'entra_sync'], $event->data['sources']);
+
+        $after = $this->as('admin')->getJson('/api/v1/admin/groups/CQ/members')->assertOk();
+        $this->assertNull(collect($after->json('data'))->firstWhere('id', $user->id));
+        $this->assertSame([$user->id], array_column($after->json('excluded'), 'id'));
+        $this->assertSame('Ana Administradora', $after->json('excluded.0.createdBy'));
+        $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$user->id)->assertOk()->assertJsonPath('data.access.groupSources.excluded.0.key', 'CQ');
+
+        // um novo login/sincronização recalcula o acesso a partir das origens e o bloqueio continua valendo
+        $fresh->forceFill(['token_groups' => ['CQ'], 'directory_groups' => ['CQ', 'GEF']]);
+        $fresh->recomputeEffectiveAccess();
+        $fresh->save();
+        $this->assertSame(['GEF'], $fresh->fresh()->groups);
+        $this->as('admin')->deleteJson("/api/v1/admin/groups/CQ/members/{$user->id}")->assertNotFound();
+
+        $this->as('cq')->deleteJson("/api/v1/admin/groups/CQ/exclusions/{$user->id}")->assertForbidden();
+        $this->as('admin')->deleteJson("/api/v1/admin/groups/CQ/exclusions/{$user->id}")->assertNoContent();
+        $this->assertEqualsCanonicalizing(['CQ', 'GEF'], $user->fresh()->groups);
+        $this->assertSame([], $user->fresh()->excluded_groups);
+        $this->assertSame(0, BpmGroupMembership::where('source', 'excluded')->count());
+        $this->assertTrue(AuditEvent::where('action', 'identity.group_member_restored')->exists());
+        $this->as('admin')->deleteJson("/api/v1/admin/groups/CQ/exclusions/{$user->id}")->assertNotFound();
+    }
+
+    public function test_removing_a_manual_plus_directory_member_removes_both_and_a_manual_only_member_leaves_no_block(): void
+    {
+        $both = User::create(['name' => 'Manual e Entra', 'email' => 'me@example.test', 'entra_oid' => 'oid-2', 'entra_tid' => 'tid-1', 'auth_source' => User::SOURCE_ENTRA, 'is_active' => true,
+            'roles' => [], 'groups' => ['CQ'], 'manual_groups' => ['CQ'], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => ['CQ']]);
+        $this->as('admin')->postJson('/api/v1/admin/groups/CQ/members', ['userIds' => [$both->id]])->assertCreated();
+        $this->as('admin')->putJson("/api/v1/admin/groups/CQ/exclusions/{$both->id}")->assertNoContent();
+        $this->assertSame([], $both->fresh()->groups);
+        $this->assertSame([], $both->fresh()->manual_groups);
+        $this->assertSame(0, BpmGroupMembership::where('source', 'manual')->count());
+        $this->assertSame(1, BpmGroupMembership::where('source', 'excluded')->count());
+
+        $local = User::create(['name' => 'Só Manual', 'email' => 'sm@example.test', 'username' => 'so.manual', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true,
+            'roles' => [], 'groups' => [], 'manual_groups' => [], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
+        $this->as('admin')->postJson('/api/v1/admin/groups/GEF/members', ['userIds' => [$local->id]])->assertCreated();
+        $this->as('admin')->putJson("/api/v1/admin/groups/GEF/exclusions/{$local->id}")->assertNoContent();
+        $this->assertSame([], $local->fresh()->groups);
+        $this->assertSame([], $local->fresh()->excluded_groups, 'sem origem externa, remover o vínculo manual basta');
+        $this->assertSame(0, BpmGroupMembership::where('user_id', $local->id)->count());
+
+        $this->as('admin')->putJson("/api/v1/admin/groups/GEF/exclusions/{$local->id}")->assertNotFound();
+        $this->as('admin')->postJson('/api/v1/admin/groups/CQ/members', ['userIds' => [$both->id]])->assertCreated();
+        $this->assertSame(['CQ'], $both->fresh()->manual_groups);
+        $this->assertSame(['CQ'], $both->fresh()->groups, 'adicionar manualmente desfaz o bloqueio local');
+        $this->assertSame(0, BpmGroupMembership::where('source', 'excluded')->count());
+        $this->assertTrue(AuditEvent::where('action', 'identity.group_member_restored')->where('data->via', 'manual_add')->exists());
+    }
+
+    public function test_a_legacy_demo_member_can_be_removed_and_the_dev_seed_keeps_the_block_but_the_emergency_account_cannot(): void
+    {
+        $carla = User::where('username', 'cq')->firstOrFail();
+        $this->assertSame(['CQ'], $carla->groups);
+        $this->as('admin')->putJson("/api/v1/admin/groups/CQ/exclusions/{$carla->id}")->assertNoContent();
+        $this->assertSame([], $carla->fresh()->groups);
+        $this->assertSame(['Bpm.Initiator', 'Bpm.TaskWorker'], $carla->fresh()->roles, 'remover do grupo não altera papéis');
+
+        (new DevUserSeeder)->run();
+        $this->assertSame([], $carla->fresh()->groups, 'o seed de desenvolvimento respeita o bloqueio');
+
+        $this->as('admin')->deleteJson("/api/v1/admin/groups/CQ/exclusions/{$carla->id}")->assertNoContent();
+        $this->assertSame(['CQ'], $carla->fresh()->groups, 'restaurar devolve o vínculo legado');
+
+        $super = User::create(['name' => 'Emergência', 'username' => 'emergencia', 'auth_source' => User::SOURCE_SUPERADMIN, 'is_active' => true, 'roles' => [], 'groups' => ['CQ']]);
+        $this->as('admin')->putJson("/api/v1/admin/groups/CQ/exclusions/{$super->id}")->assertStatus(422);
+        $this->as('admin')->putJson('/api/v1/admin/groups/INEXISTENTE/exclusions/'.$carla->id)->assertNotFound();
     }
 }

@@ -443,6 +443,16 @@ paths:
       summary: "Cria um grupo/raia interno (settings.manage)"
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [key, name], properties: { key: { type: string, maxLength: 40, pattern: '^[A-Z][A-Z0-9_]*$' }, name: { type: string, maxLength: 120 }, description: { type: string, nullable: true, maxLength: 400 }, entraGroupId: { type: string, format: uuid, nullable: true }, email: { type: string, format: email, nullable: true } } } } } }
       responses: { '201': { description: Created }, '403': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/groups/{key}/members:
+    parameters: [{ name: key, in: path, required: true, schema: { type: string } }, { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }]
+    get: { summary: "Membros efetivos do grupo/raia com a origem (manual, entra_token, entra_sync, existing_mapping) e a lista 'excluded' de bloqueios locais (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }
+  /admin/groups/{key}/members/{userId}:
+    parameters: [{ name: key, in: path, required: true, schema: { type: string } }, { name: userId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete: { summary: "Remove o vínculo MANUAL (409 membership_not_manual se o acesso vem do Entra/mapeamento: use exclusions)", responses: { '204': { description: Removed }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/groups/{key}/exclusions/{userId}:
+    parameters: [{ name: key, in: path, required: true, schema: { type: string } }, { name: userId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put: { summary: "Remove o usuário do grupo/raia neste sistema: apaga o vínculo manual e bloqueia localmente o que vem do Entra/mapeamento (idempotente; não altera o Entra ID nem papéis)", responses: { '204': { description: Removed }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } } }
+    delete: { summary: "Restaura o vínculo bloqueado localmente", responses: { '204': { description: Restored }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' } } }
   /admin/groups/{key}:
     parameters: [{ name: key, in: path, required: true, schema: { type: string } }]
     patch: { summary: "Altera grupo/raia (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' } } }

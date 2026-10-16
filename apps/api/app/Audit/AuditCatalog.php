@@ -107,6 +107,8 @@ final class AuditCatalog
         'identity.local_password_reset' => ['identity', 'Senha de conta local redefinida'],
         'identity.local_group_member_added' => ['identity', 'Membro adicionado manualmente ao grupo'],
         'identity.local_group_member_removed' => ['identity', 'Vínculo manual de grupo removido'],
+        'identity.group_member_excluded' => ['identity', 'Vínculo de grupo bloqueado localmente'],
+        'identity.group_member_restored' => ['identity', 'Vínculo de grupo restaurado'],
         'identity.manual_role_assigned' => ['identity', 'Papel atribuído manualmente'],
         'identity.manual_role_removed' => ['identity', 'Atribuição manual de papel removida'],
         'directory.user_disabled' => ['identity', 'Usuário desativado pelo diretório'],

@@ -9,7 +9,7 @@ import IntegrationLog from '@/components/settings/IntegrationLog.vue'
 interface Usage { disk: string; files: number; bytes: number; label: string; status: string }
 
 const emit = defineEmits<{ changed: [] }>()
-const { setting, saving, err, load, save, action } = useSetting<any>('attachments-storage')
+const { setting, loading, saving, err, load, save, action } = useSetting<any>('attachments-storage')
 const logKey = ref(0)
 const usage = ref<Usage[]>([])
 
@@ -81,14 +81,16 @@ async function deactivate() {
 <template>
   <SettingHeader :setting="setting" title="Armazenamento de anexos" subtitle="Onde os arquivos enviados nos formulários (Form.io) e nas ações dos fornecedores são gravados. O navegador nunca fala com o Azure: uploads e downloads passam pela API, que gera links assinados de 5 minutos." />
 
-  <div class="tm-note" style="margin-top:0"><i class="pi pi-info-circle" aria-hidden="true" /><span>
+  <div v-if="!loading && !setting" class="tm-note err" role="alert" style="margin-top:0"><i class="pi pi-times-circle" aria-hidden="true" /><span>Não foi possível carregar esta configuração. Confirme que a API foi atualizada (reconstrua e reinicie o serviço <code>api</code>) e tente de novo.</span></div>
+
+  <div v-if="setting" class="tm-note" style="margin-top:0"><i class="pi pi-info-circle" aria-hidden="true" /><span>
     Em vigor para novos anexos:
     <strong v-if="effective?.provider === 'azure_blob'">Azure Blob Storage — {{ effective.accountName }}/{{ effective.container }}<template v-if="effective.pathPrefix"> ({{ effective.pathPrefix }}/)</template><template v-if="effective.emulator"> · emulador Azurite</template></strong>
     <strong v-else>armazenamento da plataforma ({{ v?.environment?.driver || 'padrão do ambiente' }})</strong>.
     Logos, relatórios, auditoria e fotos continuam no armazenamento da plataforma. Mudar o destino <strong>não move</strong> arquivos já gravados.
   </span></div>
 
-  <div class="grid">
+  <div v-if="setting" class="grid">
     <section class="tm-panel">
       <div class="tm-panel-head"><div class="tm-panel-title">Destino</div></div>
       <div class="tm-panel-body">
