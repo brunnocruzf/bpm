@@ -4,7 +4,7 @@ Sistema corporativo de gestão de processos (BPM) para substituir o módulo Work
 
 Primeiro fluxo: **PO 159 — Item Reprovado no Recebimento** (publicado pelo seed).
 
-Especificação e protótipo de origem: `.claude/BPMN_TMSA_Arquitetura_e_Plano_Claude_Code (1).md` e `.claude/BPMN_TMSA_Prototipo_Editor.html`.
+Especificação e protótipo de origem: `.claude/BPMN_TMSA_Arquitetura_e_Plano_Claude_Code (1).md` e `.claude/BPMN_TMSA_Prototipo_Editor.html`. A pasta `.claude/` é material local de referência e não é versionada.
 
 ## Arquitetura
 
@@ -216,7 +216,7 @@ No modelo local, o método SuperAdmin está habilitado. Defina uma senha interat
 docker compose exec api php artisan bpm:superadmin set-password
 ```
 
-Depois, entre em <http://localhost:8080/login/superadmin>. Consulte o [guia de login](.claude/login/INSTRUCOES_DE_LOGIN.md) para políticas, operações e uso seguro. O visitante é apenas para demonstração; não o habilite em produção.
+Depois, entre em <http://localhost:8080/login/superadmin>. Consulte o guia de login (`.claude/login/INSTRUCOES_DE_LOGIN.md`, local) para políticas, operações e uso seguro. O visitante é apenas para demonstração; não o habilite em produção.
 
 ### 8. Atualizar, parar e preservar dados
 
@@ -240,7 +240,7 @@ docker compose down
 
 ### 9. Nota sobre produção
 
-Este Compose é um ambiente de desenvolvimento/POC em servidor único. Antes de qualquer produção, a equipe de plataforma deve definir HTTPS e proxy confiável, domínio e URLs públicas, credenciais em secret manager, login Entra, `APP_ENV=production`, `WEB_BUILD_MODE=production`, visitante desativado, restrições de IP do SuperAdmin, backup/restauração testados, observabilidade, firewall/egress e estratégia de alta disponibilidade. Não exponha diretamente as portas internas nem reutilize senhas, dados fictícios ou chaves do ambiente local. Os requisitos e procedimentos operacionais estão no [runbook](docs/runbook.md) e em [Instruções de login](.claude/login/INSTRUCOES_DE_LOGIN.md).
+Este Compose é um ambiente de desenvolvimento/POC em servidor único. Antes de qualquer produção, a equipe de plataforma deve definir HTTPS e proxy confiável, domínio e URLs públicas, credenciais em secret manager, login Entra, `APP_ENV=production`, `WEB_BUILD_MODE=production`, visitante desativado, restrições de IP do SuperAdmin, backup/restauração testados, observabilidade, firewall/egress e estratégia de alta disponibilidade. Não exponha diretamente as portas internas nem reutilize senhas, dados fictícios ou chaves do ambiente local. Os requisitos e procedimentos operacionais estão no [runbook](docs/runbook.md) e em Instruções de login (`.claude/login/INSTRUCOES_DE_LOGIN.md`, local).
 
 ## Desenvolvimento local (sem containers para API/SPA)
 

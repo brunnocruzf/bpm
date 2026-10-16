@@ -1,6 +1,6 @@
 # CLAUDE.md — BPM TMSA
 
-Leia `README.md` e as ADRs em `docs/adr/` antes de alterar a arquitetura. A especificação original está em `.claude/BPMN_TMSA_Arquitetura_e_Plano_Claude_Code (1).md`.
+Leia `README.md` e as ADRs em `docs/adr/` antes de alterar a arquitetura. A especificação original está em `.claude/BPMN_TMSA_Arquitetura_e_Plano_Claude_Code (1).md`. A pasta `.claude/` é material local de referência (não versionada).
 
 ## Regras do projeto (não negociáveis)
 

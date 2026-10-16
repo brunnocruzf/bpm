@@ -31,3 +31,6 @@ Thumbs.db
 deploy/docker/secrets/*
 !deploy/docker/secrets/generate.sh
 !deploy/docker/secrets/README.md
+
+# Material local do Claude Code (especificações, protótipos, capturas) — não versionado
+.claude/
