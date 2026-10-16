@@ -101,7 +101,8 @@ Guia: `docs/integracoes/README.md` (ADR-0016).
    - `throttled` / `timeout`: a próxima execução retoma do `nextLink` salvo (idempotente).
    - `blocked` (`removal_threshold`): a rodada desativaria/removeria acima da trava (30%). Investigue (grupo errado? diretório em manutenção?) antes de executar recarga completa; ajuste `BPM_DIRECTORY_MAX_REMOVAL_RATIO` só com aprovação.
    - Cursor expirado (7 dias sem sincronizar ou 410 do Graph): a execução faz recarga completa controlada automaticamente.
-6. **Rollback:** desabilite a sincronização (os usuários continuam como estão); remova/desative mapeamentos para retirar papéis concedidos pelo diretório (recalculados na hora). Nada é apagado; contas desativadas pelo diretório voltam a ativas quando reabilitadas no Entra.
+6. **Fotos de perfil:** ligadas por padrão (Configurações → Entra ID — usuários e grupos → "Importar a foto do perfil"). Usam a mesma permissão `User.Read.All`; o teste de conexão passa a conferir a leitura de foto. O comando `bpm:directory-photos` roda de hora em hora (verificação por etag, lote de 200); para forçar, use "atualizar agora" no painel do usuário. Desligar a opção apaga as fotos armazenadas na próxima execução do comando e interrompe o serviço delas imediatamente. Usuário sem foto no Entra ID (404) mostra iniciais. O transporte fictício gera fotos sintéticas para 3 usuários de teste (incrementar a chave de cache `bpm:mock-photo-rev` simula a troca de foto).
+7. **Rollback:** desabilite a sincronização (os usuários continuam como estão); remova/desative mapeamentos para retirar papéis concedidos pelo diretório (recalculados na hora). Nada é apagado; contas desativadas pelo diretório voltam a ativas quando reabilitadas no Entra.
 
 ## E-mail
 

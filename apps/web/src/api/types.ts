@@ -27,6 +27,8 @@ export interface Me {
     reportsInstance: boolean; reportsOperational: boolean; reportsTemplates: boolean; dataSensitive: boolean
   }
   counters: { openTasks: number }
+  /** foto importada do Entra ID (só a versão; os bytes vêm de /me/photo) */
+  photo?: { version: string } | null
   /** método do login atual; SuperAdmin traz a expiração absoluta da sessão */
   auth: { method: 'entra' | 'demo' | 'superadmin' | 'local'; expiresAt?: string; idleMinutes?: number }
 }

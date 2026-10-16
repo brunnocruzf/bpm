@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import Dialog from 'primevue/dialog'
 import Drawer from 'primevue/drawer'
 import { api, errorMessage } from '@/api/http'
 import { useSession } from '@/stores/session'
@@ -9,6 +10,7 @@ import NewLocalUserDialog from './NewLocalUserDialog.vue'
 import UserDetailPanel from './UserDetailPanel.vue'
 import UserFilters from './UserFilters.vue'
 import UserList from './UserList.vue'
+import { useUserPhotos } from './photos'
 import { emptyFilters } from './types'
 import type { ActivityItem, Facets, PageMeta, ProfileTarget, UserDetail, UserFilters as Filters, UserRow } from './types'
 
@@ -17,6 +19,9 @@ const router = useRouter()
 const session = useSession()
 const notify = useNotify()
 const canManage = computed(() => session.can('settingsManage'))
+const photos = useUserPhotos()
+const photoFor = (u: UserRow) => photos.get(u.id, u.photo?.version)
+const detailPhoto = computed(() => (detail.value ? photos.get(detail.value.identity.id, detail.value.identity.photo?.version) : null))
 
 const filters = ref<Filters>(emptyFilters())
 const users = ref<UserRow[]>([])
@@ -31,6 +36,7 @@ const busy = ref(false)
 const loadingActivity = ref(false)
 const newOpen = ref(false)
 const filtersOpen = ref(false)
+const expanded = ref(false)
 const wide = ref(typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 1280px)').matches : true)
 
 const selectedRow = computed(() => users.value.find((u) => u.id === selectedId.value) ?? null)
@@ -95,8 +101,15 @@ function select(u: ProfileTarget) {
   void router.replace({ query: { ...route.query, user: u.id } })
 }
 
+/** Alterna entre o painel lateral e o perfil ampliado (modal), mantendo o usuário selecionado. */
+function setExpanded(value: boolean) {
+  expanded.value = value
+  if (!value) void nextTick(() => document.getElementById('user-detail-title')?.focus())
+}
+
 function close() {
   const id = selectedId.value
+  expanded.value = false
   selectedId.value = null
   detail.value = null
   const { user: _user, ...rest } = route.query
@@ -129,6 +142,13 @@ async function changeCategory(userCategory: string) {
   if (!d) return
   busy.value = true
   try { await api(`/admin/managed-users/${d.identity.id}`, { method: 'PATCH', body: { userCategory } }); notify.success('Tipo de usuário atualizado.'); await refresh() } catch (e) { notify.error(e) } finally { busy.value = false }
+}
+
+async function refreshPhoto() {
+  const d = detail.value
+  if (!d) return
+  busy.value = true
+  try { await api(`/admin/managed-users/${d.identity.id}/photo/refresh`, { method: 'POST' }); notify.info('Atualização da foto solicitada; o worker a processa em instantes.') } catch (e) { notify.error(e) } finally { busy.value = false }
 }
 
 async function moreActivity() {
@@ -169,33 +189,38 @@ onBeforeUnmount(() => { window.clearTimeout(timer); media?.removeEventListener('
 
 <template>
   <div v-if="!canManage" class="tm-panel"><div class="tm-note" style="margin:14px" role="status"><i class="pi pi-lock" aria-hidden="true" /><span>A administração de usuários exige a permissão <code>settings.manage</code>. Peça acesso a um administrador.</span></div></div>
-  <div v-else class="users-grid" :class="{ 'has-detail': wide && selectedId }">
-    <div class="filters-col">
+  <div v-else class="users-ws">
+    <div class="filters-bar">
       <button type="button" class="tm-btn small filters-toggle" :aria-expanded="filtersOpen" aria-controls="user-filters-wrap" @click="filtersOpen = !filtersOpen"><i class="pi pi-filter" aria-hidden="true" /> Filtros<span v-if="activeFilters"> ({{ activeFilters }})</span></button>
       <div id="user-filters-wrap" class="filters-wrap" :class="{ open: filtersOpen }">
         <UserFilters v-model="filters" :facets="facets" :total="meta.total" @clear="filters = emptyFilters()" />
       </div>
     </div>
-    <UserList :users="users" :selected-id="selectedId" :loading="loading" :error="error" :meta="meta" :can-create="canManage" @select="select" @page="loadUsers" @create="newOpen = true" />
-    <aside v-if="wide && selectedId" class="tm-panel detail-col" aria-label="Perfil do usuário selecionado" @keydown.esc="close">
-      <UserDetailPanel :row="selectedRow" :detail="detail" :loading="detailLoading" :can-manage="canManage" :busy="busy" :loading-activity="loadingActivity" @close="close" @select="(id) => select({ id, name: '' })" @toggle="toggle" @resend="resend" @change-category="changeCategory" @more-activity="moreActivity" />
+  <div class="users-grid" :class="{ 'has-detail': wide && selectedId && !expanded }">
+    <UserList :users="users" :selected-id="selectedId" :loading="loading" :error="error" :meta="meta" :can-create="canManage" :photo-for="photoFor" @select="select" @page="loadUsers" @create="newOpen = true" />
+    <aside v-if="wide && selectedId && !expanded" class="tm-panel detail-col" aria-label="Perfil do usuário selecionado" @keydown.esc="close">
+      <UserDetailPanel :row="selectedRow" :detail="detail" :loading="detailLoading" :can-manage="canManage" :busy="busy" :loading-activity="loadingActivity" :photo="detailPhoto" @close="close" @select="(id) => select({ id, name: '' })" @toggle="toggle" @resend="resend" @change-category="changeCategory" @more-activity="moreActivity" @refresh-photo="refreshPhoto" @expand="setExpanded" />
     </aside>
-    <Drawer v-if="!wide" :visible="!!selectedId" position="right" :style="{ width: 'min(460px, 100vw)' }" :show-close-icon="false" :dismissable="true" @update:visible="(v: boolean) => { if (!v) close() }">
-      <UserDetailPanel :row="selectedRow" :detail="detail" :loading="detailLoading" :can-manage="canManage" :busy="busy" :loading-activity="loadingActivity" @close="close" @select="(id) => select({ id, name: '' })" @toggle="toggle" @resend="resend" @change-category="changeCategory" @more-activity="moreActivity" />
+    <Drawer v-if="!wide" :visible="!!selectedId && !expanded" position="right" :style="{ width: 'min(460px, 100vw)' }" :show-close-icon="false" :dismissable="true" @update:visible="(v: boolean) => { if (!v && !expanded) close() }">
+      <UserDetailPanel :row="selectedRow" :detail="detail" :loading="detailLoading" :can-manage="canManage" :busy="busy" :loading-activity="loadingActivity" :photo="detailPhoto" @close="close" @select="(id) => select({ id, name: '' })" @toggle="toggle" @resend="resend" @change-category="changeCategory" @more-activity="moreActivity" @refresh-photo="refreshPhoto" @expand="setExpanded" />
     </Drawer>
+    <Dialog :visible="!!selectedId && expanded" modal dismissable-mask :show-header="false" :style="{ width: 'min(1120px, 96vw)' }" :pt="{ content: { style: 'padding: 0' } }" aria-label="Perfil do usuário (ampliado)" @update:visible="(v: boolean) => { if (!v) setExpanded(false) }">
+      <UserDetailPanel :row="selectedRow" :detail="detail" :loading="detailLoading" :can-manage="canManage" :busy="busy" :loading-activity="loadingActivity" :photo="detailPhoto" expanded @close="close" @select="(id) => select({ id, name: '' })" @toggle="toggle" @resend="resend" @change-category="changeCategory" @more-activity="moreActivity" @refresh-photo="refreshPhoto" @expand="setExpanded" />
+    </Dialog>
     <NewLocalUserDialog v-model:visible="newOpen" @created="onCreated" />
+  </div>
   </div>
 </template>
 
 <style scoped>
-.users-grid { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 14px; align-items: start; }
-.users-grid.has-detail { grid-template-columns: 236px minmax(0, 1fr) minmax(340px, 420px); }
+.users-ws { display: grid; gap: 14px; }
+.users-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.users-grid.has-detail { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); }
 .detail-col { position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow: auto; }
 .filters-toggle { display: none; }
-@media (max-width: 999px) {
-  .users-grid, .users-grid.has-detail { grid-template-columns: minmax(0, 1fr); }
-  .filters-toggle { display: inline-flex; margin-bottom: 8px; }
-  .filters-wrap { display: none; }
+@media (max-width: 759px) {
+  .filters-toggle { display: inline-flex; }
+  .filters-wrap { display: none; margin-top: 8px; }
   .filters-wrap.open { display: block; }
 }
 </style>

@@ -6,6 +6,7 @@ use App\Auth\AuthMethods;
 use App\Authorization\Permissions;
 use App\Flow\StageCatalog;
 use App\Forms\FieldCatalog;
+use App\Identity\UserPhotoService;
 use App\Models\BpmGroup;
 use App\Models\TaskProjection;
 use App\Models\User;
@@ -13,7 +14,7 @@ use Illuminate\Http\JsonResponse;
 
 class SessionController extends ApiController
 {
-    public function me(): JsonResponse
+    public function me(UserPhotoService $photos): JsonResponse
     {
         $user = $this->user();
         $groups = BpmGroup::whereIn('key', $user->groups ?? [])->get(['key', 'name']);
@@ -39,6 +40,8 @@ class SessionController extends ApiController
                 ...Permissions::for($user),
             ],
             'counters' => ['openTasks' => $myTasks],
+            // foto importada do Entra ID: só a versão (os bytes vêm de /me/photo)
+            'photo' => ($v = $photos->version($user)) && $photos->enabled() ? ['version' => $v] : null,
             // método do login atual (entra | demo | superadmin) e, para o SuperAdmin, a expiração da sessão
             'auth' => request()->attributes->get('bpm.auth', ['method' => AuthMethods::ENTRA]),
         ]);

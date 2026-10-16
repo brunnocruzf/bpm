@@ -34,6 +34,9 @@ class FakeGraph
     /** @var array<string, list<array{status:int, body?:array, headers?:array}>> falhas por padrão de URL (FIFO) */
     public array $failures = [];
 
+    /** @var array<string, array{bytes:string, type?:string, etag:string, width?:int}> fotos por object ID */
+    public array $photos = [];
+
     /** @var list<string> */
     public array $requests = [];
 
@@ -124,6 +127,17 @@ class FakeGraph
             }
 
             return Http::response(['value' => $slice, '@odata.deltaLink' => $this->link('users', ['$deltatoken' => 'u-'.$this->round])]);
+        }
+        if (preg_match('#/users/([0-9a-f\-]{36})/photo(/\$value)?$#', $path, $mm)) {
+            $photo = $this->photos[$mm[1]] ?? null;
+            if (! $photo) {
+                return Http::response(['error' => ['code' => 'ImageNotFound']], 404);
+            }
+            if (! empty($mm[2])) {
+                return Http::response($photo['bytes'], 200, ['Content-Type' => $photo['type'] ?? 'image/jpeg']);
+            }
+
+            return Http::response(['@odata.mediaContentType' => $photo['type'] ?? 'image/jpeg', '@odata.mediaEtag' => $photo['etag'], 'id' => '240x240', 'width' => $photo['width'] ?? 240, 'height' => 240]);
         }
         if (preg_match('#/users/([0-9a-f\-]{36})$#', $path, $mm)) {
             if (! isset($this->users[$mm[1]])) {

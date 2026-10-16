@@ -4,6 +4,7 @@ namespace App\Auth;
 
 use App\Audit\AuditContext;
 use App\Audit\AuditDiff;
+use App\Identity\UserPhotoService;
 use App\Models\BpmGroup;
 use App\Models\User;
 use App\Support\AuditLogger;
@@ -77,6 +78,9 @@ class TokenUserResolver
             // Sem sessão no servidor (bearer por requisição): considera novo acesso após 30 min de inatividade.
             if (! $user->last_seen_at || $user->last_seen_at->lt(now()->subMinutes(30))) {
                 AuditLogger::record('auth.login', 'user', $user->id, ['method' => $method], null, $user, context: ['object_name' => $user->name]);
+                if ($method === AuthMethods::ENTRA) {
+                    app(UserPhotoService::class)->queueRefresh($user); // só enfileira; o Graph é chamado no worker
+                }
             }
             $user->forceFill(['last_seen_at' => now()])->saveQuietly();
         }

@@ -16,4 +16,13 @@ interface GraphClient
      * @throws GraphException
      */
     public function get(string $pathOrUrl): array;
+
+    /**
+     * GET binário (foto de perfil). Recusa respostas acima de $maxBytes.
+     *
+     * @return array{bytes:string, contentType:string}
+     *
+     * @throws GraphException
+     */
+    public function getBinary(string $pathOrUrl, int $maxBytes): array;
 }

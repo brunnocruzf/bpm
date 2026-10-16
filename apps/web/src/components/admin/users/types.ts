@@ -25,6 +25,7 @@ export interface UserRow {
   directorySyncedAt: string | null
   manager: ManagerRef | null
   managerPending: boolean
+  photo: { version: string } | null
 }
 
 export type ProfileTarget = Pick<UserRow, 'id' | 'name'>
@@ -52,6 +53,7 @@ export interface EntraGroupInfo { objectId: string; name: string; mail: string |
 export interface EntraIntegration {
   oid: string | null; tid: string | null; upn: string | null; userType: string | null; accountEnabled: boolean | null
   directorySyncedAt: string | null; importedBySync: boolean
+  photo: { enabled: boolean; status: 'present' | 'absent' | 'error' | 'unchecked'; checkedAt: string | null; errorCode: string | null }
   groups: EntraGroupInfo[]
   sync: { lastSuccessAt: string | null; nextRunAt: string | null; alerts: { code: string; message: string }[] }
 }
@@ -66,7 +68,7 @@ export interface LocalIntegration {
 }
 
 export interface UserDetail {
-  identity: { id: string; name: string; username: string | null; email: string | null; upn: string | null; authSource: string | null; entraOid: string | null; entraTid: string | null }
+  identity: { photo: { version: string } | null; id: string; name: string; username: string | null; email: string | null; upn: string | null; authSource: string | null; entraOid: string | null; entraTid: string | null }
   organization: { area: string | null; department: string | null; userType: string | null; userCategory: string | null; manager: string | null; managerInfo: ManagerRef | null; managerPending: boolean; directReports: number }
   account: { active: boolean; accountEnabled: boolean | null; disabledReason: string | null; disabledAt: string | null; createdAt: string | null; updatedAt: string | null; lastLoginAt: string | null; lastSeenAt: string | null; lockedUntil: string | null; directorySyncedAt: string | null; invitationPending: boolean }
   access: {

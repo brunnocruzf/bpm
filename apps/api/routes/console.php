@@ -5,6 +5,7 @@ use App\Engine\EngineCommandProcessor;
 use App\Engine\ExternalJobWorker;
 use App\Engine\ProjectionSync;
 use App\Identity\DirectorySyncService;
+use App\Identity\UserPhotoService;
 use App\Integrations\Rest\OpenApiImporter;
 use App\Models\Attachment;
 use App\Models\IntegrationConnection;
@@ -89,6 +90,12 @@ Artisan::command('bpm:directory-sync {--now : Solicita execução imediata (delt
     }
 })->purpose('Dispara a sincronização do diretório quando a periodicidade vence e alerta inconsistências');
 
+Artisan::command('bpm:directory-photos', function (UserPhotoService $photos) {
+    $purged = $photos->purgeUnneeded();
+    $t = $photos->refreshBatch();
+    $this->info("Fotos: {$t['checked']} verificada(s), {$t['updated']} atualizada(s), {$t['unchanged']} sem mudança, {$t['skipped']} ignorada(s), {$t['errors']} erro(s); {$purged} removida(s) por política.");
+})->purpose('Atualiza as fotos do Entra ID (por etag) dos usuários ativos e apaga as de quem não precisa mais');
+
 Artisan::command('bpm:reports-expire', function (ReportService $reports) {
     $n = $reports->expire();
     if ($n) {
@@ -162,6 +169,7 @@ Schedule::command('bpm:external-jobs')->everyFifteenSeconds()->withoutOverlappin
 Schedule::command('bpm:reconcile')->everyThirtySeconds()->withoutOverlapping()->onOneServer();
 Schedule::command('bpm:notifications')->everyThirtySeconds()->withoutOverlapping()->onOneServer();
 Schedule::command('bpm:cleanup-orphans')->hourly()->onOneServer();
+Schedule::command('bpm:directory-photos')->hourly()->withoutOverlapping()->onOneServer();
 Schedule::command('bpm:directory-sync')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 Schedule::command('bpm:reports-expire')->everyFifteenMinutes()->onOneServer();
 Schedule::command('bpm:audit-retention')->dailyAt('03:30')->withoutOverlapping()->onOneServer();

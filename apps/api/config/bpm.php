@@ -144,6 +144,17 @@ return [
         'timeout' => (int) env('BPM_GRAPH_TIMEOUT', 30),
         // Trava de segurança: sincronização completa que desativaria/removeria acima deste percentual é bloqueada.
         'max_removal_ratio' => (float) env('BPM_DIRECTORY_MAX_REMOVAL_RATIO', 0.3),
+        // Foto do perfil (miniatura quadrada em WebP). Disco: o mesmo dos demais binários, salvo override.
+        'photos' => [
+            'disk' => env('BPM_USER_PHOTOS_DISK'),
+            'size' => 128,
+            'max_bytes' => (int) env('BPM_USER_PHOTO_MAX_BYTES', 4 * 1024 * 1024),
+            'max_dimension' => 4096,
+            'login_check_hours' => 1,
+            'max_age_hours' => 24,
+            'active_within_days' => 30,
+            'batch' => 200,
+        ],
     ],
 
     'reports' => [

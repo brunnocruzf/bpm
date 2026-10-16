@@ -85,6 +85,30 @@ describe('UsersWorkspace', () => {
     expect(text).not.toContain('203.0.113')
   })
 
+  it('mostra área, departamento e grupos na lista', async () => {
+    const { w } = setup()
+    await flushPromises()
+    const head = w.find('.list-head').text()
+    expect(head).toContain('Área')
+    expect(head).toContain('Departamento')
+    expect(head).toContain('Grupos/raias')
+    expect(w.find('.user-row .c-area').text()).toContain('Operações')
+  })
+
+  it('expande o perfil em modal e recolhe de volta ao painel lateral', async () => {
+    route.query = { user: 'u1' }
+    const { w } = setup()
+    await flushPromises()
+    expect(w.find('aside.detail-col #user-detail').exists()).toBe(true)
+    await w.find('[aria-label="Expandir perfil em tela ampla"]').trigger('click')
+    expect(w.find('aside.detail-col').exists()).toBe(false)
+    expect(w.find('#user-detail.expanded').exists()).toBe(true)
+    await w.find('[aria-label="Recolher perfil para o painel lateral"]').trigger('click')
+    expect(w.find('#user-detail.expanded').exists()).toBe(false)
+    expect(w.find('aside.detail-col #user-detail').exists()).toBe(true)
+    expect(replace).not.toHaveBeenCalled()
+  })
+
   it('exige o tipo de usuário e envia userCategory ao criar a conta', async () => {
     const { w, calls } = setup()
     await flushPromises()

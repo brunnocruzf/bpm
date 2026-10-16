@@ -20,6 +20,23 @@ class HttpGraphClient implements GraphClient
 
     public function get(string $pathOrUrl): array
     {
+        return (array) $this->send($pathOrUrl, true)->json();
+    }
+
+    public function getBinary(string $pathOrUrl, int $maxBytes): array
+    {
+        $response = $this->send($pathOrUrl, false);
+        $length = (int) $response->header('Content-Length');
+        $body = $response->body();
+        if (($length > 0 && $length > $maxBytes) || strlen($body) > $maxBytes) {
+            throw new GraphException('photo_too_large', 'A foto excede o tamanho máximo permitido.');
+        }
+
+        return ['bytes' => $body, 'contentType' => strtolower(trim(explode(';', (string) $response->header('Content-Type'))[0]))];
+    }
+
+    private function send(string $pathOrUrl, bool $json): Response
+    {
         $base = rtrim((string) config('bpm.directory.graph_base_url'), '/');
         $url = str_starts_with($pathOrUrl, 'https://') ? $pathOrUrl : $base.'/'.ltrim($pathOrUrl, '/');
         if (! str_starts_with($url, 'https://graph.microsoft.com/')) {
@@ -30,8 +47,8 @@ class HttpGraphClient implements GraphClient
 
         for ($attempt = 1; ; $attempt++) {
             try {
-                $response = Http::withToken(($this->tokenProvider)())
-                    ->acceptJson()
+                $request = Http::withToken(($this->tokenProvider)());
+                $response = ($json ? $request->acceptJson() : $request->withHeaders(['Accept' => 'image/*']))
                     ->timeout((int) config('bpm.directory.timeout', 30))
                     ->connectTimeout(5)
                     ->get($url);
@@ -45,7 +62,7 @@ class HttpGraphClient implements GraphClient
             }
 
             if ($response->successful()) {
-                return (array) $response->json();
+                return $response;
             }
             $status = $response->status();
             if (in_array($status, [429, 503, 504], true) && $attempt < $maxAttempts) {

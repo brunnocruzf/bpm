@@ -96,6 +96,7 @@ final class AuditCatalog
         'directory.sync_completed' => ['identity', 'Sincronização do diretório concluída'],
         'directory.sync_failed' => ['identity', 'Sincronização do diretório falhou'],
         'directory.sync_blocked' => ['identity', 'Sincronização bloqueada pela trava de segurança'],
+        'directory.photo_refresh_requested' => ['identity', 'Atualização de foto do diretório solicitada'],
         'directory.user_created' => ['identity', 'Usuário importado do diretório'],
         'identity.local_user_created' => ['identity', 'Conta local provisionada'],
         'identity.user_category_changed' => ['identity', 'Tipo de usuário alterado'],

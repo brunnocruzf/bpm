@@ -20,7 +20,7 @@ class DirectorySyncSettings extends SettingType
     public const KEY = 'entra.directory';
 
     public const PERMISSIONS = [
-        ['permission' => 'User.Read.All', 'type' => 'Application', 'why' => 'Ler usuários e o vínculo de manager (users/delta, users/{id}).'],
+        ['permission' => 'User.Read.All', 'type' => 'Application', 'why' => 'Ler usuários, o vínculo de manager (users/delta, users/{id}) e a foto de perfil (users/{id}/photo), quando habilitada.'],
         ['permission' => 'Group.Read.All', 'type' => 'Application', 'why' => 'Ler grupos (selecionados ou todos) e membros (groups/delta com members). Avaliar GroupMember.Read.All na POC.'],
     ];
 
@@ -55,6 +55,8 @@ class DirectorySyncSettings extends SettingType
             'includeDisabled' => false,
             'scheduleMinutes' => 0,
             'staleAfterHours' => 48,
+            // foto de perfil dos usuários que acessam o BPM (miniatura; User.Read.All já cobre a leitura)
+            'photos' => ['enabled' => true],
             'checklist' => ['separateApp' => false, 'applicationPermissions' => false, 'adminConsent' => false, 'noWritePermissions' => false],
         ];
     }
@@ -65,6 +67,9 @@ class DirectorySyncSettings extends SettingType
         $errors = [];
         $v = $current;
 
+        if (isset($input['photos']) && is_array($input['photos']) && array_key_exists('enabled', $input['photos'])) {
+            $v['photos'] = ['enabled' => (bool) $input['photos']['enabled']];
+        }
         foreach (['enabled', 'includeGuests', 'includeDisabled'] as $flag) {
             if (array_key_exists($flag, $input)) {
                 $v[$flag] = (bool) $input[$flag];

@@ -190,7 +190,15 @@ paths:
   /dev/users:
     get: { security: [], summary: "Perfis fictícios do acesso de visitante (404 com a demonstração desabilitada e sempre em produção)", responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } } }
   /me:
-    get: { summary: "Usuário atual, papéis, grupos, permissões e método do login (auth.method: entra | demo | superadmin)", responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Problem' } } }
+    get: { summary: "Usuário atual, papéis, grupos, permissões, foto (photo.version | null) e método do login (auth.method: entra | demo | superadmin)", responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Problem' } } }
+  /me/photo:
+    get: { summary: "Foto do próprio usuário importada do Entra ID (image/webp; ETag; 404 sem foto ou recurso desligado)", responses: { '200': { description: OK }, '304': { description: Not Modified }, '404': { $ref: '#/components/responses/Problem' } } }
+  /admin/managed-users/{id}/photo:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    get: { summary: "Foto de um usuário (settings.manage)", responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Problem' }, '404': { $ref: '#/components/responses/Problem' } } }
+  /admin/managed-users/{id}/photo/refresh:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    post: { summary: "Solicita a atualização da foto (job; somente contas Entra; settings.manage)", responses: { '202': { description: Accepted }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } } }
   /auth/superadmin/login:
     post:
       security: []

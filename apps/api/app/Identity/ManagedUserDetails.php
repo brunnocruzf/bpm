@@ -9,6 +9,7 @@ use App\Models\LocalCredential;
 use App\Models\LocalIdentityToken;
 use App\Models\NotificationMessage;
 use App\Models\User;
+use App\Models\UserPhoto;
 use Illuminate\Support\Collection;
 
 /**
@@ -84,8 +85,17 @@ class ManagedUserDetails
                 'syncedAt' => $m->synced_at->toIso8601String(),
                 'grants' => $mappings->get($m->group->object_id, collect())->map(fn ($map) => ['groupKey' => $map->tmsa_group_key, 'roles' => $map->tmsa_roles ?? [], 'privileged' => (bool) $map->privileged])->values(),
             ])->values(),
+            'photo' => $this->photo($user),
             'sync' => ['lastSuccessAt' => $overview['lastSuccessAt'], 'nextRunAt' => $overview['nextRunAt'], 'alerts' => $overview['alerts']],
         ];
+    }
+
+    /** @return array{enabled:bool, status:string, checkedAt:?string, errorCode:?string} */
+    private function photo(User $user): array
+    {
+        $row = UserPhoto::where('user_id', $user->id)->first();
+
+        return ['enabled' => app(UserPhotoService::class)->enabled(), 'status' => $row ? $row->status : 'unchecked', 'checkedAt' => $row?->checked_at?->toIso8601String(), 'errorCode' => $row?->error_code];
     }
 
     /** @return array<string,mixed>|null */

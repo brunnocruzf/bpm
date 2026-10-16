@@ -8,8 +8,8 @@ import { AUTH_SOURCE, DELIVERY_ERROR, DISABLED_REASON, ENTRA_USER_TYPE, fmtDateT
 import { userState } from './types'
 import type { UserDetail, UserRow } from './types'
 
-const props = defineProps<{ row: UserRow | null; detail: UserDetail | null; loading: boolean; canManage: boolean; busy: boolean; loadingActivity: boolean; photo?: string | null }>()
-const emit = defineEmits<{ close: []; select: [string]; toggle: []; resend: []; 'change-category': [string]; 'more-activity': [] }>()
+const props = defineProps<{ row: UserRow | null; detail: UserDetail | null; loading: boolean; canManage: boolean; busy: boolean; loadingActivity: boolean; photo?: string | null; expanded?: boolean }>()
+const emit = defineEmits<{ close: []; select: [string]; toggle: []; resend: []; 'change-category': [string]; 'more-activity': []; 'refresh-photo': []; expand: [boolean] }>()
 const session = useSession()
 const notify = useNotify()
 
@@ -55,6 +55,13 @@ const delivery = computed(() => {
   if (!d) return null
   return { ...(INVITATION_DELIVERY[d.state] ?? { label: d.state, tone: 'neutral' }), reason: d.errorCode ? (DELIVERY_ERROR[d.errorCode] ?? d.errorCode) : null }
 })
+const PHOTO_STATUS: Record<string, string> = { present: 'Importada', absent: 'Sem foto no Entra ID', error: 'Não foi possível importar', unchecked: 'Ainda não verificada' }
+const photoText = computed(() => {
+  const p = entra.value?.photo
+  if (!p) return '—'
+  if (!p.enabled) return 'Importação desligada'
+  return `${PHOTO_STATUS[p.status] ?? p.status}${p.checkedAt ? ` · verificada em ${fmtDateTime(p.checkedAt)}` : ''}`
+})
 const canLoadMore = computed(() => !!props.detail && props.detail.activity.meta.currentPage < props.detail.activity.meta.lastPage)
 
 async function copy(text: string | null) {
@@ -64,7 +71,7 @@ async function copy(text: string | null) {
 </script>
 
 <template>
-  <section id="user-detail" class="detail" aria-labelledby="user-detail-title">
+  <section id="user-detail" class="detail" :class="{ expanded }" aria-labelledby="user-detail-title">
     <header class="d-head">
       <UserAvatar :name="identity.name" :size="52" :src="photo ?? null" />
       <div class="d-title">
@@ -77,7 +84,10 @@ async function copy(text: string | null) {
           <span v-if="entra?.userType" class="tm-pill blue">{{ ENTRA_USER_TYPE[entra.userType] ?? entra.userType }}</span>
         </div>
       </div>
-      <button type="button" class="tm-btn ghost icon" aria-label="Fechar painel do usuário" @click="emit('close')"><i class="pi pi-times" aria-hidden="true" /></button>
+      <div class="d-tools">
+        <button type="button" class="tm-btn ghost icon" :aria-label="expanded ? 'Recolher perfil para o painel lateral' : 'Expandir perfil em tela ampla'" :title="expanded ? 'Recolher' : 'Expandir'" @click="emit('expand', !expanded)"><i class="pi" :class="expanded ? 'pi-window-minimize' : 'pi-window-maximize'" aria-hidden="true" /></button>
+        <button type="button" class="tm-btn ghost icon" aria-label="Fechar painel do usuário" title="Fechar" @click="emit('close')"><i class="pi pi-times" aria-hidden="true" /></button>
+      </div>
     </header>
 
     <p v-if="loading && !detail" class="tm-empty" role="status">Carregando perfil…</p>
@@ -118,6 +128,7 @@ async function copy(text: string | null) {
             <dt>Habilitado no Entra ID</dt><dd>{{ entra.accountEnabled === null ? 'Não informado' : entra.accountEnabled ? 'Sim' : 'Não' }}</dd>
             <dt>Tipo no Entra ID</dt><dd>{{ entra.userType ? (ENTRA_USER_TYPE[entra.userType] ?? entra.userType) : 'Não informado' }}</dd>
             <dt>UPN</dt><dd class="wrap">{{ entra.upn || '—' }}</dd>
+            <dt>Foto do Entra ID</dt><dd>{{ photoText }}<button v-if="canManage && entra.photo.enabled" type="button" class="tm-link-btn" :disabled="busy" @click="emit('refresh-photo')"> · atualizar agora</button></dd>
           </dl>
           <h4>Grupos do Entra ID ({{ entra.groups.length }})</h4>
           <ul v-if="entra.groups.length" class="plain">
@@ -179,6 +190,12 @@ async function copy(text: string | null) {
 <style scoped>
 .detail { padding: 16px; display: grid; gap: 14px; align-content: start; }
 .d-head { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+.d-tools { display: flex; gap: 2px; }
+/* Perfil ampliado (modal): seções em duas colunas; cabeçalho e ações ocupam a largura toda. */
+.detail.expanded { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 28px; padding: 20px 24px 24px; }
+.detail.expanded > :not(.block) { grid-column: 1 / -1; }
+.detail.expanded .d-title h2 { font-size: 19px; }
+@media (max-width: 760px) { .detail.expanded { grid-template-columns: minmax(0, 1fr); padding: 16px; } }
 .d-title h2 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
 .d-title h2:focus { outline: none; }
 .pills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }

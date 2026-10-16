@@ -9,6 +9,7 @@ use App\Auth\PasswordPolicy;
 use App\Authorization\Permissions;
 use App\Http\Controllers\Api\V1\ApiController;
 use App\Identity\ManagedUserDetails;
+use App\Identity\UserPhotoService;
 use App\Models\AuditEvent;
 use App\Models\AuthSession;
 use App\Models\BpmGroupMembership;
@@ -30,7 +31,7 @@ class UserManagementController extends ApiController
     /** Pendências de integração filtráveis na listagem. */
     private const ATTENTION = ['entra_disabled', 'guest', 'login_only', 'manager_pending', 'invitation_pending', 'invitation_expired', 'locked'];
 
-    public function __construct(private readonly LocalUserAuth $local, private readonly ManagedUserDetails $details) {}
+    public function __construct(private readonly LocalUserAuth $local, private readonly ManagedUserDetails $details, private readonly UserPhotoService $photos) {}
 
     private function authorizeAdmin(): void
     {
@@ -76,8 +77,9 @@ class UserManagementController extends ApiController
         $page = $query->orderBy('name')->paginate(min(100, max(1, (int) $request->query('perPage', 25))));
 
         $states = $this->details->listStates($page->getCollection());
+        $photoVersions = $this->photos->versions($page->getCollection());
 
-        return response()->json(['data' => $page->getCollection()->map(fn (User $u) => $this->row($u, $states[$u->id] ?? null))->values(), 'meta' => ['currentPage' => $page->currentPage(), 'lastPage' => $page->lastPage(), 'perPage' => $page->perPage(), 'total' => $page->total()]]);
+        return response()->json(['data' => $page->getCollection()->map(fn (User $u) => $this->row($u, $states[$u->id] ?? null, $photoVersions))->values(), 'meta' => ['currentPage' => $page->currentPage(), 'lastPage' => $page->lastPage(), 'perPage' => $page->perPage(), 'total' => $page->total()]]);
     }
 
     public function show(string $id)
@@ -89,7 +91,7 @@ class UserManagementController extends ApiController
         $events = AuditEvent::where('entity_type', 'user')->where('entity_id', $user->id)->orderByDesc('occurred_at')->paginate(20);
 
         return response()->json(['data' => [
-            'identity' => ['id' => $user->id, 'name' => $user->name, 'username' => $user->username, 'email' => $user->email, 'upn' => $user->upn, 'authSource' => $user->auth_source, 'entraOid' => $user->entra_oid, 'entraTid' => $user->entra_tid],
+            'identity' => ['photo' => ($pv = $this->photos->versions(collect([$user]))[$user->id] ?? null) ? ['version' => $pv] : null, 'id' => $user->id, 'name' => $user->name, 'username' => $user->username, 'email' => $user->email, 'upn' => $user->upn, 'authSource' => $user->auth_source, 'entraOid' => $user->entra_oid, 'entraTid' => $user->entra_tid],
             'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type, 'userCategory' => $user->user_category, 'manager' => $user->manager?->name,
                 'managerInfo' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'authSource' => $user->manager->auth_source] : null,
                 'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id, 'directReports' => $user->directReports()->count()],
@@ -268,16 +270,21 @@ class UserManagementController extends ApiController
         return response()->json(['data' => $data, 'meta' => ['currentPage' => $page, 'perPage' => $perPage]]);
     }
 
-    /** @param array{status:string, locked:bool}|null $state */
-    private function row(User $user, ?array $state = null): array
+    /**
+     * @param  array{status:string, locked:bool}|null  $state
+     * @param  array<string,string>|null  $photoVersions
+     */
+    private function row(User $user, ?array $state = null, ?array $photoVersions = null): array
     {
         $state ??= $this->details->listStates(collect([$user]))[$user->id] ?? null;
+        $photoVersions ??= $this->photos->versions(collect([$user]));
 
         return ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'upn' => $user->upn, 'username' => $user->username, 'area' => $user->area,
             'department' => $user->department, 'userCategory' => $user->user_category, 'authSource' => $user->auth_source, 'isActive' => $user->is_active, 'roles' => $user->roles ?? [], 'groups' => $user->groups ?? [],
             'manager' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'username' => $user->manager->username, 'authSource' => $user->manager->auth_source] : null,
             'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id,
             'invitationPending' => $state !== null && ! $user->is_active && $state['status'] === ManagedUserDetails::INVITATION_PENDING,
+            'photo' => isset($photoVersions[$user->id]) ? ['version' => $photoVersions[$user->id]] : null,
             'invitationStatus' => $state['status'] ?? null, 'locked' => $state['locked'] ?? false,
             'userType' => $user->user_type, 'accountEnabled' => $user->account_enabled, 'disabledReason' => $user->disabled_reason,
             'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String()];

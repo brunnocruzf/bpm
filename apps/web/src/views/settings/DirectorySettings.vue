@@ -16,7 +16,7 @@ const notify = useNotify()
 
 const form = reactive({
   enabled: false, transport: 'graph', tenantId: '', clientId: '', authorityHost: 'login.microsoftonline.com', credentialType: 'certificate',
-  scope: 'groups' as 'groups' | 'all', groups: [] as { id: string; name: string }[], includeGuests: false, includeDisabled: false, scheduleMinutes: 0, staleAfterHours: 48,
+  scope: 'groups' as 'groups' | 'all', groups: [] as { id: string; name: string }[], includeGuests: false, includeDisabled: false, scheduleMinutes: 0, staleAfterHours: 48, photos: { enabled: true },
   checklist: { separateApp: false, applicationPermissions: false, adminConsent: false, noWritePermissions: false } as Record<string, boolean>,
 })
 const secret = reactive({ certificatePem: '', clientSecret: '', clientSecretApproval: '', credentialFileRef: '' })
@@ -57,7 +57,7 @@ function fill() {
   if (!v) return
   Object.assign(form, {
     enabled: v.enabled, transport: v.transport, tenantId: v.tenantId, clientId: v.clientId, authorityHost: v.authorityHost, credentialType: v.credentialType,
-    scope: v.scope ?? 'groups', groups: (v.groups ?? []).map((g: any) => ({ ...g })), includeGuests: v.includeGuests, includeDisabled: v.includeDisabled,
+    scope: v.scope ?? 'groups', groups: (v.groups ?? []).map((g: any) => ({ ...g })), includeGuests: v.includeGuests, includeDisabled: v.includeDisabled, photos: { enabled: v.photos?.enabled ?? true },
     scheduleMinutes: v.scheduleMinutes, staleAfterHours: v.staleAfterHours, checklist: { ...form.checklist, ...(v.checklist ?? {}) },
   })
   secret.clientSecretApproval = v.clientSecretApproval ?? ''
@@ -270,6 +270,7 @@ const allGroupOptions = computed(() => {
         <div class="three" style="margin-top:10px">
           <label class="check"><input v-model="form.includeGuests" type="checkbox" /> <span>Importar convidados (guests)</span></label>
           <label class="check"><input v-model="form.includeDisabled" type="checkbox" /> <span>Importar contas desabilitadas (inativas)</span></label>
+          <label class="check"><input v-model="form.photos.enabled" type="checkbox" /> <span>Importar a foto do perfil de quem usa o BPM (miniatura; usa User.Read.All, sem permissão nova). Ao desligar, as fotos armazenadas são apagadas.</span></label>
           <div />
           <div class="tm-field"><label for="d-s">Periodicidade</label><select id="d-s" v-model.number="form.scheduleMinutes"><option :value="0">Manual</option><option :value="60">A cada hora</option><option :value="240">A cada 4 horas</option><option :value="720">A cada 12 horas</option><option :value="1440">Diária</option></select></div>
           <div class="tm-field"><label for="d-st">Alertar sem sincronização após (horas)</label><input id="d-st" v-model.number="form.staleAfterHours" type="number" min="1" max="720" /></div>

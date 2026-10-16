@@ -2,6 +2,8 @@
 
 namespace App\Identity\Graph;
 
+use Illuminate\Support\Facades\Cache;
+
 /**
  * Diretório FICTÍCIO para desenvolvimento/homologação sem tenant (transporte "mock").
  * Responde no formato do Graph v1.0 (paginação com @odata.nextLink, @odata.deltaLink,
@@ -56,6 +58,39 @@ class MockGraphClient implements GraphClient
         return $users;
     }
 
+    /** Usuários fictícios com foto (os demais respondem 404, como no Graph). */
+    private const PHOTO_USERS = ['9a5d0000-0000-4000-8000-000000000001', '9a5d0000-0000-4000-8000-000000000003', '9a5d0000-0000-4000-8000-000000000006'];
+
+    /** Etag da foto fictícia; incrementar 'bpm:mock-photo-rev' no cache simula a troca da foto. */
+    public static function photoEtag(string $id): string
+    {
+        return '"mock-'.substr(md5($id), 0, 6).'-'.(int) Cache::get('bpm:mock-photo-rev', 1).'"';
+    }
+
+    private function assertPhoto(string $id): void
+    {
+        if (! in_array($id, self::PHOTO_USERS, true)) {
+            throw new GraphException('not_found', 'Objeto não encontrado no diretório.', false, 404);
+        }
+    }
+
+    public function getBinary(string $pathOrUrl, int $maxBytes): array
+    {
+        if (! preg_match('#/users/([0-9a-f\-]{36})/photo/\$value$#', '/'.ltrim((string) parse_url($pathOrUrl, PHP_URL_PATH), '/'), $m)) {
+            throw new GraphException('graph_error', 'Recurso não suportado pelo diretório fictício.');
+        }
+        $this->assertPhoto($m[1]);
+        $name = (string) (self::users()[$m[1]]['displayName'] ?? '?');
+        $hash = md5($m[1].'|'.(int) Cache::get('bpm:mock-photo-rev', 1));
+        $img = imagecreatetruecolor(200, 200);
+        imagefill($img, 0, 0, (int) imagecolorallocate($img, hexdec(substr($hash, 0, 2)) % 160, hexdec(substr($hash, 2, 2)) % 160, hexdec(substr($hash, 4, 2)) % 160));
+        imagestring($img, 5, 80, 90, strtoupper(substr($name, 0, 1)).strtoupper(substr($name, 9, 1)), (int) imagecolorallocate($img, 255, 255, 255));
+        ob_start();
+        imagejpeg($img, null, 85);
+
+        return ['bytes' => (string) ob_get_clean(), 'contentType' => 'image/jpeg'];
+    }
+
     public function get(string $pathOrUrl): array
     {
         $url = str_starts_with($pathOrUrl, 'https://') ? $pathOrUrl : self::BASE.'/'.ltrim($pathOrUrl, '/');
@@ -83,6 +118,11 @@ class MockGraphClient implements GraphClient
             ], $groups);
 
             return $this->delta('groups', $rows, $q);
+        }
+        if (preg_match('#/users/([0-9a-f\-]{36})/photo$#', $path, $m)) {
+            $this->assertPhoto($m[1]);
+
+            return ['@odata.mediaContentType' => 'image/jpeg', '@odata.mediaEtag' => self::photoEtag($m[1]), 'id' => '200x200', 'width' => 200, 'height' => 200];
         }
         if (preg_match('#/users/([0-9a-f\-]{36})$#', $path, $m)) {
             return self::users()[$m[1]] ?? throw new GraphException('not_found', 'Objeto não encontrado no diretório.', false, 404);

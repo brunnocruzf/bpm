@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\ResultsController;
 use App\Http\Controllers\Api\V1\SessionController;
 use App\Http\Controllers\Api\V1\StageNotificationController;
 use App\Http\Controllers\Api\V1\TaskController;
+use App\Http\Controllers\Api\V1\UserPhotoController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -55,6 +56,7 @@ Route::prefix('v1')->group(function () {
 
     Route::middleware(['auth:api', 'throttle:api'])->group(function () {
         Route::get('me', [SessionController::class, 'me']);
+        Route::get('me/photo', [UserPhotoController::class, 'me']);
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('meta', [SessionController::class, 'meta']);
 
@@ -152,6 +154,8 @@ Route::prefix('v1')->group(function () {
         Route::post('admin/groups', [AdminController::class, 'storeGroup']);
         Route::patch('admin/groups/{key}', [AdminController::class, 'updateGroup']);
         Route::get('admin/users', [AdminController::class, 'users']);
+        Route::get('admin/managed-users/{id}/photo', [UserPhotoController::class, 'show'])->whereUuid('id');
+        Route::post('admin/managed-users/{id}/photo/refresh', [UserPhotoController::class, 'refresh'])->whereUuid('id')->middleware('throttle:20,1');
         Route::get('admin/managed-users/facets', [UserManagementController::class, 'facets']);
         Route::get('admin/managed-users/{id}/activity', [UserManagementController::class, 'activity'])->whereUuid('id');
         Route::get('admin/managed-users', [UserManagementController::class, 'index']);

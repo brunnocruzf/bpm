@@ -58,13 +58,25 @@ class EntraGraphDirectorySync
         return $this->graph->get('groups/'.rawurlencode($id).'?$select='.self::GROUP_SELECT);
     }
 
+    /** @return array<string,mixed> metadados da foto (inclui @odata.mediaEtag); not_found quando não há foto */
+    public function userPhotoMeta(string $id): array
+    {
+        return $this->graph->get('users/'.rawurlencode($id).'/photo');
+    }
+
+    /** @return array{bytes:string, contentType:string} */
+    public function userPhoto(string $id, int $maxBytes): array
+    {
+        return $this->graph->getBinary('users/'.rawurlencode($id).'/photo/$value', $maxBytes);
+    }
+
     /**
      * Verificações reais de permissão para o teste de conexão (leitura mínima).
      *
      * @param  list<string>|null  $groupIds  null = escopo "todo o diretório" (lê um grupo qualquer)
      * @return list<array{name:string, ok:bool, code:?string, message:?string}>
      */
-    public function probe(?array $groupIds): array
+    public function probe(?array $groupIds, bool $photos = false): array
     {
         $checks = [];
         $run = function (string $name, Closure $fn) use (&$checks) {
@@ -75,7 +87,22 @@ class EntraGraphDirectorySync
                 $checks[] = ['name' => $name, 'ok' => false, 'code' => $e->errorCode, 'message' => $e->getMessage()];
             }
         };
-        $run('Leitura de usuários (User.Read.All)', fn () => $this->graph->get('users?$top=1&$select=id'));
+        $firstUser = null;
+        $run('Leitura de usuários (User.Read.All)', function () use (&$firstUser) {
+            $firstUser = $this->graph->get('users?$top=1&$select=id')['value'][0]['id'] ?? null;
+        });
+        if ($photos && is_string($firstUser)) {
+            // 200 ou 404 (usuário sem foto) provam a permissão; 403 vira consent_missing
+            $run('Leitura de foto de perfil (User.Read.All)', function () use ($firstUser) {
+                try {
+                    $this->userPhotoMeta($firstUser);
+                } catch (Graph\GraphException $e) {
+                    if ($e->errorCode !== 'not_found') {
+                        throw $e;
+                    }
+                }
+            });
+        }
         if ($groupIds === null) {
             $run('Leitura de grupos (Group.Read.All)', fn () => $this->graph->get('groups?$top=1&$select=id'));
         }

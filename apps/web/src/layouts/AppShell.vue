@@ -63,7 +63,7 @@ watch(() => route.fullPath, () => { sidebarOpen.value = false })
     </form>
     <div class="tm-top-actions">
       <div class="tm-user-name"><strong>{{ session.me?.name }}</strong>{{ session.me?.groups.map((g) => g.name).join(', ') || session.me?.area }}</div>
-      <button class="tm-avatar" :title="methodLabel" @click="(e) => userMenu.toggle(e)">{{ session.initials }}</button>
+      <button class="tm-avatar" :title="methodLabel" :aria-label="`Menu de ${session.me?.name ?? 'usuário'}`" @click="(e) => userMenu.toggle(e)"><img v-if="session.photoUrl" :src="session.photoUrl" alt="" class="tm-avatar-img" /><template v-else>{{ session.initials }}</template></button>
       <Menu ref="userMenu" :model="menuItems" popup />
     </div>
   </header>

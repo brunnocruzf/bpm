@@ -113,4 +113,20 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | Aba Usuários em 3 colunas: busca com debounce no servidor, seleção grava `?user`, painel de integração, tipo de usuário obrigatório, sem permissão não chama a API | `apps/web/src/components/admin/users/UsersWorkspace.spec.ts` | ✅ |
 | Layout em 3 colunas, Drawer em telas médias/pequenas e foco/Esc | Verificação manual com Playwright (MCP) contra o Compose | 🟡 manual |
 
+## Foto do Entra ID (ADR-0013)
+
+| Requisito | Evidência | Status |
+|---|---|---|
+| Miniatura quadrada em WebP, validada pelo conteúdo e gravada em disco privado | `UserPhotoTest::test_photo_is_downloaded_resized_to_a_square_webp_and_stored_privately` | ✅ |
+| Etag igual não baixa de novo; etag novo troca o arquivo e apaga o antigo | `UserPhotoTest::test_same_etag_does_not_download_again_and_a_new_etag_replaces_the_file` | ✅ |
+| Sem foto (404) → ausente; foto removida apaga o arquivo | `UserPhotoTest::test_user_without_photo_is_marked_absent_and_a_removed_photo_deletes_the_file` | ✅ |
+| Conteúdo inválido ou grande demais é recusado sem gravar | `UserPhotoTest::test_invalid_or_oversized_content_is_rejected_without_storing` | ✅ |
+| Lote para em throttling e só pega usuários Entra ativos do tenant; prévia do sync não toca em fotos | `UserPhotoTest::test_batch_stops_on_throttling_and_only_picks_active_entra_users_of_the_sync_tenant` · `::test_preview_never_touches_photos_and_users_without_recent_activity_are_skipped` | ✅ |
+| Atualização no login só é enfileirada (Entra, recurso ligado, verificação vencida); nunca chama o Graph na requisição | `UserPhotoTest::test_login_refresh_is_only_queued_for_entra_users_when_enabled_and_stale` | ✅ |
+| Desligar o recurso para de servir e apaga as fotos; usuário inativo não é consultado | `UserPhotoTest::test_turning_the_feature_off_stops_serving_and_purges_stored_photos` | ✅ |
+| `/me/photo` só serve a própria foto, com cabeçalhos seguros e ETag; admin exige `settings.manage` | `UserPhotoTest::test_me_photo_serves_only_the_own_photo_with_safe_headers_and_conditional_requests` | ✅ |
+| Atualização pelo administrador autorizada e auditada; detalhe e lista expõem o estado da foto, sem bytes na auditoria | `UserPhotoTest::test_admin_refresh_is_authorized_audited_and_the_detail_exposes_photo_state` | ✅ |
+| Diretório fictício serve fotos geradas (nunca de pessoas reais) | `UserPhotoTest::test_mock_transport_serves_generated_photos_and_404_for_the_others` | ✅ |
+| Avatar do topo: baixa a foto só quando a versão muda, revoga a URL e volta às iniciais | `apps/web/src/stores/session.spec.ts` | ✅ |
+
 Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web).

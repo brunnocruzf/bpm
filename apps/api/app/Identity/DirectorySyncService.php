@@ -145,7 +145,7 @@ class DirectorySyncService
                 $stage = 'Leitura no Microsoft Graph';
                 $probeStart = microtime(true);
                 $graph = new EntraGraphDirectorySync($this->client($cfg));
-                $probe = $graph->probe($groupIds);
+                $probe = $graph->probe($groupIds, (bool) ($cfg['photos']['enabled'] ?? true));
                 $checks = [...$checks, ...$probe];
                 if (collect($probe)->every(fn ($c) => $c['ok'])) {
                     $checks[] = ['name' => 'Leituras de teste no diretório', 'ok' => true, 'code' => null, 'message' => null,
