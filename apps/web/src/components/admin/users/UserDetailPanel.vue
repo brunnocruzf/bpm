@@ -128,7 +128,7 @@ async function copy(text: string | null) {
             <dt>Habilitado no Entra ID</dt><dd>{{ entra.accountEnabled === null ? 'Não informado' : entra.accountEnabled ? 'Sim' : 'Não' }}</dd>
             <dt>Tipo no Entra ID</dt><dd>{{ entra.userType ? (ENTRA_USER_TYPE[entra.userType] ?? entra.userType) : 'Não informado' }}</dd>
             <dt>UPN</dt><dd class="wrap">{{ entra.upn || '—' }}</dd>
-            <dt>Foto do Entra ID</dt><dd>{{ photoText }}<button v-if="canManage && entra.photo.enabled" type="button" class="tm-link-btn" :disabled="busy" @click="emit('refresh-photo')"> · atualizar agora</button></dd>
+            <dt>Foto do Entra ID</dt><dd>{{ photoText }}<button v-if="canManage && entra.photo?.enabled" type="button" class="tm-link-btn" :disabled="busy" @click="emit('refresh-photo')"> · atualizar agora</button></dd>
           </dl>
           <h4>Grupos do Entra ID ({{ entra.groups.length }})</h4>
           <ul v-if="entra.groups.length" class="plain">

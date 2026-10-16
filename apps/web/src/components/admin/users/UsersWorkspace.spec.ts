@@ -32,13 +32,13 @@ const facets = { total: 1, source: { local: 1 }, active: { true: 0, false: 1 }, 
 
 const stubMatchMedia = () => vi.stubGlobal('matchMedia', (q: string) => ({ matches: true, media: q, addEventListener: vi.fn(), removeEventListener: vi.fn(), addListener: vi.fn(), removeListener: vi.fn() }))
 
-function setup() {
+function setup(detailBody: unknown = detail) {
   stubMatchMedia()
   const calls: { method: string; url: string; body: any }[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string | URL, init?: RequestInit) => {
     const u = String(url)
     calls.push({ method: init?.method ?? 'GET', url: u, body: init?.body ? JSON.parse(String(init.body)) : null })
-    const body = u.includes('/facets') ? { data: facets } : u.endsWith('/admin/managed-users/u1') ? { data: detail }
+    const body = u.includes('/facets') ? { data: facets } : u.endsWith('/admin/managed-users/u1') ? { data: detailBody }
       : init?.method === 'POST' ? { message: 'Conta criada.' } : { data: [row()], meta: { currentPage: 1, lastPage: 1, perPage: 25, total: 1 } }
     return new Response(JSON.stringify(body), { status: init?.method === 'POST' ? 201 : 200 })
   }))
@@ -85,14 +85,26 @@ describe('UsersWorkspace', () => {
     expect(text).not.toContain('203.0.113')
   })
 
-  it('mostra área, departamento e grupos na lista', async () => {
+  it('mostra o perfil Entra mesmo quando a API ainda não envia o estado da foto', async () => {
+    route.query = { user: 'u1' }
+    const entra = { oid: 'o1', tid: 't1', upn: 'kelly@example.test', userType: 'Member', accountEnabled: true, directorySyncedAt: null, importedBySync: true, groups: [], sync: { lastSuccessAt: null, nextRunAt: null, alerts: [] } }
+    const { w } = setup({ ...detail, identity: { ...detail.identity, authSource: 'entra' }, integration: { source: 'entra', entra, local: null } })
+    await flushPromises()
+    const text = w.find('aside.detail-col #user-detail').text()
+    expect(text).toContain('Integração e origem')
+    expect(text).toContain('kelly@example.test')
+  })
+
+  it('minimiza a coluna de filtros, lembra a preferência e reabre pelo atalho', async () => {
+    window.localStorage.removeItem('bpm.users.filtersCollapsed')
     const { w } = setup()
     await flushPromises()
-    const head = w.find('.list-head').text()
-    expect(head).toContain('Área')
-    expect(head).toContain('Departamento')
-    expect(head).toContain('Grupos/raias')
-    expect(w.find('.user-row .c-area').text()).toContain('Operações')
+    await w.find('[aria-label="Minimizar filtros"]').trigger('click')
+    expect(w.find('.users-grid').classes()).toContain('filters-min')
+    expect(window.localStorage.getItem('bpm.users.filtersCollapsed')).toBe('1')
+    await w.find('[aria-label="Mostrar filtros"]').trigger('click')
+    expect(w.find('.users-grid').classes()).not.toContain('filters-min')
+    expect(window.localStorage.getItem('bpm.users.filtersCollapsed')).toBe('0')
   })
 
   it('expande o perfil em modal e recolhe de volta ao painel lateral', async () => {

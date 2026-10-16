@@ -53,7 +53,8 @@ export interface EntraGroupInfo { objectId: string; name: string; mail: string |
 export interface EntraIntegration {
   oid: string | null; tid: string | null; upn: string | null; userType: string | null; accountEnabled: boolean | null
   directorySyncedAt: string | null; importedBySync: boolean
-  photo: { enabled: boolean; status: 'present' | 'absent' | 'error' | 'unchecked'; checkedAt: string | null; errorCode: string | null }
+  /** Ausente em APIs anteriores à importação de fotos; a tela deve tolerar. */
+  photo?: { enabled: boolean; status: 'present' | 'absent' | 'error' | 'unchecked'; checkedAt: string | null; errorCode: string | null }
   groups: EntraGroupInfo[]
   sync: { lastSuccessAt: string | null; nextRunAt: string | null; alerts: { code: string; message: string }[] }
 }

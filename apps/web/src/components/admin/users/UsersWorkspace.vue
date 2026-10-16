@@ -37,6 +37,8 @@ const loadingActivity = ref(false)
 const newOpen = ref(false)
 const filtersOpen = ref(false)
 const expanded = ref(false)
+const FILTERS_PREF = 'bpm.users.filtersCollapsed'
+const filtersCollapsed = ref(readPref())
 const wide = ref(typeof window.matchMedia === 'function' ? window.matchMedia('(min-width: 1280px)').matches : true)
 
 const selectedRow = computed(() => users.value.find((u) => u.id === selectedId.value) ?? null)
@@ -48,6 +50,17 @@ let timer: number | undefined
 let lastQ = ''
 let media: MediaQueryList | null = null
 const onMedia = (e: MediaQueryListEvent) => { wide.value = e.matches }
+
+/** Preferência local do administrador (coluna de filtros minimizada); o armazenamento pode estar indisponível. */
+function readPref() {
+  try { return window.localStorage.getItem(FILTERS_PREF) === '1' } catch { return false }
+}
+
+function setFiltersCollapsed(value: boolean) {
+  filtersCollapsed.value = value
+  try { window.localStorage.setItem(FILTERS_PREF, value ? '1' : '0') } catch { /* segue sem lembrar a preferência */ }
+  if (!value) void nextTick(() => document.getElementById('uf-q')?.focus())
+}
 
 function queryParams(page: number) {
   const query: Record<string, string | number> = { page, perPage: 25 }
@@ -189,14 +202,16 @@ onBeforeUnmount(() => { window.clearTimeout(timer); media?.removeEventListener('
 
 <template>
   <div v-if="!canManage" class="tm-panel"><div class="tm-note" style="margin:14px" role="status"><i class="pi pi-lock" aria-hidden="true" /><span>A administração de usuários exige a permissão <code>settings.manage</code>. Peça acesso a um administrador.</span></div></div>
-  <div v-else class="users-ws">
-    <div class="filters-bar">
+  <div v-else class="users-grid" :class="{ 'has-detail': wide && selectedId && !expanded, 'filters-min': filtersCollapsed }">
+    <div class="filters-col">
       <button type="button" class="tm-btn small filters-toggle" :aria-expanded="filtersOpen" aria-controls="user-filters-wrap" @click="filtersOpen = !filtersOpen"><i class="pi pi-filter" aria-hidden="true" /> Filtros<span v-if="activeFilters"> ({{ activeFilters }})</span></button>
+      <div v-if="filtersCollapsed" class="tm-panel filters-rail">
+        <button type="button" class="tm-btn ghost icon" aria-label="Mostrar filtros" title="Mostrar filtros" :aria-expanded="false" aria-controls="user-filters-wrap" @click="setFiltersCollapsed(false)"><i class="pi pi-filter" aria-hidden="true" /><span v-if="activeFilters" class="rail-badge">{{ activeFilters }}</span></button>
+      </div>
       <div id="user-filters-wrap" class="filters-wrap" :class="{ open: filtersOpen }">
-        <UserFilters v-model="filters" :facets="facets" :total="meta.total" @clear="filters = emptyFilters()" />
+        <UserFilters v-model="filters" :facets="facets" :total="meta.total" @clear="filters = emptyFilters()" @collapse="setFiltersCollapsed(true)" />
       </div>
     </div>
-  <div class="users-grid" :class="{ 'has-detail': wide && selectedId && !expanded }">
     <UserList :users="users" :selected-id="selectedId" :loading="loading" :error="error" :meta="meta" :can-create="canManage" :photo-for="photoFor" @select="select" @page="loadUsers" @create="newOpen = true" />
     <aside v-if="wide && selectedId && !expanded" class="tm-panel detail-col" aria-label="Perfil do usuário selecionado" @keydown.esc="close">
       <UserDetailPanel :row="selectedRow" :detail="detail" :loading="detailLoading" :can-manage="canManage" :busy="busy" :loading-activity="loadingActivity" :photo="detailPhoto" @close="close" @select="(id) => select({ id, name: '' })" @toggle="toggle" @resend="resend" @change-category="changeCategory" @more-activity="moreActivity" @refresh-photo="refreshPhoto" @expand="setExpanded" />
@@ -209,18 +224,24 @@ onBeforeUnmount(() => { window.clearTimeout(timer); media?.removeEventListener('
     </Dialog>
     <NewLocalUserDialog v-model:visible="newOpen" @created="onCreated" />
   </div>
-  </div>
 </template>
 
 <style scoped>
-.users-ws { display: grid; gap: 14px; }
-.users-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
-.users-grid.has-detail { grid-template-columns: minmax(0, 1fr) minmax(360px, 440px); }
+.users-grid { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 14px; align-items: start; }
+.users-grid.has-detail { grid-template-columns: 236px minmax(0, 1fr) minmax(340px, 420px); }
+.users-grid.filters-min { grid-template-columns: 44px minmax(0, 1fr); }
+.users-grid.filters-min.has-detail { grid-template-columns: 44px minmax(0, 1fr) minmax(340px, 420px); }
+.users-grid.filters-min .filters-wrap { display: none; }
 .detail-col { position: sticky; top: 80px; max-height: calc(100vh - 96px); overflow: auto; }
 .filters-toggle { display: none; }
-@media (max-width: 759px) {
-  .filters-toggle { display: inline-flex; }
-  .filters-wrap { display: none; margin-top: 8px; }
-  .filters-wrap.open { display: block; }
+.filters-rail { display: flex; justify-content: center; padding: 6px 0; }
+.filters-rail .tm-btn { position: relative; }
+.rail-badge { position: absolute; top: -4px; right: -6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--brand); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+@media (max-width: 999px) {
+  .users-grid, .users-grid.has-detail, .users-grid.filters-min, .users-grid.filters-min.has-detail { grid-template-columns: minmax(0, 1fr); }
+  .filters-toggle { display: inline-flex; margin-bottom: 8px; }
+  .filters-rail, .filters-wrap :deep(.filters-collapse) { display: none; }
+  .filters-wrap, .users-grid.filters-min .filters-wrap { display: none; }
+  .filters-wrap.open, .users-grid.filters-min .filters-wrap.open { display: block; }
 }
 </style>

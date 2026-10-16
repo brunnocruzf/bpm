@@ -7,7 +7,7 @@ import { AUTH_SOURCE, USER_CATEGORY } from '@/composables/format'
 import type { Facets, UserFilters } from './types'
 
 const props = defineProps<{ modelValue: UserFilters; facets: Facets | null; total: number }>()
-const emit = defineEmits<{ 'update:modelValue': [UserFilters]; clear: [] }>()
+const emit = defineEmits<{ 'update:modelValue': [UserFilters]; clear: []; collapse: [] }>()
 const session = useSession()
 
 const set = (patch: Partial<UserFilters>) => emit('update:modelValue', { ...props.modelValue, ...patch })
@@ -36,13 +36,16 @@ const active = computed(() => Object.values(props.modelValue).filter(Boolean).le
 </script>
 
 <template>
-  <section class="tm-panel user-filters" role="search" aria-label="Filtros de usuários">
-    <div class="filters-head">
-      <span class="tm-panel-title">Filtros</span><span class="tm-panel-caption">{{ total }} identidade(s)</span>
-      <button v-if="active" type="button" class="tm-link-btn" @click="emit('clear')">Limpar ({{ active }})</button>
+  <aside class="tm-panel user-filters" aria-label="Filtros de usuários">
+    <div class="tm-panel-head">
+      <div><div class="tm-panel-title">Filtros</div><div class="tm-panel-caption">{{ total }} identidade(s)</div></div>
+      <div class="head-tools">
+        <button v-if="active" type="button" class="tm-link-btn" @click="emit('clear')">Limpar ({{ active }})</button>
+        <button type="button" class="tm-btn ghost icon filters-collapse" aria-label="Minimizar filtros" title="Minimizar filtros" @click="emit('collapse')"><i class="pi pi-angle-double-left" aria-hidden="true" /></button>
+      </div>
     </div>
-    <div class="filters-body">
-      <div class="tm-field f-search"><label for="uf-q">Buscar</label><InputText id="uf-q" :model-value="modelValue.q" type="search" placeholder="Nome, e-mail ou usuário" aria-label="Buscar usuário por nome, e-mail ou identificador" @update:model-value="set({ q: String($event ?? '') })" /></div>
+    <div class="tm-panel-body filters-body">
+      <div class="tm-field"><label for="uf-q">Buscar</label><InputText id="uf-q" :model-value="modelValue.q" type="search" placeholder="Nome, e-mail ou usuário" aria-label="Buscar usuário por nome, e-mail ou identificador" @update:model-value="set({ q: String($event ?? '') })" /></div>
       <div class="tm-field"><label for="uf-source">Origem</label><Select input-id="uf-source" placeholder="Todas as origens" :model-value="modelValue.source" :options="sourceOptions" option-label="label" option-value="value" @update:model-value="set({ source: $event })" /></div>
       <div class="tm-field"><label for="uf-active">Situação</label><Select input-id="uf-active" placeholder="Todas as situações" :model-value="modelValue.active" :options="activeOptions" option-label="label" option-value="value" @update:model-value="set({ active: $event })" /></div>
       <div class="tm-field"><label for="uf-category">Tipo de usuário</label><Select input-id="uf-category" placeholder="Todos os tipos" :model-value="modelValue.category" :options="categoryOptions" option-label="label" option-value="value" @update:model-value="set({ category: $event })" /></div>
@@ -51,17 +54,12 @@ const active = computed(() => Object.values(props.modelValue).filter(Boolean).le
       <div class="tm-field"><label for="uf-group">Grupo/raia</label><Select input-id="uf-group" placeholder="Todos os grupos" :model-value="modelValue.group" :options="groupOptions" option-label="label" option-value="value" @update:model-value="set({ group: $event })" /></div>
       <div class="tm-field"><label for="uf-role">Papel</label><Select input-id="uf-role" placeholder="Todos os papéis" :model-value="modelValue.role" :options="roleOptions" option-label="label" option-value="value" @update:model-value="set({ role: $event })" /></div>
     </div>
-  </section>
+  </aside>
 </template>
 
 <style scoped>
-.user-filters { padding: 12px 14px 2px; }
-.filters-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 10px; }
-.filters-head .tm-link-btn { margin-left: auto; }
-.filters-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 12px; }
-.filters-body .f-search { grid-column: span 2; }
-.filters-body :deep(.p-select), .filters-body :deep(.p-inputtext) { width: 100%; min-width: 0; }
+.filters-body :deep(.p-select), .filters-body :deep(.p-inputtext) { width: 100%; }
 .filters-body :deep(.p-inputtext), .filters-body :deep(.p-select-label) { font-size: 12px; }
-.filters-body .tm-field { margin-bottom: 10px; min-width: 0; }
-@media (max-width: 420px) { .filters-body .f-search { grid-column: auto; } }
+.filters-body .tm-field { margin-bottom: 11px; }
+.head-tools { display: flex; align-items: center; gap: 6px; }
 </style>
