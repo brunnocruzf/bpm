@@ -129,7 +129,7 @@ final class LocalUserAuth
         DB::transaction(function () use ($identityToken, $user, $password) {
             $identityToken->forceFill(['used_at' => now()])->save();
             LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->whereKeyNot($identityToken->id)->update(['used_at' => now()]);
-            LocalCredential::where('user_id', $user->id)->update(['password_hash' => PasswordPolicy::hash($password), 'password_changed_at' => now(), 'failed_attempts' => 0, 'locked_until' => null, 'updated_at' => now()]);
+            LocalCredential::where('user_id', $user->id)->update(['password_hash' => PasswordPolicy::hash($password), 'password_changed_at' => now(), 'failed_attempts' => 0, 'locked_until' => null, 'activated_at' => now(), 'updated_at' => now()]);
             $user->forceFill(['is_active' => true, 'disabled_at' => null, 'disabled_reason' => null])->save();
             AuditLogger::record('identity.local_user_activated', 'user', $user->id, ['method' => 'invitation'], null, context: ['object_name' => $user->name]);
         });

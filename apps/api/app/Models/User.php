@@ -90,11 +90,13 @@ class User extends Model implements AuthenticatableContract
         return '';
     }
 
+    /** @return BelongsTo<User, $this> */
     public function manager(): BelongsTo
     {
         return $this->belongsTo(self::class, 'manager_user_id');
     }
 
+    /** @return HasMany<User, $this> */
     public function directReports(): HasMany
     {
         return $this->hasMany(self::class, 'manager_user_id');

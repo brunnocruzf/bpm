@@ -92,7 +92,7 @@ final class EmailLayoutRenderer
     {
         $host = strtolower((string) parse_url($appUrl, PHP_URL_HOST));
         preg_match_all('~https?://[^\s<>"\']+~iu', $text, $matches);
-        foreach ($matches[0] ?? [] as $candidate) {
+        foreach ($matches[0] as $candidate) {
             $url = rtrim((string) $candidate, '.,;:!?)]}');
             $urlHost = strtolower((string) parse_url($url, PHP_URL_HOST));
             if ($host !== '' && $urlHost === $host && in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true)) {

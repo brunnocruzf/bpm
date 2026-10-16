@@ -72,6 +72,38 @@ class LocalIdentityTest extends TestCase
         $this->assertTrue(AuditEvent::where('action', 'identity.local_user_activated')->exists());
     }
 
+    public function test_resending_the_invitation_does_not_allow_activating_an_account_that_never_accepted_it(): void
+    {
+        $this->as('admin')->postJson('/api/v1/admin/managed-users', [
+            'name' => 'Pessoa Pendente', 'email' => 'pendente@example.test', 'username' => 'pessoa.pendente',
+        ])->assertCreated();
+        $user = User::where('username', 'pessoa.pendente')->firstOrFail();
+        $this->as('admin')->postJson('/api/v1/admin/managed-users/'.$user->id.'/invitation')->assertOk();
+        $this->assertSame(2, LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->count());
+        $this->assertNotNull(LocalIdentityToken::where('user_id', $user->id)->whereNotNull('used_at')->first(), 'o convite antigo é invalidado ao reenviar');
+
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$user->id, ['active' => true])
+            ->assertStatus(409)->assertJsonPath('code', 'invitation_activation_required');
+        $this->assertFalse($user->fresh()->is_active);
+        $this->assertNull(LocalCredential::where('user_id', $user->id)->value('activated_at'));
+    }
+
+    public function test_an_account_that_accepted_the_invitation_can_be_disabled_and_reactivated_by_the_admin(): void
+    {
+        $this->as('admin')->postJson('/api/v1/admin/managed-users', [
+            'name' => 'Pessoa Ativa', 'email' => 'ativa@example.test', 'username' => 'pessoa.ativa',
+        ])->assertCreated();
+        $user = User::where('username', 'pessoa.ativa')->firstOrFail();
+        $message = NotificationMessage::where('event', 'identity.invitation')->firstOrFail();
+        $url = Crypt::decryptString($message->body);
+        parse_str((string) parse_url(trim(explode("\n\n", $url)[1]), PHP_URL_QUERY), $query);
+        $this->postJson('/api/v1/auth/local/activate', ['token' => $query['token'], 'password' => 'Ativa-Forte-2026!x'])->assertOk();
+        $this->assertNotNull(LocalCredential::where('user_id', $user->id)->value('activated_at'));
+
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$user->id, ['active' => false])->assertOk();
+        $this->as('admin')->patchJson('/api/v1/admin/managed-users/'.$user->id, ['active' => true])->assertOk()->assertJsonPath('data.isActive', true);
+    }
+
     public function test_local_password_recovery_is_neutral_and_revokes_sessions(): void
     {
         $user = User::create(['name' => 'Pessoa Local', 'email' => 'pessoa@example.test', 'username' => 'pessoa', 'auth_source' => User::SOURCE_LOCAL, 'is_active' => true,

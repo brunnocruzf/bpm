@@ -127,7 +127,7 @@ class UserManagementController extends ApiController
         if ($user->is_active === $active) {
             return response()->json(['data' => $this->row($user)]);
         }
-        if ($active && ! LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNotNull('used_at')->exists()) {
+        if ($active && ! LocalCredential::where('user_id', $user->id)->whereNotNull('activated_at')->exists()) {
             throw ApiProblem::conflict('Esta conta ainda n\u00e3o foi ativada pelo convite. Reenvie o convite para que a pessoa defina a senha.', 'invitation_activation_required');
         }
         DB::transaction(function () use ($user, $active) {
