@@ -1,9 +1,8 @@
 # Integrações REST — guia (Administração → Integrações e entregas)
 
-Catálogo de integrações inspirado nas **Fontes de dados REST do SoftExpert** (prints em `.github/copilot/references/rest/`),
-usado principalmente para a **API do Dynamics AX 2012** (`https://apidax.tmsa.ind.br`, Swagger em
-`/swagger/index.html`, documentos `/swagger/v1/swagger.json` e `/swagger/v2/swagger.json`).
-Decisão: `docs/adr/0016-catalogo-de-integracoes-rest.md`.
+Catálogo de integrações REST, usado principalmente para a **API do Dynamics AX 2012**
+(`https://apidax.tmsa.ind.br`, Swagger em `/swagger/index.html`, documentos `/swagger/v1/swagger.json`
+e `/swagger/v2/swagger.json`). Decisão: `docs/adr/0016-catalogo-de-integracoes-rest.md`.
 
 ## Portal de documentação de integrações
 
@@ -17,10 +16,7 @@ organizada em guias por perfil:
 | Designer de fluxos | [Etapa do tipo Integração](guia-etapa-integracao.md) | [Mapeamentos e MOCK](guia-mapeamentos-e-mock.md) |
 | Operação e suporte | [Operação e suporte](guia-operacao-e-suporte.md) (Execuções, reconciliação, erros, auditoria) | [Etapa do tipo Integração](guia-etapa-integracao.md) |
 
-O conteúdo a seguir é o guia rápido original, mantido como visão resumida.
-
-
-## Passo a passo (AX 2012)
+## Guia rápido: passo a passo (AX 2012)
 
 1. **Plataforma** — declarar o host (ele resolve para a rede interna 10.x):
    `BPM_INTEGRATION_ALLOWED_HOSTS=apidax.tmsa.ind.br` no ambiente da API (ex.: `deploy/docker/.env`) e
