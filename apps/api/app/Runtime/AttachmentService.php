@@ -148,11 +148,17 @@ class AttachmentService
         return $instance && Access::canViewInstance($user, $instance);
     }
 
-    public function signedUrl(Attachment $a, User $user): string
+    public function signedUrl(Attachment $a, User $user, string $disposition = 'attachment'): string
     {
-        AuditLogger::record('attachment.download_url', 'attachment', $a->id, [], $a->process_instance_id, $user);
+        $disposition = $disposition === 'attachment' ? 'attachment' : 'inline';
+        AuditLogger::record('attachment.download_url', 'attachment', $a->id, ['disposition' => $disposition], $a->process_instance_id, $user);
 
-        return URL::temporarySignedRoute('attachments.download', now()->addMinutes((int) config('bpm.attachments.signed_url_minutes', 5)), ['attachment' => $a->id]);
+        return URL::temporarySignedRoute('attachments.download', now()->addMinutes((int) config('bpm.attachments.signed_url_minutes', 5)), ['attachment' => $a->id, 'disposition' => $disposition]);
+    }
+
+    public static function canPreviewInline(string $contentType): bool
+    {
+        return in_array($contentType, ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/avif', 'application/pdf'], true);
     }
 
     /** @return array<string,mixed> */

@@ -39,18 +39,26 @@ class AttachmentController extends ApiController
     }
 
     /** Gera URL assinada curta após autorização. */
-    public function url(string $id): JsonResponse
+    public function url(Request $request, string $id): JsonResponse
     {
+        $request->validate(['disposition' => ['sometimes', 'in:inline,attachment']]);
         $attachment = Attachment::find($id);
         if (! $attachment || ! $this->service->canDownload($this->user(), $attachment)) {
             throw ApiProblem::notFound('Anexo não encontrado ou sem permissão.');
         }
 
-        return response()->json(['url' => $this->service->signedUrl($attachment, $this->user()), 'name' => $attachment->original_name]);
+        $disposition = $request->query('disposition', 'attachment');
+
+        return response()->json([
+            'url' => $this->service->signedUrl($attachment, $this->user(), $disposition),
+            'name' => $attachment->original_name,
+            'type' => $attachment->content_type,
+            'previewable' => AttachmentService::canPreviewInline($attachment->content_type),
+        ]);
     }
 
     /** Rota assinada (sem bearer): assinatura + expiração validadas pelo middleware "signed". */
-    public function download(Attachment $attachment): StreamedResponse
+    public function download(Request $request, Attachment $attachment): StreamedResponse
     {
         abort_if($attachment->av_status === 'infected', 403);
         try {
@@ -62,11 +70,15 @@ class AttachmentController extends ApiController
         }
         abort_unless($exists, 404);
 
-        return $disk->download($attachment->object_key, $attachment->original_name, [
+        $disposition = $request->query('disposition') === 'inline' && AttachmentService::canPreviewInline($attachment->content_type)
+            ? 'inline'
+            : 'attachment';
+
+        return $disk->response($attachment->object_key, $attachment->original_name, [
             'Content-Type' => $attachment->content_type,
             'Content-Length' => (string) $attachment->size,
             'X-Content-Type-Options' => 'nosniff',
             'Content-Security-Policy' => "default-src 'none'; sandbox",
-        ]);
+        ], $disposition);
     }
 }

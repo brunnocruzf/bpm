@@ -172,8 +172,24 @@ class RuntimeTest extends TestCase
 
         $this->start(null, ['item' => 'Com anexo', 'anexo' => [$up->json('file')]])->assertStatus(202);
         $url = $this->as('cq')->getJson("/api/v1/attachments/$id/url")->assertOk()->json('url');
-        $this->get($url)->assertOk();
+        $this->get($url)->assertOk()->assertHeader('Content-Disposition', 'attachment; filename=laudo.pdf');
         $this->get(preg_replace('/signature=[^&]+/', 'signature=forjada', $url))->assertForbidden();
+
+        $preview = $this->as('cq')->withHeader('X-Forwarded-Proto', 'https')
+            ->getJson("/api/v1/attachments/$id/url?disposition=inline")
+            ->assertOk()->assertJsonPath('type', 'application/pdf')->assertJsonPath('previewable', true)->json('url');
+        $this->assertStringStartsWith('https://', $preview);
+        $this->get($preview)->assertOk()->assertHeader('Content-Disposition', 'inline; filename=laudo.pdf');
+        $this->get(str_replace('disposition=inline', 'disposition=attachment', $preview))->assertForbidden();
+        $this->flushHeaders();
+        $this->as('cq')->getJson("/api/v1/attachments/$id/url?disposition=invalid")->assertUnprocessable();
+
+        $text = $this->as('cq')->post('/api/v1/attachments', [
+            'file' => UploadedFile::fake()->createWithContent('notas.txt', 'Sem visualizador.'),
+        ], ['Accept' => 'application/json'])->assertCreated()->json('id');
+        $textUrl = $this->as('cq')->getJson("/api/v1/attachments/$text/url?disposition=inline")
+            ->assertOk()->assertJsonPath('previewable', false)->json('url');
+        $this->get($textUrl)->assertOk()->assertHeader('Content-Disposition', 'attachment; filename=notas.txt');
 
         // anexo de outro usuário não pode ser usado em submissão
         $other = $this->as('designer')->post('/api/v1/attachments', ['file' => UploadedFile::fake()->createWithContent('x.pdf', "%PDF-1.4\n%%EOF\n")], ['Accept' => 'application/json'])->assertCreated();

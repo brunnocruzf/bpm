@@ -372,7 +372,25 @@ paths:
       responses: { '201': { description: Criado }, '422': { $ref: '#/components/responses/Problem' } }
   /attachments/{id}/url:
     parameters: [{ $ref: '#/components/parameters/Id' }]
-    get: { summary: "URL assinada de curta duração (após autorização)", responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } } }
+    get:
+      summary: URL assinada de curta duração (após autorização)
+      parameters:
+        - { name: disposition, in: query, schema: { type: string, enum: [inline, attachment], default: attachment } }
+      responses:
+        '200':
+          description: URL assinada e metadados para download ou visualização local
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, name, type, previewable]
+                properties:
+                  url: { type: string, format: uri }
+                  name: { type: string }
+                  type: { type: string }
+                  previewable: { type: boolean }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
   /lookups/{source}:
     get:
       summary: Consulta AX sob demanda (tpr, item, purchaseOrder, supplier)
