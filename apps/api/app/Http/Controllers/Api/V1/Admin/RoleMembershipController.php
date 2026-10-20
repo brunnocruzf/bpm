@@ -18,6 +18,45 @@ class RoleMembershipController extends ApiController
         Gate::authorize(Permissions::SETTINGS_MANAGE);
     }
 
+    /** Usuários com o papel efetivo, paginados e filtráveis (busca, origem do vínculo, tipo de conta, situação). */
+    public function index(Request $request, string $roleKey)
+    {
+        $this->authorizeAdmin();
+        $this->assertConfiguredRole($roleKey);
+        if ($request->query->has('active')) {
+            $request->query->set('active', in_array(strtolower((string) $request->query('active')), ['true', '1'], true));
+        }
+        $request->validate(['q' => ['nullable', 'string', 'max:200'], 'origin' => ['nullable', 'in:token,directory,manual'], 'authSource' => ['nullable', 'in:entra,local,demo,superadmin'],
+            'active' => ['nullable', 'boolean'], 'page' => ['nullable', 'integer', 'min:1'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100']]);
+
+        $query = User::whereJsonContains('roles', $roleKey);
+        if ($q = trim((string) $request->query('q', ''))) {
+            $like = '%'.mb_strtolower($q).'%';
+            $query->where(fn ($w) => $w->whereRaw('LOWER(name) LIKE ?', [$like])->orWhereRaw('LOWER(email) LIKE ?', [$like])->orWhereRaw('LOWER(username) LIKE ?', [$like]));
+        }
+        if ($origin = $request->query('origin')) {
+            $query->whereJsonContains(['token' => 'token_roles', 'directory' => 'directory_roles', 'manual' => 'manual_roles'][$origin], $roleKey);
+        }
+        if ($source = $request->query('authSource')) {
+            $query->where('auth_source', $source);
+        }
+        if ($request->query->has('active')) {
+            $query->where('is_active', (bool) $request->query('active'));
+        }
+        $page = $query->orderBy('name')->paginate(min(100, max(1, (int) $request->query('perPage', 25))));
+
+        return response()->json([
+            'data' => $page->getCollection()->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'username' => $u->username, 'authSource' => $u->auth_source, 'isActive' => $u->is_active,
+                'origins' => array_values(array_filter([
+                    in_array($roleKey, $u->token_roles ?? [], true) ? 'token' : null,
+                    in_array($roleKey, $u->directory_roles ?? [], true) ? 'directory' : null,
+                    in_array($roleKey, $u->manual_roles ?? [], true) ? 'manual' : null,
+                ])),
+                'manual' => in_array($roleKey, $u->manual_roles ?? [], true)])->values(),
+            'meta' => ['currentPage' => $page->currentPage(), 'lastPage' => $page->lastPage(), 'perPage' => $page->perPage(), 'total' => $page->total()],
+        ]);
+    }
+
     public function store(Request $request, string $roleKey)
     {
         $this->authorizeAdmin();

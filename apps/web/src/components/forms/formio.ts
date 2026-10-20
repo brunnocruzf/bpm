@@ -7,6 +7,10 @@
  *  - painéis de JavaScript livre ocultos no builder (o servidor também remove essas propriedades).
  */
 import { Components, Formio, Providers, Utils } from '@formio/js'
+import flatpickr from 'flatpickr'
+import { Portuguese } from 'flatpickr/dist/l10n/pt'
+import 'flatpickr/dist/flatpickr.min.css'
+import timezonesUrl from 'moment-timezone/data/packed/latest.json?url'
 import { api, errorMessage } from '@/api/http'
 import type { Meta } from '@/api/types'
 
@@ -44,6 +48,7 @@ export const PT_BR = {
     'Drop files to attach,': 'Arraste arquivos para anexar,',
     or: 'ou',
     browse: 'procure',
+    browseFiles: 'procure no computador',
     'File Name': 'Arquivo',
     Size: 'Tamanho',
     'Type to search': 'Digite para buscar',
@@ -114,6 +119,15 @@ export const PT_BR = {
 export function setupFormio(meta: Meta | null) {
   if (initialized) return
   initialized = true
+
+  // Calendário do componente Data/hora: o Form.io 5 baixa o flatpickr (JS, CSS e locale) de cdn.form.io,
+  // bloqueado pela CSP (script-src 'self'). O requireLibrary não baixa nada se o global já existir,
+  // então expomos a cópia empacotada; o CSS vem do import acima.
+  flatpickr.l10ns.pt = Portuguese
+  Object.assign(window, { flatpickr, 'flatpickr-pt': Portuguese })
+  // Fusos (moment-timezone): o widget busca `${cdn}/data/packed/latest.json` (connect-src também bloqueia);
+  // o "#" transforma esse sufixo em fragmento, que não vai ao servidor, e o fetch pega o JSON empacotado.
+  ;(Formio as any).cdn.setOverrideUrl('moment-timezone', { cdn: `${timezonesUrl}#` })
 
   // Provider de storage TMSA
   const TmsaStorage: any = function () {

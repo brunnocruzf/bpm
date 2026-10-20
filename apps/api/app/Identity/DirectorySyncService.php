@@ -664,6 +664,7 @@ class DirectorySyncService
             $user = new User([
                 'entra_oid' => $oid, 'entra_tid' => $tenant, 'auth_source' => User::SOURCE_ENTRA, 'is_active' => $enabled !== false,
                 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => [], 'roles' => [], 'groups' => [],
+                'manual_roles' => User::defaultManualRoles(),
             ]);
         }
         $user->auth_source = User::SOURCE_ENTRA;
@@ -688,6 +689,7 @@ class DirectorySyncService
         $user->directory_synced_at = now();
 
         if (! $user->exists) {
+            $user->recomputeEffectiveAccess();
             $user->save();
             $known[$oid] = $user->id;
             $this->resolveManagerRelationship($user, $tenant);

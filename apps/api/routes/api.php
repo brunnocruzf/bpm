@@ -164,6 +164,7 @@ Route::prefix('v1')->group(function () {
         Route::patch('admin/managed-users/{id}', [UserManagementController::class, 'update'])->whereUuid('id');
         Route::post('admin/managed-users/{id}/invitation', [UserManagementController::class, 'resendInvitation'])->whereUuid('id');
         Route::get('admin/roles', [UserManagementController::class, 'roles']);
+        Route::get('admin/roles/{roleKey}/users', [RoleMembershipController::class, 'index']);
         Route::post('admin/roles/{roleKey}/users', [RoleMembershipController::class, 'store']);
         Route::delete('admin/roles/{roleKey}/users/{userId}', [RoleMembershipController::class, 'destroy'])->whereUuid('userId');
         Route::get('admin/groups/{key}/members', [GroupMembershipController::class, 'index']);

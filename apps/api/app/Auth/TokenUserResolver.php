@@ -167,6 +167,7 @@ class TokenUserResolver
             $user->auth_source = User::SOURCE_ENTRA;
             $user->directory_roles ??= [];
             $user->directory_groups ??= [];
+            $user->manual_roles = User::defaultManualRoles();
         }
         $user->recomputeEffectiveAccess();
         $user->save();

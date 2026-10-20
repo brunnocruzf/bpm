@@ -181,7 +181,7 @@ class UserManagementController extends ApiController
         $invitationQueued = false;
         $user = DB::transaction(function () use ($data, $email, $username, &$invitationQueued) {
             $user = User::create(['name' => trim($data['name']), 'email' => $email, 'username' => $username, 'area' => $data['area'] ?? null, 'department' => $data['department'] ?? null, 'user_category' => $data['userCategory'],
-                'auth_source' => User::SOURCE_LOCAL, 'is_active' => false, 'roles' => [], 'groups' => [], 'manual_groups' => [], 'manual_roles' => [], 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
+                'auth_source' => User::SOURCE_LOCAL, 'is_active' => false, 'roles' => User::defaultManualRoles(), 'groups' => [], 'manual_groups' => [], 'manual_roles' => User::defaultManualRoles(), 'token_roles' => [], 'token_groups' => [], 'directory_roles' => [], 'directory_groups' => []]);
             LocalCredential::create(['user_id' => $user->id, 'password_hash' => PasswordPolicy::hash(bin2hex(random_bytes(48))), 'password_changed_at' => now()]);
             $invitationQueued = $this->local->issueInvitation($user, $this->user());
             AuditLogger::record('identity.local_user_created', 'user', $user->id, ['authSource' => 'local', 'status' => 'invitation_pending', 'userCategory' => $data['userCategory']], null, $this->user(), context: ['object_name' => $user->name]);
@@ -245,29 +245,21 @@ class UserManagementController extends ApiController
         return response()->json(['message' => 'Se o e-mail estiver configurado, um novo convite foi enfileirado.']);
     }
 
-    public function roles(Request $request)
+    /** Resumo dos papéis (sem a lista de usuários: ela é paginada em GET admin/roles/{roleKey}/users). */
+    public function roles()
     {
         $this->authorizeAdmin();
-        $request->validate(['page' => ['nullable', 'integer', 'min:1'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:50']]);
-        $page = max(1, (int) $request->query('page', 1));
-        $perPage = min(50, max(1, (int) $request->query('perPage', 25)));
-        $configured = (array) config('bpm.roles');
         $mappings = DirectoryRoleMapping::where('enabled', true)->get();
-        $data = collect($configured)->map(function ($technical, $alias) use ($mappings, $page, $perPage) {
-            $userQuery = User::whereJsonContains('roles', $technical);
-            $userCount = (clone $userQuery)->count();
-            $users = $userQuery->orderBy('name')->forPage($page, $perPage)->get();
+        $data = collect((array) config('bpm.roles'))->map(function ($technical, $alias) use ($mappings) {
             $permissions = collect((array) config('bpm.permissions'))->filter(fn ($roles) => in_array($alias, (array) $roles, true))->keys()->values();
 
             return ['key' => $technical, 'alias' => $alias, 'name' => str($technical)->after('Bpm.')->replace('.', ' ')->value(), 'active' => true,
                 'permissions' => $permissions->map(fn ($permission) => ['key' => $permission, 'source' => 'Gate/policy do produto'])->all(),
-                'userCount' => $userCount, 'users' => $users->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'authSource' => $u->auth_source,
-                    'source' => in_array($technical, $u->token_roles ?? [], true) ? 'token' : (in_array($technical, $u->directory_roles ?? [], true) ? 'mapeamento Entra' : (in_array($technical, $u->manual_roles ?? [], true) ? 'manual — BPM TMSA' : 'papel efetivo')),
-                    'manual' => in_array($technical, $u->manual_roles ?? [], true)])->values(),
+                'userCount' => User::whereJsonContains('roles', $technical)->count(),
                 'directoryMappings' => $mappings->filter(fn ($m) => in_array($technical, (array) $m->tmsa_roles, true))->map(fn ($m) => ['group' => $m->entra_group_name, 'entraGroupId' => $m->entra_group_id])->values()];
         })->values();
 
-        return response()->json(['data' => $data, 'meta' => ['currentPage' => $page, 'perPage' => $perPage]]);
+        return response()->json(['data' => $data]);
     }
 
     /**

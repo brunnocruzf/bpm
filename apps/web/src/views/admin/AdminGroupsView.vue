@@ -13,7 +13,10 @@ import type { UserRow } from '@/components/admin/users/types'
 
 type Tab = 'users' | 'groups' | 'roles'
 interface Group { key: string; name: string; description: string | null; entraGroupId: string | null; email: string | null; members: number }
-interface Role { key: string; alias: string; name: string; active: boolean; userCount: number; permissions: { key: string; source: string }[]; users: { id: string; name: string; authSource: string; source: string; manual: boolean }[]; directoryMappings: { group: string | null; entraGroupId: string }[] }
+interface Role { key: string; alias: string; name: string; active: boolean; userCount: number; permissions: { key: string; source: string }[]; directoryMappings: { group: string | null; entraGroupId: string }[] }
+type RoleOrigin = 'token' | 'directory' | 'manual'
+interface RoleUser { id: string; name: string; email: string | null; username: string | null; authSource: string; isActive: boolean; origins: RoleOrigin[]; manual: boolean }
+interface PageMeta { currentPage: number; lastPage: number; perPage: number; total: number }
 
 const session = useSession()
 const notify = useNotify()
@@ -33,7 +36,9 @@ const gateDefinitions = [
   { key: 'reports.templates', description: 'Permite administrar modelos e configurações de relatórios.' },
   { key: 'data.sensitive', description: 'Permite visualizar campos classificados como sensíveis em relatórios e respostas.' },
 ]
-const rolePage = ref(1)
+const ROLE_ORIGIN: Record<RoleOrigin, string> = { token: 'Token Entra', directory: 'Mapeamento Entra', manual: 'Manual — BPM TMSA' }
+const AUTH_SOURCE: Record<string, string> = { entra: 'Entra ID', local: 'Local', demo: 'Visitante', superadmin: 'SuperAdmin' }
+const ROLE_USERS_PER_PAGE = 25
 const editing = ref<Group | null>(null)
 const membersGroup = ref<Group | null>(null)
 const groupMembers = ref<any[]>([])
@@ -57,7 +62,13 @@ const selectedRoleUsers = ref<UserRow[]>([])
 const roleCandidatesError = ref('')
 const loadingRoleCandidates = ref(false)
 const savingRoleMembers = ref(false)
-const expandedRoleKey = ref<string | null>(null)
+const roleUsers = ref<RoleUser[]>([])
+const roleUsersMeta = ref<PageMeta>({ currentPage: 1, lastPage: 1, perPage: ROLE_USERS_PER_PAGE, total: 0 })
+const roleUsersLoading = ref(false)
+const roleUsersError = ref('')
+const roleFilters = ref({ q: '', origin: '', authSource: '', active: '' })
+const removingRoleUserId = ref<string | null>(null)
+let roleSearchTimer: ReturnType<typeof setTimeout> | undefined
 const newGroupOpen = ref(false)
 const creatingGroup = ref(false)
 const newGroupDraft = ref({ key: '', name: '', description: '', entraGroupId: '', email: '' })
@@ -65,9 +76,9 @@ async function loadGroups() {
   loading.value = true; error.value = ''
   try { groups.value = (await api<{ data: Group[] }>('/admin/groups')).data } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
 }
-async function loadRoles(page = 1) {
+async function loadRoles() {
   loading.value = true; error.value = ''
-  try { roles.value = (await api<{ data: Role[] }>('/admin/roles', { query: { page, perPage: 25 } })).data; rolePage.value = page } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
+  try { roles.value = (await api<{ data: Role[] }>('/admin/roles')).data } catch (e) { error.value = errorMessage(e) } finally { loading.value = false }
 }
 function selectTab(tab: Tab) {
   activeTab.value = tab
@@ -158,6 +169,32 @@ async function restoreMember(member: any) {
 }
 async function openRoleMembers(role: Role) {
   roleMembership.value = role; roleCandidateUsers.value = []; roleLookup.value = null; selectedRoleUserIds.value = []; selectedRoleUsers.value = []; roleCandidatesError.value = ''
+  roleFilters.value = { q: '', origin: '', authSource: '', active: '' }; roleUsers.value = []
+  await loadRoleUsers(1)
+}
+async function loadRoleUsers(page = roleUsersMeta.value.currentPage) {
+  const role = roleMembership.value
+  if (!role) return
+  roleUsersLoading.value = true; roleUsersError.value = ''
+  const f = roleFilters.value
+  try {
+    const res = await api<{ data: RoleUser[]; meta: PageMeta }>(`/admin/roles/${encodeURIComponent(role.key)}/users`, {
+      query: { page, perPage: ROLE_USERS_PER_PAGE, ...(f.q.trim() ? { q: f.q.trim() } : {}), ...(f.origin ? { origin: f.origin } : {}), ...(f.authSource ? { authSource: f.authSource } : {}), ...(f.active ? { active: f.active } : {}) },
+    })
+    roleUsers.value = res.data; roleUsersMeta.value = res.meta
+  } catch (e) { roleUsersError.value = errorMessage(e) } finally { roleUsersLoading.value = false }
+}
+function onRoleSearchInput() {
+  clearTimeout(roleSearchTimer)
+  roleSearchTimer = setTimeout(() => void loadRoleUsers(1), 350)
+}
+function clearRoleFilters() {
+  roleFilters.value = { q: '', origin: '', authSource: '', active: '' }
+  void loadRoleUsers(1)
+}
+async function refreshRoleAfterChange(roleKey: string) {
+  await Promise.all([loadRoles(), loadRoleUsers()])
+  if (roleMembership.value?.key === roleKey) roleMembership.value = roles.value.find((r) => r.key === roleKey) ?? roleMembership.value
 }
 async function searchRoleCandidates(event: { query: string }) {
   const query = event.query.trim()
@@ -165,8 +202,9 @@ async function searchRoleCandidates(event: { query: string }) {
   loadingRoleCandidates.value = true
   try {
     roleCandidatesError.value = ''
-    const existingIds = new Set([...(roleMembership.value?.users ?? []).map((user) => user.id), ...selectedRoleUserIds.value])
-    roleCandidateUsers.value = (await api<{ data: UserRow[] }>('/admin/managed-users', { query: { q: query, active: true, perPage: 50 } })).data.filter((u) => ['local', 'entra'].includes(u.authSource ?? '') && !existingIds.has(u.id))
+    const roleKey = roleMembership.value?.key ?? ''
+    const selected = new Set(selectedRoleUserIds.value)
+    roleCandidateUsers.value = (await api<{ data: UserRow[] }>('/admin/managed-users', { query: { q: query, active: true, perPage: 50 } })).data.filter((u) => ['local', 'entra'].includes(u.authSource ?? '') && !selected.has(u.id) && !(u.roles ?? []).includes(roleKey))
   } catch (e) { roleCandidatesError.value = errorMessage(e) } finally { loadingRoleCandidates.value = false }
 }
 function selectRoleCandidate(event: { value: UserRow }) {
@@ -188,25 +226,21 @@ async function addRoleMembers() {
   try {
     await api(`/admin/roles/${encodeURIComponent(roleMembership.value.key)}/users`, { method: 'POST', body: { userIds: selectedRoleUserIds.value } })
     notify.success('Usuários adicionados ao papel.')
-    selectedRoleUserIds.value = []; selectedRoleUsers.value = []
-    const roleKey = roleMembership.value.key
-    await loadRoles(rolePage.value)
-    roleMembership.value = roles.value.find((role) => role.key === roleKey) ?? roleMembership.value
-    roleCandidateUsers.value = []
+    selectedRoleUserIds.value = []; selectedRoleUsers.value = []; roleCandidateUsers.value = []
+    await refreshRoleAfterChange(roleMembership.value.key)
   } catch (e) { notify.error(e) } finally { savingRoleMembers.value = false }
 }
-async function removeRoleMember(role: Role, member: Role['users'][number]) {
-  if (!member.manual || !window.confirm(`Remover a atribuição manual de ${role.name} para ${member.name}?`)) return
+async function removeRoleMember(member: RoleUser) {
+  const role = roleMembership.value
+  if (!role || !member.manual) return
+  const detail = member.origins.length > 1 ? '\n\nO papel continuará efetivo porque também vem do Entra ID.' : ''
+  if (!window.confirm(`Remover a atribuição manual de ${role.name} para ${member.name}?${detail}`)) return
+  removingRoleUserId.value = member.id
   try {
     await api(`/admin/roles/${encodeURIComponent(role.key)}/users/${member.id}`, { method: 'DELETE' })
     notify.success('Atribuição manual removida.')
-    const roleKey = role.key
-    await loadRoles(rolePage.value)
-    if (roleMembership.value?.key === roleKey) roleMembership.value = roles.value.find((item) => item.key === roleKey) ?? roleMembership.value
-  } catch (e) { notify.error(e) }
-}
-function toggleExpandedRole(key: string) {
-  expandedRoleKey.value = expandedRoleKey.value === key ? null : key
+    await refreshRoleAfterChange(role.key)
+  } catch (e) { notify.error(e) } finally { removingRoleUserId.value = null }
 }
 function startNewGroup() {
   membersGroup.value = null
@@ -259,11 +293,9 @@ async function createGroup() {
     <section class="tm-gate-legend" aria-labelledby="gate-legend-title"><div class="tm-gate-legend-head"><h2 id="gate-legend-title">Legenda das permissões efetivas (Gates)</h2><p>Um Gate é uma permissão verificada pela API para autorizar uma capacidade. As permissões exibidas em cada papel são as capacidades efetivas daquele papel.</p></div><dl class="tm-gate-list"><div v-for="gate in gateDefinitions" :key="gate.key" class="tm-gate-item"><dt><code>{{ gate.key }}</code></dt><dd>{{ gate.description }}</dd></div></dl></section>
     <p v-if="error" class="tm-error" role="alert">{{ error }}</p><p v-else-if="loading" class="tm-empty" role="status">Carregando papéis…</p>
     <div v-else class="tm-table-wrap"><table class="tm-table" style="min-width:0"><thead><tr><th>Papel</th><th>Permissões efetivas (Gates)</th><th>Usuários relacionados</th><th>Mapeamentos Entra</th></tr></thead><tbody>
-      <template v-for="role in roles" :key="role.key"><tr><td class="tm-strong">{{ role.name }}<div class="tm-flow-sub"><code>{{ role.key }}</code> · {{ role.userCount }} usuário(s)</div></td><td><span v-for="p in role.permissions" :key="p.key" class="tm-pill neutral" style="margin:2px">{{ p.key }}</span><span v-if="!role.permissions.length">—</span></td><td><Button class="tm-btn small" :label="`${expandedRoleKey === role.key ? 'Ocultar' : 'Ver'} usuários (${role.userCount})`" :aria-expanded="expandedRoleKey === role.key" @click="toggleExpandedRole(role.key)" /></td><td><div v-for="m in role.directoryMappings" :key="m.entraGroupId">{{ m.group || m.entraGroupId }}</div><span v-if="!role.directoryMappings.length">—</span></td></tr>
-        <tr v-if="expandedRoleKey === role.key" class="tm-expanded-role-row"><td colspan="4"><div class="tm-expanded-role"><div class="tm-expanded-role-head"><div><strong>Usuários vinculados a {{ role.name }}</strong><div class="tm-flow-sub">Atribuições efetivas de token, Entra e BPM TMSA.</div></div><Button v-if="session.can('settingsManage')" class="tm-btn primary small" label="Vincular novo usuário" @click="openRoleMembers(role)" /></div><div class="tm-table-wrap"><table class="tm-table tm-nested-table"><thead><tr><th>Usuário</th><th>Origem do vínculo</th><th>Tipo de atribuição</th><th>Ação</th></tr></thead><tbody><tr v-for="u in role.users" :key="u.id"><td class="tm-strong">{{ u.name }}<div class="tm-flow-sub">{{ u.authSource }}</div></td><td>{{ u.source }}</td><td><span class="tm-pill" :class="u.manual ? 'amber' : 'neutral'">{{ u.manual ? 'Manual — BPM TMSA' : 'Efetiva' }}</span></td><td><Button v-if="u.manual && session.can('settingsManage')" class="tm-btn small" label="Remover vínculo" @click="removeRoleMember(role, u)" /><span v-else class="tm-flow-sub">Gerenciado pela origem</span></td></tr><tr v-if="!role.users.length"><td colspan="4" class="tm-empty">Nenhum usuário relacionado nesta página.</td></tr></tbody></table></div></div></td></tr>
-      </template>
+      <tr v-for="role in roles" :key="role.key"><td class="tm-strong">{{ role.name }}<div class="tm-flow-sub"><code>{{ role.key }}</code> · {{ role.userCount }} usuário(s)</div></td><td><span v-for="p in role.permissions" :key="p.key" class="tm-pill neutral" style="margin:2px">{{ p.key }}</span><span v-if="!role.permissions.length">—</span></td><td><Button class="tm-btn small" :label="`Ver usuários (${role.userCount})`" aria-haspopup="dialog" @click="openRoleMembers(role)" /></td><td><div v-for="m in role.directoryMappings" :key="m.entraGroupId">{{ m.group || m.entraGroupId }}</div><span v-if="!role.directoryMappings.length">—</span></td></tr>
       <tr v-if="!roles.length"><td colspan="4" class="tm-empty">Nenhum papel configurado.</td></tr>
-    </tbody></table></div><div class="tm-pager" style="display:flex;justify-content:flex-end;gap:10px;padding:12px 16px"><button class="tm-btn small" :disabled="rolePage <= 1 || loading" @click="loadRoles(rolePage - 1)">Anterior</button><span>Página {{ rolePage }}</span><button class="tm-btn small" :disabled="roles.every((r) => r.userCount <= rolePage * 25) || loading" @click="loadRoles(rolePage + 1)">Próxima</button></div>
+    </tbody></table></div>
   </section>
 
 
@@ -277,9 +309,22 @@ async function createGroup() {
     </template>
   </Dialog>
 
-  <Dialog :visible="!!roleMembership" modal header="Adicionar usuários ao papel" :style="{ width: 'min(760px, 96vw)' }" @update:visible="(v) => { if (!v) roleMembership = null }">
-    <template v-if="roleMembership"><p class="tm-flow-sub">{{ roleMembership.name }} · <code>{{ roleMembership.key }}</code>. A atribuição manual vale somente nesta aplicação.</p>
-      <div class="tm-panel tm-membership-form tm-role-membership-form">
+  <Dialog :visible="!!roleMembership" modal :header="roleMembership ? `Usuários do papel ${roleMembership.name}` : 'Usuários do papel'" :style="{ width: 'min(980px, 96vw)' }" @update:visible="(v) => { if (!v) roleMembership = null }">
+    <template v-if="roleMembership"><p class="tm-flow-sub"><code>{{ roleMembership.key }}</code> · {{ roleMembership.userCount }} usuário(s) com o papel efetivo. Atribuições manuais valem somente nesta aplicação; vínculos do token e do Entra são gerenciados na origem.</p>
+      <form class="tm-role-filters" role="search" aria-label="Filtrar usuários do papel" @submit.prevent="loadRoleUsers(1)">
+        <div class="tm-lookup-field tm-role-filter-q"><label for="role-users-q">Buscar</label><InputText id="role-users-q" v-model="roleFilters.q" class="tm-identity-input" placeholder="Nome, e-mail ou usuário" @input="onRoleSearchInput" /></div>
+        <div class="tm-lookup-field"><label for="role-users-origin">Origem do vínculo</label><select id="role-users-origin" v-model="roleFilters.origin" class="tm-identity-input tm-role-select" @change="loadRoleUsers(1)"><option value="">Todas</option><option v-for="(label, key) in ROLE_ORIGIN" :key="key" :value="key">{{ label }}</option></select></div>
+        <div class="tm-lookup-field"><label for="role-users-source">Tipo de conta</label><select id="role-users-source" v-model="roleFilters.authSource" class="tm-identity-input tm-role-select" @change="loadRoleUsers(1)"><option value="">Todas</option><option v-for="(label, key) in AUTH_SOURCE" :key="key" :value="key">{{ label }}</option></select></div>
+        <div class="tm-lookup-field"><label for="role-users-active">Situação</label><select id="role-users-active" v-model="roleFilters.active" class="tm-identity-input tm-role-select" @change="loadRoleUsers(1)"><option value="">Todas</option><option value="true">Ativas</option><option value="false">Inativas</option></select></div>
+        <Button type="button" class="tm-btn small tm-role-filter-clear" label="Limpar" :disabled="!roleFilters.q && !roleFilters.origin && !roleFilters.authSource && !roleFilters.active" @click="clearRoleFilters" />
+      </form>
+      <p v-if="roleUsersError" class="tm-error" role="alert">{{ roleUsersError }}</p>
+      <div class="tm-table-wrap tm-role-users-wrap" :aria-busy="roleUsersLoading"><table class="tm-table" style="min-width:0"><thead><tr><th>Usuário</th><th>Conta</th><th>Origem do vínculo</th><th>Ação</th></tr></thead><tbody>
+        <tr v-for="u in roleUsers" :key="u.id"><td class="tm-strong">{{ u.name }}<div class="tm-flow-sub">{{ u.email || u.username || '—' }}</div></td><td>{{ AUTH_SOURCE[u.authSource] ?? u.authSource }}<div v-if="!u.isActive"><span class="tm-pill amber">Inativa</span></div></td><td><span v-for="o in u.origins" :key="o" class="tm-pill" :class="o === 'manual' ? 'amber' : 'neutral'" style="margin:2px">{{ ROLE_ORIGIN[o] }}</span><span v-if="!u.origins.length" class="tm-pill neutral">Papel efetivo</span></td><td><Button v-if="u.manual && session.can('settingsManage')" class="tm-btn small" label="Remover vínculo" :disabled="removingRoleUserId === u.id" :aria-label="`Remover vínculo manual de ${u.name}`" @click="removeRoleMember(u)" /><span v-else class="tm-flow-sub">Gerenciado pela origem</span></td></tr>
+        <tr v-if="!roleUsers.length"><td colspan="4" class="tm-empty">{{ roleUsersLoading ? 'Carregando usuários…' : 'Nenhum usuário encontrado com esses filtros.' }}</td></tr>
+      </tbody></table></div>
+      <div class="tm-role-pager"><span class="tm-flow-sub" role="status">{{ roleUsersMeta.total }} resultado(s) · página {{ roleUsersMeta.currentPage }} de {{ roleUsersMeta.lastPage }}</span><div class="tm-actions"><Button class="tm-btn small" label="Anterior" :disabled="roleUsersMeta.currentPage <= 1 || roleUsersLoading" @click="loadRoleUsers(roleUsersMeta.currentPage - 1)" /><Button class="tm-btn small" label="Próxima" :disabled="roleUsersMeta.currentPage >= roleUsersMeta.lastPage || roleUsersLoading" @click="loadRoleUsers(roleUsersMeta.currentPage + 1)" /></div></div>
+      <div v-if="session.can('settingsManage')" class="tm-panel tm-membership-form tm-role-membership-form"><h3 class="tm-membership-title">Adicionar usuários ativos ao papel</h3>
         <div class="tm-lookup-field"><label for="role-member-lookup">Buscar e selecionar usuário</label><AutoComplete id="role-member-lookup" v-model="roleLookup" class="tm-identity-autocomplete" input-class="tm-identity-input" :suggestions="roleCandidateUsers" option-label="name" :delay="300" :min-length="2" :loading="loadingRoleCandidates" force-selection aria-label="Buscar usuários ativos por nome ou e-mail" placeholder="Digite ao menos 2 caracteres do nome ou e-mail" @complete="searchRoleCandidates" @item-select="selectRoleCandidate"><template #option="{ option }"><div class="tm-user-option"><span>{{ option.name }}</span><small>{{ option.email || option.username || option.authSource }}</small></div></template></AutoComplete></div>
         <div class="tm-selected-users"><span class="tm-selected-label">{{ selectedRoleUsers.length }} selecionado(s)</span><div v-for="user in selectedRoleUsers" :key="user.id" class="tm-selected-user"><span>{{ user.name }}<small>{{ user.email || user.username }}</small></span><Button class="tm-btn small" label="Remover" aria-label="Remover usuário selecionado" @click="removeSelectedRoleUser(user)" /></div><span v-if="!selectedRoleUsers.length" class="tm-flow-sub">Os usuários escolhidos aparecerão aqui.</span></div>
         <Button class="tm-btn primary tm-membership-submit" label="Adicionar ao papel" :disabled="!selectedRoleUserIds.length || savingRoleMembers" :loading="savingRoleMembers" @click="addRoleMembers"/>
@@ -325,14 +370,16 @@ async function createGroup() {
 .tm-gate-item:nth-child(odd) { border-right: 1px solid var(--line, #edf0f3); }
 .tm-gate-item dt { font-size: 11px; font-weight: 700; }
 .tm-gate-item dd { margin: 0; color: #617388; font-size: 11px; line-height: 1.5; }
-.tm-expanded-role-row > td { padding: 0 !important; background: #fbfcfd; }
-.tm-expanded-role { padding: 14px 18px 18px; }
-.tm-expanded-role-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; color: #344455; font-size: 13px; }
-.tm-nested-table { min-width: 0 !important; border: 1px solid var(--line, #e7ebef); border-radius: 7px; overflow: hidden; }
+.tm-role-filters { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(130px, 1fr)) auto; align-items: end; gap: 10px; margin: 12px 0; }
+.tm-role-select { padding: 0 8px; border: 1px solid var(--line, #d5dde6); border-radius: 7px; background: #fff; color: #344455; }
+.tm-role-filter-clear { min-height: 38px; }
+.tm-role-users-wrap { max-height: 46vh; overflow: auto; }
+.tm-role-users-wrap[aria-busy="true"] { opacity: .6; }
+.tm-role-pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; }
 .tm-group-create-form { gap: 12px; }
 .tm-group-create-form > .tm-flow-sub, .tm-group-create-form > .tm-actions { grid-column: 1 / -1; }
 .tm-group-create-form .tm-field { margin: 0; }
 .tm-group-create-form .tm-field > small { color: #7c8b9b; font-size: 11px; }
-@media (max-width: 760px) { .tm-membership-form { grid-template-columns: 1fr; } .tm-membership-title, .tm-membership-error, .tm-selected-users { grid-column: auto; } .tm-membership-submit { justify-self: start; } .tm-gate-list { grid-template-columns: 1fr; } .tm-gate-item:nth-child(odd) { border-right: 0; } .tm-expanded-role-head { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 760px) { .tm-membership-form { grid-template-columns: 1fr; } .tm-membership-title, .tm-membership-error, .tm-selected-users { grid-column: auto; } .tm-membership-submit { justify-self: start; } .tm-gate-list { grid-template-columns: 1fr; } .tm-gate-item:nth-child(odd) { border-right: 0; } .tm-role-filters { grid-template-columns: 1fr 1fr; } .tm-role-filter-q { grid-column: 1 / -1; } .tm-role-pager { flex-direction: column; align-items: flex-start; } }
 @media (max-width: 480px) { .tm-gate-item { grid-template-columns: 1fr; gap: 4px; } }
 </style>

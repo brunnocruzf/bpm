@@ -150,6 +150,16 @@ class User extends Model implements AuthenticatableContract
         return $this->hasRole('admin');
     }
 
+    /**
+     * Papéis padrão de conta nova (config bpm.default_roles), gravados como manuais.
+     *
+     * @return array<int,string>
+     */
+    public static function defaultManualRoles(): array
+    {
+        return array_values(array_intersect((array) config('bpm.default_roles', []), array_values((array) config('bpm.roles'))));
+    }
+
     /** Recalcula roles/groups efetivos a partir das origens (token + diretório). */
     public function recomputeEffectiveAccess(): void
     {

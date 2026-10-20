@@ -71,10 +71,15 @@ class EntraAuthTest extends TestCase
         $this->me($this->token())->assertOk()
             ->assertJsonPath('name', 'Gabriel Entra')
             ->assertJsonPath('area', 'Gestão de Fornecedores')
-            ->assertJsonPath('roles', ['Bpm.TaskWorker'])
+            ->assertJsonPath('roles', ['Bpm.TaskWorker', 'Bpm.Initiator'])
             ->assertJsonPath('groups.0.key', 'GEF');
         $user = User::where('entra_oid', 'oid-123')->first();
         $this->assertSame(self::TENANT, $user->entra_tid);
+        $this->assertSame(['Bpm.Initiator', 'Bpm.TaskWorker'], $user->manual_roles, 'papéis padrão de conta nova');
+
+        // papéis padrão só na criação: removidos pelo admin, não voltam no próximo login
+        $user->forceFill(['manual_roles' => []])->save();
+        $this->me($this->token(['roles' => []]))->assertOk()->assertJsonPath('roles', []);
     }
 
     public function test_rejects_tokens_with_wrong_audience_tenant_issuer_scope_or_expired(): void

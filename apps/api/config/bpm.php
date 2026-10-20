@@ -80,6 +80,9 @@ return [
         'sensitive_reader' => 'Bpm.SensitiveDataReader',
     ],
 
+    // Papéis atribuídos (como manuais, removíveis pelo admin) a toda conta local criada ou conta Entra importada.
+    'default_roles' => ['Bpm.Initiator', 'Bpm.TaskWorker'],
+
     // Papéis considerados privilegiados: mapeamento a partir de grupo Entra exige confirmação explícita.
     'privileged_roles' => ['Bpm.Admin', 'Bpm.Auditor', 'Bpm.Publisher', 'Bpm.ProcessAdmin', 'Bpm.SensitiveDataReader'],
 

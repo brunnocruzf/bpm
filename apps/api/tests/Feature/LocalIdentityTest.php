@@ -32,7 +32,7 @@ class LocalIdentityTest extends TestCase
             'name' => 'Pessoa Local', 'email' => 'pessoa.local@example.test', 'username' => 'pessoa.local', 'area' => 'Operações', 'userCategory' => 'supplier',
         ])->assertCreated()->assertJsonPath('data.userCategory', 'supplier')->assertJsonPath('data.authSource', 'local')->assertJsonPath('data.isActive', false);
         $user = User::where('username', 'pessoa.local')->firstOrFail();
-        $this->assertSame([], $user->roles);
+        $this->assertSame(['Bpm.Initiator', 'Bpm.TaskWorker'], $user->roles, 'papéis padrão de conta nova');
         $this->assertSame(User::SOURCE_LOCAL, $user->auth_source);
         $credential = LocalCredential::where('user_id', $user->id)->firstOrFail();
         $this->assertNotSame('Ativa-Forte-2026!x', $credential->password_hash);
@@ -193,6 +193,22 @@ class LocalIdentityTest extends TestCase
 
         $admin = $this->dev('admin');
         $this->as('admin')->postJson("/api/v1/admin/roles/{$role}/users", ['userIds' => [$admin->id]])->assertStatus(409)->assertJsonPath('code', 'self_role_assignment');
+    }
+
+    public function test_new_local_user_gets_default_roles_as_manual_and_role_users_are_paginated_and_filterable(): void
+    {
+        $id = $this->as('admin')->postJson('/api/v1/admin/managed-users', ['name' => 'Nova Pessoa', 'email' => 'nova.padrao@example.test', 'username' => 'nova.padrao', 'userCategory' => User::CATEGORIES[0]])
+            ->assertCreated()->json('data.id');
+        $user = User::find($id);
+        $this->assertSame(['Bpm.Initiator', 'Bpm.TaskWorker'], $user->manual_roles);
+        $this->assertSame(['Bpm.Initiator', 'Bpm.TaskWorker'], $user->roles);
+
+        $this->as('cq')->getJson('/api/v1/admin/roles/Bpm.TaskWorker/users')->assertForbidden();
+        $this->as('admin')->getJson('/api/v1/admin/roles/Bpm.TaskWorker/users?q=nova.padrao&origin=manual&authSource=local')->assertOk()
+            ->assertJsonPath('meta.total', 1)->assertJsonPath('data.0.id', $id)->assertJsonPath('data.0.origins', ['manual'])->assertJsonPath('data.0.manual', true);
+        $this->as('admin')->getJson('/api/v1/admin/roles/Bpm.TaskWorker/users?q=nova.padrao&origin=token')->assertOk()->assertJsonPath('meta.total', 0);
+        $this->as('admin')->getJson('/api/v1/admin/roles/Bpm.Inexistente/users')->assertNotFound();
+        $this->as('admin')->getJson('/api/v1/admin/roles')->assertOk()->assertJsonMissingPath('data.0.users');
     }
 
     public function test_user_category_is_required_and_validated_on_creation(): void

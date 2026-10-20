@@ -82,9 +82,9 @@ class DirectorySyncTest extends TestCase
         $this->assertStringNotContainsString('deltatoken', json_encode(DirectorySyncCursor::all()->toArray()), 'cursor nunca é serializado');
         $this->assertStringNotContainsString('S3gredo-Do-App', json_encode(AuditEvent::all()->toArray()));
 
-        // grupo importado sem mapeamento não concede nada
+        // grupo importado sem mapeamento não concede nada além dos papéis padrão de conta nova
         $user = User::where('entra_oid', $ids['a'])->first();
-        $this->assertSame([], $user->roles);
+        $this->assertSame(['Bpm.Initiator', 'Bpm.TaskWorker'], $user->manual_roles, 'papéis padrão de conta importada');
         $this->assertSame(FakeGraph::TENANT, $user->entra_tid);
         $this->as('admin')->getJson('/api/v1/admin/entra/sync/runs')->assertOk()->assertJsonPath('overview.cursor.present', true)->assertJsonMissingPath('data.0.plan');
     }
@@ -132,6 +132,7 @@ class DirectorySyncTest extends TestCase
 
     public function test_all_directory_scope_needs_confirmation_and_imports_every_group_and_member_user(): void
     {
+        config(['bpm.default_roles' => []]); // isola a semântica dos mapeamentos
         $ids = $this->seedDirectory();
         $this->as('admin')->putJson('/api/v1/admin/settings/entra/directory-sync', ['scope' => 'all', 'groups' => []])
             ->assertStatus(422)->assertJsonPath('errors.scope.0', fn ($m) => str_contains($m, 'Confirme'));
@@ -168,6 +169,7 @@ class DirectorySyncTest extends TestCase
 
     public function test_role_mapping_is_explicit_and_privileged_roles_need_confirmation(): void
     {
+        config(['bpm.default_roles' => []]); // isola a semântica dos mapeamentos
         $ids = $this->seedDirectory();
         $this->sync();
         $this->as('admin')->postJson('/api/v1/admin/entra/mappings', ['entraGroupId' => FakeGraph::G1, 'tmsaRoles' => ['Bpm.Admin']])->assertStatus(422)->assertJsonValidationErrors('privileged');
@@ -185,6 +187,7 @@ class DirectorySyncTest extends TestCase
 
     public function test_delta_round_uses_delta_link_disables_removed_users_and_removes_memberships_without_deleting(): void
     {
+        config(['bpm.default_roles' => []]); // isola a semântica dos mapeamentos
         $ids = $this->seedDirectory();
         $this->sync();
         $this->as('admin')->postJson('/api/v1/admin/entra/mappings', ['entraGroupId' => FakeGraph::G1, 'tmsaGroupKey' => 'CQ', 'tmsaRoles' => ['Bpm.TaskWorker']])->assertCreated();
