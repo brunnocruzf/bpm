@@ -32,5 +32,5 @@ deploy/docker/secrets/*
 !deploy/docker/secrets/generate.sh
 !deploy/docker/secrets/README.md
 
-# Material local do Claude Code (especificações, protótipos, capturas) — não versionado
-.claude/
+# Referências locais do GitHub Copilot (especificações, protótipos, capturas) — não versionadas
+.github/copilot/references/

@@ -38,3 +38,11 @@ Toda atualização de dependência passa por verificação de licença (campo `l
 
 - **`@fontsource-variable/inter` 5.3.0** e **`@fontsource-variable/manrope` 5.3.0** — fontes sob **SIL Open Font License 1.1** (arquivo LICENSE conferido nos pacotes), versões fixadas; servidas pela própria aplicação (sem Google Fonts em runtime). A OFL permite empacotar com software, proibindo apenas a venda das fontes isoladamente.
 - Foto do painel: Unsplash License (uso gratuito, crédito exibido; não permite compilar/revender as fotos como coleção). Confirmar com marca/jurídico ou substituir por foto institucional (pendência 32).
+
+## Atualização (portal de documentação de integrações)
+
+- **`markdown-it` 15.0.3** (exato) — licença **MIT** (campo `license` e arquivo LICENSE conferidos). Dependências transitivas: `argparse` (Python-2.0/PSF), `entities` (BSD-2-Clause), `linkify-it`, `mdurl`, `punycode.js`, `uc.micro` (MIT). O renderizador roda com `html: false`: HTML bruto do Markdown é escapado, e links `javascript:` são descartados pelo próprio `markdown-it`.
+- **`@types/markdown-it`** não é usado: a 15.x já traz tipos próprios, e a 14.x conflita com eles.
+- **DOMPurify não adotado**: a licença é **Apache-2.0 OU MPL-2.0**, não MIT como previsto na tarefa. Com `html: false` e conteúdo estático do repositório, não há HTML bruto a sanitizar.
+- **Mermaid não instalado**: os blocos dos guias são exibidos como código (limitação registrada).
+- O conteúdo vem de cópias versionadas em `apps/web/src/docs/content`, geradas por `npm run docs:sync` a partir de `docs/`.

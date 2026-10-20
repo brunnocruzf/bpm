@@ -1,10 +1,8 @@
 # BPM TMSA
 
-Sistema corporativo de gestão de processos (BPM) para substituir o módulo Workflows do SoftExpert no escopo da TMSA. O usuário de negócio monta fluxos **por etapas**, cada tarefa humana tem seu **formulário**, e o sistema gera e executa **BPMN 2.0** com trilha de auditoria, controle de acesso e integrações rastreáveis.
+Sistema corporativo de gestão de processos (BPM) no escopo da TMSA. O usuário de negócio monta fluxos **por etapas**, cada tarefa humana tem seu **formulário**, e o sistema gera e executa **BPMN 2.0** com trilha de auditoria, controle de acesso e integrações rastreáveis.
 
 Primeiro fluxo: **PO 159 — Item Reprovado no Recebimento** (publicado pelo seed).
-
-Especificação e protótipo de origem: `.claude/BPMN_TMSA_Arquitetura_e_Plano_Claude_Code (1).md` e `.claude/BPMN_TMSA_Prototipo_Editor.html`. A pasta `.claude/` é material local de referência e não é versionada.
 
 ## Arquitetura
 
@@ -24,7 +22,7 @@ Navegador ── HTTP(S) ──> reverse-proxy (Nginx) ──> web (Vue SPA est�
 - **Laravel é a única API pública**; o Flowable REST fica em rede interna e só o backend/worker o acessa (ADR-0001).
 - Abertura/conclusão gravam submissão + auditoria + comando no **outbox** na mesma transação; o worker envia ao Flowable e **reconcilia** antes de repetir (ADR-0005).
 - **Form.io** (builder/renderer) roda no navegador; schemas e submissões são persistidos e **validados no servidor** (ADR-0003).
-- **Login** (ADR-0004/0015): **Microsoft Entra ID** (MSAL no SPA, JWT validado no Laravel) como método principal; **visitante** (ambiente de demonstração com usuários fictícios — nunca em produção) e **SuperAdmin** (usuário e senha de emergência, desabilitado por padrão, IPs restritos em produção). Guia completo: `.claude/login/INSTRUCOES_DE_LOGIN.md`.
+- **Login** (ADR-0004/0015): **Microsoft Entra ID** (MSAL no SPA, JWT validado no Laravel) como método principal; **visitante** (ambiente de demonstração com usuários fictícios — nunca em produção) e **SuperAdmin** (usuário e senha de emergência, desabilitado por padrão, IPs restritos em produção). Guia completo: `/login/INSTRUCOES_DE_LOGIN.md`.
 - **AX 2012 R3**: adaptador com transporte por operação; nesta entrega só **mock** (nenhum contrato inventado) (ADR-0006).
 - **Configurações** (menu exclusivo de `settings.manage`): identidade visual, login Entra, importação de usuários/grupos via Graph, e-mail, auditoria/retenção, relatórios e armazenamento de anexos (plataforma ou Azure Blob) — valores versionados, segredos somente escrita no cofre criptografado (ADR-0013/0014).
 - **Auditoria** funcional append-only, tipada e correlacionada (ADR-0010); **notificação por etapa** e outbox de e-mail (ADR-0012); **relatórios** assíncronos com PDF/CSV/XLSX nativos e Carbone opcional (ADR-0011).
@@ -55,7 +53,7 @@ docker compose up --build -d   # COMPOSE_PROFILES=dev inclui o Mailpit
 - E-mails capturados (dev): <http://localhost:8025>
 - OpenAPI: <http://localhost:8080/api/v1/openapi.yaml>
 
-A tela de login (`/login`) oferece **Entrar com Microsoft** (quando o Entra estiver configurado) e, abaixo, **Acessar como visitante** e **Acesso SuperAdmin**. O SuperAdmin local é criado com `docker compose exec api php artisan bpm:superadmin set-password` (a senha nunca vai para o `.env`). Todas as formas de login estão em `.claude/login/INSTRUCOES_DE_LOGIN.md`.
+A tela de login (`/login`) oferece **Entrar com Microsoft** (quando o Entra estiver configurado) e, abaixo, **Acessar como visitante** e **Acesso SuperAdmin**. O SuperAdmin local é criado com `docker compose exec api php artisan bpm:superadmin set-password` (a senha nunca vai para o `.env`). Todas as formas de login estão em `.github/copilot/references/login/INSTRUCOES_DE_LOGIN.md`.
 
 No acesso de visitante, escolha um perfil:
 
@@ -216,7 +214,7 @@ No modelo local, o método SuperAdmin está habilitado. Defina uma senha interat
 docker compose exec api php artisan bpm:superadmin set-password
 ```
 
-Depois, entre em <http://localhost:8080/login/superadmin>. Consulte o guia de login (`.claude/login/INSTRUCOES_DE_LOGIN.md`, local) para políticas, operações e uso seguro. O visitante é apenas para demonstração; não o habilite em produção.
+Depois, entre em <http://localhost:8080/login/superadmin>. Consulte o guia de login (`.github/copilot/references/login/INSTRUCOES_DE_LOGIN.md`, local) para políticas, operações e uso seguro. O visitante é apenas para demonstração; não o habilite em produção.
 
 ### 8. Atualizar, parar e preservar dados
 
@@ -240,7 +238,7 @@ docker compose down
 
 ### 9. Nota sobre produção
 
-Este Compose é um ambiente de desenvolvimento/POC em servidor único. Antes de qualquer produção, a equipe de plataforma deve definir HTTPS e proxy confiável, domínio e URLs públicas, credenciais em secret manager, login Entra, `APP_ENV=production`, `WEB_BUILD_MODE=production`, visitante desativado, restrições de IP do SuperAdmin, backup/restauração testados, observabilidade, firewall/egress e estratégia de alta disponibilidade. Não exponha diretamente as portas internas nem reutilize senhas, dados fictícios ou chaves do ambiente local. Os requisitos e procedimentos operacionais estão no [runbook](docs/runbook.md) e em Instruções de login (`.claude/login/INSTRUCOES_DE_LOGIN.md`, local).
+Este Compose é um ambiente de desenvolvimento/POC em servidor único. Antes de qualquer produção, a equipe de plataforma deve definir HTTPS e proxy confiável, domínio e URLs públicas, credenciais em secret manager, login Entra, `APP_ENV=production`, `WEB_BUILD_MODE=production`, visitante desativado, restrições de IP do SuperAdmin, backup/restauração testados, observabilidade, firewall/egress e estratégia de alta disponibilidade. Não exponha diretamente as portas internas nem reutilize senhas, dados fictícios ou chaves do ambiente local. Os requisitos e procedimentos operacionais estão no [runbook](docs/runbook.md) e em Instruções de login (`.github/copilot/references/login/INSTRUCOES_DE_LOGIN.md`, local).
 
 ## Desenvolvimento local (sem containers para API/SPA)
 
@@ -297,8 +295,13 @@ docker run --rm --network bpm-tmsa_backend --entrypoint php -v "$PWD/apps/api:/a
 ## Documentação
 
 - `docs/adr/` — decisões (engine, versões, formulários, identidade, outbox, AX, storage, licenças, subset BPMN, auditoria, relatórios/Carbone, e-mail/notificações, Entra login × Graph, configurações/segredos/identidade visual, métodos de login)
-- `docs/integracoes/README.md` — catálogo de integrações REST (estilo SoftExpert), importação do Swagger da API do AX, mapeamentos e execuções
-- `.claude/login/INSTRUCOES_DE_LOGIN.md` — todas as formas de login (Entra, visitante, SuperAdmin, API) e operação do acesso de emergência
+- `docs/integracoes/README.md` — portal de integrações REST (estilo SoftExpert): guia rápido e trilhas por perfil
+- `docs/integracoes/guia-criar-integracao.md` — criar uma integração: conexão, importar o Swagger, endpoints e publicar consulta `api:<id>`
+- `docs/integracoes/guia-mapeamentos-e-mock.md` — aba Mapeamentos: vínculos das operações do BPM e o transporte MOCK
+- `docs/integracoes/guia-consumir-formulario.md` — componente "Consulta AX" nos formulários Form.io (fontes fixas do PO 159 e `api:<id>`)
+- `docs/integracoes/guia-etapa-integracao.md` — etapa do tipo Integração no workflow: configuração, execução, tentativas e reconciliação
+- `docs/integracoes/guia-operacao-e-suporte.md` — operação e suporte: Visão geral, Execuções, solução de problemas, auditoria e cuidados
+- `.github/copilot/references/login/INSTRUCOES_DE_LOGIN.md` — todas as formas de login (Entra, visitante, SuperAdmin, API) e operação do acesso de emergência
 - `docs/po159/modelo-po159.md` — mapeamento das atividades do PO 159 e premissas **[VALIDAR]**
 - `docs/po159/matriz-requisitos-testes.md` — rastreabilidade requisito → teste
 - `docs/pendencias-validacao.md` — o que precisa de decisão antes do aceite
@@ -307,3 +310,46 @@ docker run --rm --network bpm-tmsa_backend --entrypoint php -v "$PWD/apps/api:/a
 ## Limites desta entrega
 
 Contratos AX reais, autenticação de fornecedores externos, registro no tenant Entra (login e app de sincronização com admin consent), provedor de e-mail corporativo, revisão da licença do Carbone (uso liberado sem revisão), SLAs/calendário e prazos de retenção dependem de decisões listadas em `docs/pendencias-validacao.md`. Nesta entrega Entra/Graph, SMTP corporativo e Carbone foram exercitados apenas com mocks, Mailpit e testes de contrato. Compose em servidor único é para desenvolvimento/piloto; produção exige plataforma com HA, secrets manager, backup testado e observabilidade.
+
+## Regras do projeto (não negociáveis)
+
+- **Laravel é a única API pública.** Flowable REST só em rede interna; nunca expor no proxy nem chamar do navegador. Não criar API Spring Boot customizada.
+- **Sem transação distribuída.** Mudanças que afetam o engine passam pelo outbox (`engine_command_outbox`) gravado na mesma transação da submissão/auditoria; o worker reconcilia antes de repetir. Nunca chamar o Flowable direto num request HTTP de usuário.
+- **Nunca DML nas tabelas do Flowable**; bancos/roles separados.
+- **AX 2012:** contratos vêm do OpenAPI da API do AX (`apidax`) importado no catálogo — nunca inventar campos; saída sem documentação só por exemplo/teste. Credencial nunca como parâmetro de endpoint; escritas bloqueadas até aprovação, idempotentes e sem repetição em resultado incerto.
+- **AX 2012 R3 (legado):** não inventar contratos. Escrita só por AIF/WCF ou façade REST aprovada; SQL apenas leitura autorizada. Sem chamada a AX real/produção sem autorização explícita. Usar o transporte MOCK até receber contratos.
+- **Form.io client-side**, sem Form.io API Server, sem JavaScript livre do designer. Todo schema passa pelo `FormioSchemaSanitizer`; toda submissão pelo `SubmissionProcessor` (validação no servidor).
+- **Condições de gateway** só pela DSL (`ConditionCompiler`). Nada de JUEL/SpEL/JS digitado pelo designer.
+- **Autorização no servidor** (`App\Runtime\Access`), negar por padrão; o frontend não é fonte de verdade.
+- Modo de autenticação `dev` / visitante é proibido em produção (a aplicação recusa iniciar). Login: Entra ID + visitante + SuperAdmin de emergência (ADR-0015); a senha do SuperAdmin só é definida por `php artisan bpm:superadmin` (nunca por API, tela, `.env` ou argumento) e cada método só autentica contas da sua origem (`users.auth_source`).
+- Sem segredos no frontend ou no Git (`.env` fora do versionamento). Sem PII/tokens em logs (usar `Masker`).
+- Versões publicadas são imutáveis; alterar = nova versão.
+- Dependências: verificar licença antes de adicionar/atualizar (ADR-0008 — PrimeVue fixado na 4.x MIT; Carbone liberado pelo responsável do projeto sem revisão de licença — ADR-0011).
+- Entra/Graph, SMTP corporativo e Carbone: não conectar a tenant/servidor real, não importar diretório de produção nem enviar mensagens externas sem autorização; usar mock, Mailpit e testes de contrato.
+- Configurações/integrações: permissões Graph mínimas (somente leitura, app-only), nada de permissão de escrita no diretório; segredos somente escrita; testes de conexão sempre reais (nunca "sucesso fixo").
+
+## Mapa do código
+
+- `apps/api/app/Flow` — definição: `FlowFactory` (POST /flows transacional), `StageService`, `FormSchemaService`, `ConditionCompiler`, `BpmnGenerator`/`BpmnLayout`, `BpmnImporter`, `FlowValidator`, `PublishService`, `VersionService`, `FlowBlueprint` (seeds).
+- `apps/api/app/Forms` — Form.io: sanitizer, avaliador de condicionais, processador de submissões, campos automáticos, catálogo de extensões, builder de schemas para seeds/testes.
+- `apps/api/app/Engine` — `FlowableRestClient`, `EngineCommandProcessor` (outbox + reconciliação), `ProjectionSync`, `ExternalJobWorker`.
+- `apps/api/app/Runtime` — instâncias, tarefas, plano de ação, anexos, sequências, idempotência, autorização, presenters.
+- `apps/api/app/Integrations/Ax` — gateway + transportes (MOCK); vínculo ativo do catálogo tem prioridade (`AxGateway::binding`).
+- `apps/api/app/Integrations/Rest` — catálogo de integrações REST (ADR-0016): `OpenApiImporter` (Swagger → endpoints, prévia/drift), `RestCaller` (auth/limites/`TargetPolicy` anti-SSRF), `RestIntegration` (consultas `api:<id>`, vínculos, escritas idempotentes com reconciliação), `JsonPaths` (inferência/mascaramento). Guia: `docs/integracoes/README.md`.
+- `apps/api/app/Audit` — `AuditService`/`AuditCatalog` (eventos tipados — todo evento novo entra no catálogo), `AuditContext` (ator de sistema/causa), `AuditDiff`, retenção. Usar sempre `AuditLogger::record`; nunca gravar tokens, segredos ou valores de formulário.
+- `apps/api/app/Settings` — configurações tipadas/versionadas (`SettingType`, `SettingsRepository` — grava o histórico de validações), `SecretStore` (cofre; segredos só por referência `db:`/`file:`) e `IntegrationLog` (log de e-mail/Entra para Configurações; explicações em `App\Support\IntegrationErrors`). Logs nunca levam senha, token, cursor delta ou corpo de e-mail.
+- `apps/api/app/Identity` — Entra: `EntraLoginValidator` (descoberta/teste de token), `EntraAppTokenProvider` (client credentials), `EntraGraphDirectorySync` (adapter Graph) e `DirectorySyncService` (domínio do sync: checkpoint só ao fim, travas, prévia). Chamadas Graph somente aqui (nunca em controllers ou no SPA).
+- `apps/api/app/Mail` + `app/Notifications` — provedores de e-mail (`HostPolicy` anti-SSRF), outbox (`Notifier`, `NotificationSender`), template fechado e destinatários da notificação por etapa.
+- `apps/api/app/Reports` — `ReportRenderer` (nativo/Carbone), PDF próprio, CSV/XLSX, relatório por instância (snapshots) e operacionais; `ReportService` (jobs, expiração, download auditado).
+- `apps/api/app/Storage` — destino dos anexos (ADR-0018): `AttachmentStorage` (disco atual e por anexo, via registro `storage_target`), `StorageTargetService` (ativar/rotacionar/aposentar), `StorageProbe` (teste real) e `Azure/*` (`SharedKeySigner`, `AzureBlobClient`, `AzureBlobAdapter`). Nunca gravar a chave em log; sem fallback silencioso entre destinos.
+- `apps/api/app/Auth` — `AuthMethods` (métodos e travas), `TokenUserResolver` (token → usuário por formato), `EntraTokenValidator`/`EntraAuthConfig`, `SuperAdminAuth` + `PasswordPolicy` (acesso de emergência, sessões opacas). Guia: `.github/copilot/references/login/INSTRUCOES_DE_LOGIN.md`.
+- `apps/api/app/Authorization` + `app/Policies` — permissões (Gates) por papel e policies de auditoria/relatório.
+- `apps/api/database/seeders/Blueprints/Po159.php` — PO 159.
+- `apps/web/src` — views (login com Entra/visitante/SuperAdmin em `LoginView.vue` + `auth/index.ts`, catálogo, editor, abertura, tarefa, instância, acompanhar, respostas, admin), `components/forms/formio.ts` (provider de storage, componente `axlookup`, opções do builder), `components/editor/*`.
+
+## Fluxo de trabalho para agentes e contribuidores
+
+1. PRs pequenos; atualizar ADR quando uma decisão mudar e a matriz `docs/po159/matriz-requisitos-testes.md` quando cobrir requisito.
+2. Antes de concluir: `php artisan test`, `composer analyse`, `composer lint` (apps/api); `npm test`, `npm run build` (apps/web).
+3. Mudança em comunicação com o engine: rodar também o teste de integração contra um Flowable **dedicado** (`--testsuite=Integration`).
+4. Reportar alterações, comandos executados, riscos e pendências.

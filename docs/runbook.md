@@ -49,7 +49,7 @@ docker compose logs -f queue-worker scheduler
 
 ## Login e acesso de emergência (SuperAdmin)
 
-Guia completo: `.claude/login/INSTRUCOES_DE_LOGIN.md` (ADR-0015).
+Guia completo: `.github/copilot/references/login/INSTRUCOES_DE_LOGIN.md` (ADR-0015).
 
 ```bash
 docker compose exec api php artisan bpm:superadmin set-password         # cria/troca a senha (interativo; --generate | --stdin | --password-file)

@@ -29,7 +29,7 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | §7 Contratos AX reais (AIF/WCF ou façade REST) | Transportes não configurados de propósito | ⏳ |
 | §6.2 Autenticação do fornecedor externo | Decisão pendente | ⏳ |
 
-## Customizações fase 2 (`.claude/BPMN_TMSA_customs_1.md`)
+## Customizações fase 2 (`.github/copilot/references/BPMN_TMSA_customs_1.md`)
 
 | Requisito | Evidência | Status |
 |---|---|---|
@@ -59,7 +59,7 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | §8.1 Teste integrado com o container do Carbone | Verificação manual (perfil `carbone`, "Testar serviço Carbone") | 🟡 manual |
 | §11 E2E no navegador (configurações, marca, e-mail, diretório mock, notificação no editor, relatório PDF, auditoria) | Executado com Playwright (MCP) contra o Compose; não há suíte Playwright automatizada no repositório | 🟡 manual |
 
-## Tela de login (`.claude/login`) — Entra ID, visitante e SuperAdmin (ADR-0015)
+## Tela de login (`.github/copilot/references/login`) — Entra ID, visitante e SuperAdmin (ADR-0015)
 
 | Requisito | Evidência | Status |
 |---|---|---|

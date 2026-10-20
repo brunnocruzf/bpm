@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Tela de acesso (protótipo .claude/login): login corporativo Microsoft Entra ID e dois acessos
+ * Tela de acesso (protótipo .github/copilot/references/login): login corporativo Microsoft Entra ID e dois acessos
  * alternativos — visitante (ambiente de demonstração, usuários fictícios) e SuperAdmin (usuário e senha,
  * emergência). Quais métodos aparecem é decisão do servidor (/public/auth-config); cores, logo e links
  * vêm da identidade visual configurada.

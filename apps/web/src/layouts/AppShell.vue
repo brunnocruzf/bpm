@@ -11,6 +11,7 @@ const brand = useBranding()
 const route = useRoute()
 const router = useRouter()
 const sidebarOpen = ref(false)
+const knowledgeOpen = ref(false)
 const userMenu = ref()
 const search = ref('')
 const envLabel = import.meta.env.VITE_ENV_LABEL || 'BPM TMSA'
@@ -101,6 +102,16 @@ watch(() => route.fullPath, () => { sidebarOpen.value = false })
       <nav v-if="session.can('settingsManage')" aria-label="Configurações">
         <div class="tm-side-label">Configurações</div>
         <RouterLink class="tm-side-item" :class="{ active: String(route.name ?? '').startsWith('settings') }" :to="{ name: 'settings' }"><i class="pi pi-cog" />Configurações</RouterLink>
+      </nav>
+      <nav aria-label="Ajuda">
+        <div class="tm-side-label">Ajuda</div>
+        <button type="button" class="tm-side-item" :aria-expanded="knowledgeOpen" aria-controls="tm-knowledge-base" @click="knowledgeOpen = !knowledgeOpen">
+          <i class="pi pi-book" />Base de conhecimento<i class="pi tm-side-chevron" :class="knowledgeOpen ? 'pi-chevron-up' : 'pi-chevron-down'" aria-hidden="true" />
+        </button>
+        <div v-show="knowledgeOpen" id="tm-knowledge-base">
+          <!-- portal público de documentação (layout próprio, fora do AppShell) -->
+          <RouterLink class="tm-side-item tm-side-sub" :to="{ name: 'docs-home' }"><i class="pi pi-sitemap" />Integrações</RouterLink>
+        </div>
       </nav>
       <div class="tm-side-footer">
         {{ brand.branding.orgName }} · {{ envLabel }}<br />

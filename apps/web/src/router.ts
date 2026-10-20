@@ -1,8 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { auth } from './auth'
 import { useSession } from './stores/session'
+import { docsRoutes } from './docs/catalog'
 
 const routes: RouteRecordRaw[] = [
+  // portal de documentação de integrações: pública, antes do layout autenticado
+  docsRoutes,
   // login: Microsoft Entra ID (principal), visitante (ambiente de demonstração) e SuperAdmin (emergência)
   { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'entra' } },
   { path: '/login/visitante', name: 'login-demo', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'demo' } },

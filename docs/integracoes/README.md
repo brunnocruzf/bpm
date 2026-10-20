@@ -1,27 +1,24 @@
 # Integrações REST — guia (Administração → Integrações e entregas)
 
-Catálogo de integrações inspirado nas **Fontes de dados REST do SoftExpert** (prints em `.claude/rest/`),
+Catálogo de integrações inspirado nas **Fontes de dados REST do SoftExpert** (prints em `.github/copilot/references/rest/`),
 usado principalmente para a **API do Dynamics AX 2012** (`https://apidax.tmsa.ind.br`, Swagger em
 `/swagger/index.html`, documentos `/swagger/v1/swagger.json` e `/swagger/v2/swagger.json`).
 Decisão: `docs/adr/0016-catalogo-de-integracoes-rest.md`.
 
-## De SoftExpert para o BPM
+## Portal de documentação de integrações
 
-| SoftExpert (Fonte de dados REST) | BPM TMSA |
-|---|---|
-| Identificador, Nome, Habilitado | Endpoint: identificador, nome, habilitado (aba **Endpoints**, etapa 1) |
-| URL do serviço com `{parâmetros}` | Conexão (URL base) + caminho do endpoint com `{parâmetros}` (viram parâmetros PATH) |
-| Tempo de espera (minutos) | Tempo limite em segundos (conexão; o endpoint pode sobrescrever) |
-| Credencial | **Autenticação da conexão** (token, login do usuário de serviço ou chave de API), valor no cofre — nunca no endpoint |
-| Parâmetros de entrada (método, identificador, valor constante, PATH/QUERY, tipo) | Etapa 2: igual, com **valor de entrada** ou **constante não secreta**; HEADER também; credencial como constante é recusada |
-| Parâmetros de saída (exemplo de resposta → tipos) | Etapa 3: colar exemplo **ou** testar no servidor → inferência; guarda só a estrutura (sem valores reais), marca campos sensíveis |
-| Segurança / Resumo | Etapas 4 e 5: autenticação, política de rede, escrita liberada ou não, publicação como consulta nos formulários, resumo |
-| Uso nos formulários do SoftExpert | Consulta `api:<identificador>` no componente de consulta do editor de formulários, ou **Mapeamento** das operações do PO 159 |
+Este README é o **guia rápido** (abaixo). A documentação completa, passo a passo e campo a campo, está
+organizada em guias por perfil:
 
-> ⚠ No print `Captura de tela 2026-10-14 0033172.png` há um **token Bearer real** cadastrado como
-> parâmetro constante de QUERY (e o print `003356` mostra dados pessoais de uma colaboradora no exemplo
-> de resposta). Recomenda-se **revogar/rotacionar esse token** na API `api.tmsa.ind.br`, remover ou
-> tarjar os prints e, no SoftExpert, mover o token para a credencial em cabeçalho.
+| Perfil | Comece por | Depois |
+|---|---|---|
+| Administrador de integrações | [Criar uma integração](guia-criar-integracao.md) (conexão, Swagger, endpoints, publicar consulta) | [Mapeamentos e MOCK](guia-mapeamentos-e-mock.md) |
+| Designer de formulários | [Consumir em formulários Form.io](guia-consumir-formulario.md) (componente "Consulta AX") | [Criar uma integração](guia-criar-integracao.md) (como nascem as fontes `api:<id>`) |
+| Designer de fluxos | [Etapa do tipo Integração](guia-etapa-integracao.md) | [Mapeamentos e MOCK](guia-mapeamentos-e-mock.md) |
+| Operação e suporte | [Operação e suporte](guia-operacao-e-suporte.md) (Execuções, reconciliação, erros, auditoria) | [Etapa do tipo Integração](guia-etapa-integracao.md) |
+
+O conteúdo a seguir é o guia rápido original, mantido como visão resumida.
+
 
 ## Passo a passo (AX 2012)
 

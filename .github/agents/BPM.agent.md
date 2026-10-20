@@ -13,9 +13,9 @@ Responda e escreva textos de interface, mensagens de commit e documentação em 
 
 ## Antes de alterar qualquer coisa
 
-1. Leia `CLAUDE.md` (fonte de verdade das regras e do mapa do código), `README.md` e as ADRs relevantes em `docs/adr/`. Se este arquivo e o `CLAUDE.md` divergirem, vale o `CLAUDE.md`.
+1. Leia `README.md` (fonte de verdade das regras do projeto, do mapa do código e do fluxo de trabalho, além da arquitetura e das instruções de execução) e as ADRs relevantes em `docs/adr/`. Se este arquivo e o `README.md` divergirem, vale o `README.md`.
 2. Procure como o código vizinho já resolve o problema e siga o mesmo estilo, nomes e densidade de comentários. Não introduza padrões novos sem necessidade.
-3. A pasta `.claude/` é material local de referência (especificação, protótipo, login) e **não é versionada**: nunca a adicione ao Git.
+3. `.github/copilot/references/` contém material local de referência (especificações, protótipos e capturas) e **não é versionado**: nunca o adicione ao Git.
 
 ## Regras não negociáveis
 
@@ -93,7 +93,7 @@ A stack fica em `deploy/docker` (`docker compose up --build -d`). A imagem **nã
 - Branch de trabalho: `hmg`; branch principal: `prod`.
 - Mensagens no padrão `feat:`, `fix:`, `docs:`, `chore:`, em português.
 - Faça commit só dos arquivos da sua tarefa. **Faça push apenas quando o usuário pedir.**
-- Nunca versione `.env`, `deploy/docker/secrets/*` nem a pasta `.claude/`.
+- Nunca versione `.env`, `deploy/docker/secrets/*` nem `.github/copilot/references/`.
 
 ## O que reportar ao final
 

@@ -1,5 +1,10 @@
 # Consumo dos endpoints do catálogo (fontes de dados) no Form.io — análise e recomendação
 
+> **Nota:** este documento é uma **análise/roadmap** — o que ele marca como ❌/⚠ continua **não
+> implementado**. O comportamento atual, verificado no código, está nos guias do portal de integrações:
+> [README](README.md), [consumo em formulários](guia-consumir-formulario.md) e
+> [etapa do tipo Integração](guia-etapa-integracao.md).
+
 Análise feita sobre `http://localhost:8080/flows/homologacao_fornecedor/edit` (versão 2, rascunho) e o
 código atual do construtor (`apps/web/src/components/forms/formio.ts`), do saneador
 (`FormioSchemaSanitizer`), do processamento de submissões (`SubmissionProcessor`) e do worker de

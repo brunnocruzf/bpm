@@ -2,11 +2,11 @@
 
 - **Status:** aceito
 - **Relaciona:** ADR-0004 (identidade Entra), ADR-0013 (login × sincronização), ADR-0014 (identidade visual)
-- **Guia operacional:** `.claude/login/INSTRUCOES_DE_LOGIN.md`
+- **Guia operacional:** `.github/copilot/references/login/INSTRUCOES_DE_LOGIN.md`
 
 ## Contexto
 
-A tela de login passou a seguir o protótipo `.claude/login/index.html` (painel de acesso + foto). O produto precisa
+A tela de login passou a seguir o protótipo `.github/copilot/references/login/index.html` (painel de acesso + foto). O produto precisa
 de três formas de entrada: o login corporativo Microsoft Entra ID, um acesso de **visitante** ao ambiente de
 demonstração e um acesso **SuperAdmin** por usuário e senha. Antes, o modo era único e fixado no build
 (`VITE_AUTH_MODE`) e no driver da API (`BPM_AUTH_DRIVER=dev|entra`).
