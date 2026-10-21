@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Flow\StageCatalog;
 use App\Integrations\Ax\AxGateway;
 use App\Integrations\IntegrationUnavailable;
 use App\Models\AuditEvent;
@@ -352,5 +353,104 @@ class IntegrationCatalogTest extends TestCase
         $this->as('auditor')->putJson("/api/v1/admin/integrations/endpoints/{$e->id}", ['enabled' => true])->assertForbidden();
         $this->as('auditor')->getJson('/api/v1/admin/integrations/executions')->assertOk()->assertJsonPath('data.0.endpoint', 'GetEnderecoAsync');
         $this->as('cq')->getJson('/api/v1/admin/integrations/executions')->assertForbidden();
+    }
+
+    public function test_custom_mappings_become_form_lookups_and_flow_integrations_and_fail_when_inactive(): void
+    {
+        $calls = 0;
+        $this->fakeApi([
+            self::BASE.'/v1/Fornecedores/*' => Http::response([['codigo' => 'F-9', 'nome' => 'Fornecedor Mapeado', 'contato' => ['nome' => 'Maria Contato']]]),
+            self::BASE.'/v1/Financeiro/CriarOrdemTransferencia' => function () use (&$calls) {
+                $calls++;
+
+                return Http::response(['transferId' => 'OT-500']);
+            },
+        ]);
+        $conn = $this->connection(['enabled' => true]);
+        $this->importAll($conn['id'], ['GET /v1/Fornecedores/{CPF_CNPJ}', 'POST /v1/Financeiro/CriarOrdemTransferencia']);
+        $read = IntegrationEndpoint::where('key', 'ListaFornCNPJ')->firstOrFail();
+        $write = IntegrationEndpoint::where('key', 'CriarOT')->firstOrFail();
+        $this->as('admin')->putJson("/api/v1/admin/integrations/endpoints/{$read->id}", ['enabled' => true, 'responseIsList' => true,
+            'responseFields' => [['path' => 'nome', 'label' => 'Nome'], ['path' => 'contato.nome', 'label' => 'Contato']]])->assertOk();
+        $this->as('admin')->putJson("/api/v1/admin/integrations/endpoints/{$write->id}", ['enabled' => true])->assertOk();
+        $this->as('admin')->putJson("/api/v1/admin/integrations/connections/{$conn['id']}", ['allowWrites' => true, 'writesApproval' => 'CHG-2026-0099'])->assertOk();
+        $url = '/api/v1/admin/integrations/bindings';
+
+        // consulta nos formulários: valor digitado → parâmetro; saídas escolhidas viram os campos da fonte
+        $lookup = ['key' => 'fornecedorPorCnpj', 'kind' => 'lookup', 'label' => 'Fornecedor por CNPJ', 'description' => 'Traz nome e contato', 'endpointId' => $read->id, 'enabled' => true,
+            'inputMap' => ['CPF_CNPJ' => 'input:value'],
+            'outputs' => [['key' => 'nomeFornecedor', 'label' => 'Fornecedor', 'path' => 'nome'], ['key' => 'contatoFornecedor', 'label' => 'Contato', 'path' => 'contato.nome']]];
+        $this->as('cq')->postJson($url, $lookup)->assertForbidden();
+        $this->as('admin')->postJson($url, [...$lookup, 'endpointId' => $write->id])->assertStatus(422)->assertJsonValidationErrors(['endpointId'], 'errors');
+        $this->as('admin')->postJson($url, [...$lookup, 'inputMap' => []])->assertStatus(422)->assertJsonValidationErrors(['inputMap'], 'errors');
+        $this->as('admin')->postJson($url, [...$lookup, 'key' => 'fornecedor por cnpj'])->assertStatus(422)->assertJsonValidationErrors(['key'], 'errors');
+        $this->as('admin')->postJson($url, [...$lookup, 'outputs' => [['key' => 'nome', 'path' => 'nome'], ['key' => 'nome', 'path' => 'contato.nome']]])
+            ->assertStatus(422)->assertJsonValidationErrors(['outputs.1.key'], 'errors');
+        $this->as('admin')->postJson($url, $lookup)->assertCreated()->assertJsonFragment(['operation' => 'map:fornecedorPorCnpj', 'custom' => true, 'kind' => 'lookup']);
+        $this->as('admin')->postJson($url, [...$lookup, 'key' => 'FornecedorPorCnpj'])->assertStatus(422)->assertJsonValidationErrors(['key'], 'errors');
+        $this->assertTrue(AuditEvent::where('action', 'integration.binding_created')->exists());
+
+        $source = collect($this->as('designer')->getJson('/api/v1/meta')->json('lookupSources'))->firstWhere('key', 'map:fornecedorPorCnpj');
+        $this->assertSame('Fornecedor por CNPJ (AX2012)', $source['label']);
+        $this->assertSame(['nomeFornecedor', 'contatoFornecedor'], array_column($source['fields'], 'key'));
+        $this->as('cq')->getJson('/api/v1/lookups/map:fornecedorPorCnpj?value=11222333000181')->assertOk()
+            ->assertJsonPath('data.nomeFornecedor', 'Fornecedor Mapeado')->assertJsonPath('data.contatoFornecedor', 'Maria Contato')->assertJsonPath('transport', 'REST:apidax');
+
+        // etapa automática do fluxo: lê dados do processo, grava as saídas (escrita idempotente)
+        $task = ['key' => 'criarOrdem', 'kind' => 'task', 'label' => 'Criar ordem de transferência', 'endpointId' => $write->id, 'enabled' => true,
+            'inputMap' => ['body:transferId' => 'input:numeroPedido', 'body:lines[].itemId' => 'input:codigoItem', 'body:inventLocationIdTo' => 'const:BLOQ'],
+            'outputs' => [['key' => 'numeroOrdem', 'label' => 'Nº da ordem', 'path' => 'transferId']]];
+        $this->as('admin')->postJson($url, [...$task, 'inputMap' => ['body:transferId' => 'input:numero pedido']])->assertStatus(422)->assertJsonValidationErrors(['inputMap'], 'errors');
+        $this->as('admin')->postJson($url, $task)->assertCreated();
+        $op = collect($this->as('designer')->getJson('/api/v1/meta')->json('serviceOperations'))->firstWhere('key', 'map:criarOrdem');
+        $this->assertSame(['numeroPedido', 'codigoItem'], $op['inputs']);
+        $this->assertSame(['numeroOrdem'], $op['outputs']);
+        $this->assertTrue($op['active']);
+        $ax = app(AxGateway::class);
+        $this->assertSame(['numeroOrdem' => 'OT-500'], $ax->execute('map:criarOrdem', ['numeroPedido' => 'PED-1', 'codigoItem' => 'IT-1'], 'key-map-1'));
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/CriarOrdemTransferencia') && ($r->data()['transferId'] ?? null) === 'PED-1'
+            && ($r->data()['lines'][0]['itemId'] ?? null) === 'IT-1' && ($r->data()['inventLocationIdTo'] ?? null) === 'BLOQ');
+        $this->assertSame(['numeroOrdem' => 'OT-500'], $ax->execute('map:criarOrdem', ['numeroPedido' => 'PED-1', 'codigoItem' => 'IT-1'], 'key-map-1'), 'mesma chave: não repete');
+        $this->assertSame(1, $calls);
+
+        // em uso num formulário e numa etapa de fluxo: não pode ser excluído
+        $this->as('designer')->postJson('/api/v1/flows', ['name' => 'Fluxo mapeado', 'category' => 'Compras'])->assertCreated();
+        $base = '/api/v1/definitions/fluxo_mapeado/versions/1';
+        $this->as('designer')->putJson("$base/forms/f_etapa_1", ['schema' => ['components' => [
+            ['type' => 'textfield', 'key' => 'fornecedor', 'label' => 'Fornecedor', 'input' => true, 'disabled' => true],
+            ['type' => 'axlookup', 'key' => 'cnpj', 'label' => 'CNPJ', 'input' => true, 'lookupSource' => 'map:fornecedorPorCnpj', 'fillMap' => [['from' => 'nomeFornecedor', 'to' => 'fornecedor']]],
+        ]]])->assertOk();
+        $v = $this->as('designer')->postJson("$base/stages", ['type' => 'service_task', 'after' => 'etapa_1'])->assertCreated()->json('version');
+        $taskKey = collect($v['stages'])->firstWhere('type', 'service_task')['key'];
+        $this->as('designer')->patchJson("$base/stages/$taskKey", ['config' => ['operation' => 'map:criarOrdem']])->assertOk();
+        $ops = collect($this->as('admin')->getJson($url)->json('data'))->keyBy('operation');
+        $this->assertSame(['forms' => 1, 'stages' => 0], $ops['map:fornecedorPorCnpj']['usage']);
+        $this->assertSame(['forms' => 0, 'stages' => 1], $ops['map:criarOrdem']['usage']);
+        $this->assertNull($ops['supplier.lookup']['usage']);
+        $this->as('admin')->deleteJson("$url/map:fornecedorPorCnpj")->assertStatus(409)->assertJsonPath('code', 'binding_in_use');
+        $this->as('admin')->deleteJson("$url/map:criarOrdem")->assertStatus(409)->assertJsonPath('code', 'binding_in_use');
+        $this->as('admin')->deleteJson("$url/supplier.lookup")->assertNotFound();
+
+        // inativo: sem dados simulados — a etapa e a consulta falham; a validação do fluxo avisa
+        $this->as('admin')->putJson("$url/map:criarOrdem", [...$task, 'enabled' => false])->assertOk();
+        $this->assertSame('INATIVO', $ax->transportName('map:criarOrdem'));
+        try {
+            $ax->execute('map:criarOrdem', ['numeroPedido' => 'PED-2'], 'key-map-2');
+            $this->fail('mapeamento inativo não pode executar');
+        } catch (IntegrationUnavailable $ex) {
+            $this->assertSame('not_configured', $ex->reason);
+        }
+        $this->assertSame(1, $calls);
+        $this->as('designer')->postJson("$base/validate")->assertOk()->assertJsonFragment(['code' => 'service_operation_inactive']);
+        $this->as('admin')->putJson("$url/map:fornecedorPorCnpj", [...$lookup, 'enabled' => false])->assertOk();
+        $inactive = $this->as('cq')->getJson('/api/v1/lookups/map:fornecedorPorCnpj?value=11222333000181')->assertStatus(503);
+        $this->assertStringContainsString('não está ativa', (string) $inactive->json('detail'));
+        $this->as('admin')->getJson('/api/v1/admin/integrations')->assertOk()->assertJsonFragment(['operation' => 'map:fornecedorPorCnpj', 'transport' => 'INATIVO', 'custom' => true]);
+
+        // fora de uso: exclusão auditada
+        $this->as('designer')->patchJson("$base/stages/$taskKey", ['config' => ['operation' => null]])->assertOk();
+        $this->as('admin')->deleteJson("$url/map:criarOrdem")->assertNoContent();
+        $this->assertTrue(AuditEvent::where('action', 'integration.binding_deleted')->exists());
+        $this->assertArrayNotHasKey('map:criarOrdem', StageCatalog::serviceOperations());
     }
 }

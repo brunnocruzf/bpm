@@ -39,5 +39,12 @@ for (const [dest, src, files] of SOURCES) {
     if (f.endsWith('.md') && !files.includes(f)) rmSync(join(to, f))
   }
   for (const f of files) copyFileSync(join(repoDocs, src, f), join(to, f))
+  // capturas de tela usadas pelos guias (docs/<pasta>/imagens): espelhadas por inteiro
+  const images = join(repoDocs, src, 'imagens')
+  rmSync(join(to, 'imagens'), { recursive: true, force: true })
+  if (existsSync(images)) {
+    mkdirSync(join(to, 'imagens'))
+    for (const img of readdirSync(images)) copyFileSync(join(images, img), join(to, 'imagens', img))
+  }
   console.log(`${files.length} arquivo(s) de docs/${src} copiado(s) para src/docs/content/${dest}`)
 }

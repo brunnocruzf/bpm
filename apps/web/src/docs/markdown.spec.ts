@@ -44,6 +44,16 @@ describe('renderMarkdown (portal de documentação)', () => {
   })
 })
 
+describe('imagens dos guias', () => {
+  it('troca o caminho relativo pela URL empacotada e mostra só o texto alternativo quando a imagem não existe', () => {
+    const resolveImage = (src: string) => (src === 'imagens/01.png' ? '/assets/01-abc.png' : null)
+    const doc = renderMarkdown('![Aba Conexões](imagens/01.png)\n\n![Externa](https://exemplo.com/x.png)', noRoutes, resolveImage)
+    expect(doc.html).toContain('<img src="/assets/01-abc.png" alt="Aba Conexões" loading="lazy">')
+    expect(doc.html).not.toContain('exemplo.com')
+    expect(doc.html).toContain('[Externa]')
+  })
+})
+
 describe('slugify', () => {
   it('remove acentos e pontuação', () => {
     expect(slugify('Consumir em formulários (Form.io)')).toBe('consumir-em-formularios-formio')

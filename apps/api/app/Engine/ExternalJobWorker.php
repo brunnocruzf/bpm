@@ -34,7 +34,7 @@ class ExternalJobWorker
         foreach ($jobs as $job) {
             $instance = ProcessInstance::where('engine_process_instance_id', $job['processInstanceId'] ?? '')->first();
             $stage = $instance ? ProcessStageVersion::where('definition_version_id', $instance->definition_version_id)->where('element_id', $job['elementId'] ?? '')->first() : null;
-            $operation = $stage ? StageCatalog::SERVICE_OPERATIONS[(string) $stage->configValue('operation')] ?? null : null;
+            $operation = $stage ? StageCatalog::serviceOperations()[(string) $stage->configValue('operation')] ?? null : null;
 
             if (! $instance || ! $operation) {
                 // Consome uma tentativa; após esgotar, o job fica em dead-letter para análise.

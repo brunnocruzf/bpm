@@ -29,6 +29,14 @@ export const useSession = defineStore('session', {
         this.loading = false
       }
     },
+    /** Recarrega o catálogo (fontes de consulta, integrações do fluxo...) depois de mudanças em Administração. */
+    async refreshMeta() {
+      try {
+        this.meta = await api<Meta>('/meta')
+      } catch {
+        /* mantém o catálogo atual; a próxima carga da página atualiza */
+      }
+    },
     async refreshCounters() {
       if (!this.me) return
       try {

@@ -144,7 +144,9 @@ Route::prefix('v1')->group(function () {
             Route::delete('endpoints/{id}', 'deleteEndpoint')->whereUuid('id');
             Route::post('endpoints/{id}/test', 'testEndpoint')->whereUuid('id')->middleware('throttle:20,1');
             Route::get('bindings', 'bindings');
-            Route::put('bindings/{operation}', 'saveBinding')->where('operation', '[A-Za-z][A-Za-z0-9_.]{1,59}');
+            Route::post('bindings', 'storeBinding')->middleware('throttle:30,1');
+            Route::put('bindings/{operation}', 'saveBinding')->where('operation', '[A-Za-z][A-Za-z0-9_.:]{1,59}')->middleware('throttle:60,1');
+            Route::delete('bindings/{operation}', 'deleteBinding')->where('operation', '[A-Za-z][A-Za-z0-9_.:]{1,59}');
             Route::get('executions', 'executions');
             Route::post('executions/{id}/reconcile', 'reconcileExecution')->whereUuid('id');
         });

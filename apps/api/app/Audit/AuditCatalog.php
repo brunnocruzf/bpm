@@ -69,6 +69,8 @@ final class AuditCatalog
         'integration.endpoint_deleted' => ['integration', 'Endpoint de integração removido'],
         'integration.endpoint_tested' => ['integration', 'Endpoint de integração testado'],
         'integration.binding_saved' => ['integration', 'Vínculo de operação com endpoint salvo'],
+        'integration.binding_created' => ['integration', 'Mapeamento personalizado criado'],
+        'integration.binding_deleted' => ['integration', 'Mapeamento personalizado excluído'],
         'integration.execution_reconciled' => ['integration', 'Escrita com resultado incerto reconciliada'],
         // Notificações
         'notification.queued' => ['notification', 'Notificação enfileirada'],

@@ -17,6 +17,25 @@ export interface RenderedDoc {
 /** Resolve o caminho de um link relativo entre arquivos para uma rota do portal; null = fora do portal. */
 export type LinkResolver = (href: string) => string | null
 
+/** Resolve o caminho relativo de uma imagem (ex.: "imagens/01.png") para a URL empacotada; null = imagem inexistente. */
+export type ImageResolver = (src: string) => string | null
+
+function rewriteImages(children: Token[], resolveImage: ImageResolver): void {
+  children.forEach((c) => {
+    if (c.type !== 'image') return
+    const url = resolveImage(String(c.attrGet('src') ?? ''))
+    if (url) {
+      c.attrSet('src', url)
+      c.attrSet('loading', 'lazy')
+      return
+    }
+    // imagem fora do pacote (ou URL externa, bloqueada pela CSP): mostra só o texto alternativo
+    c.type = 'text'
+    c.content = `[${c.content}]`
+    c.children = null
+  })
+}
+
 const EXTERNAL = /^(https?:|mailto:)/i
 
 /** Slug para âncoras: sem acentos, minúsculas, só letras, números e hífens. */
@@ -73,7 +92,7 @@ function rewriteLinks(children: Token[], resolveLink: LinkResolver): void {
  * Segurança: `html: false` faz o markdown-it escapar qualquer HTML do arquivo (nada bruto chega ao DOM);
  * links `javascript:` são descartados pelo próprio markdown-it; links externos abrem em nova aba.
  */
-export function renderMarkdown(source: string, resolveLink: LinkResolver): RenderedDoc {
+export function renderMarkdown(source: string, resolveLink: LinkResolver, resolveImage: ImageResolver = () => null): RenderedDoc {
   const md = new MarkdownIt({ html: false, linkify: false })
   const tokens = md.parse(source, {})
 
@@ -89,7 +108,10 @@ export function renderMarkdown(source: string, resolveLink: LinkResolver): Rende
 
   tokens.forEach((t, i) => {
     if (t.type === 'blockquote_open') t.attrJoin('class', 'docs-callout')
-    if (t.type === 'inline' && t.children) rewriteLinks(t.children, resolveLink)
+    if (t.type === 'inline' && t.children) {
+      rewriteLinks(t.children, resolveLink)
+      rewriteImages(t.children, resolveImage)
+    }
     if (t.type !== 'heading_open') return
     const level = Number(t.tag.slice(1))
     if (level !== 2 && level !== 3) return

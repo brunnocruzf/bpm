@@ -1,340 +1,232 @@
-# Guia — Criar uma integração (conexão, Swagger, endpoints e consulta publicada)
+# Criar uma integração
 
-Este guia cobre, campo a campo, o caminho completo para criar uma integração no catálogo REST do BPM
-TMSA (**Administração → Integrações e entregas**): cadastrar a conexão, importar o Swagger, completar os
-endpoints e publicar uma consulta para os formulários. Decisões de arquitetura:
-[ADR-0016](../adr/0016-catalogo-de-integracoes-rest.md) e [ADR-0006](../adr/0006-integracao-ax-2012-r3.md).
+Este guia mostra, passo a passo, como cadastrar a ligação com um sistema externo (por exemplo, o
+Dynamics AX), trazer os serviços dele para o BPM e deixá-los prontos para uso nos formulários e nos
+fluxos.
 
-> Todos os rótulos de botões, abas e mensagens deste guia foram copiados do código da aplicação.
+Tudo acontece em **Administração → Integrações e entregas**.
 
-## Pré-requisitos e permissões
+## Antes de começar
 
-| Item | Detalhe |
+- Você precisa de **permissão de administrador de configurações**. Sem ela, as abas *Conexões*,
+  *Endpoints* e *Mapeamentos* não aparecem.
+- Tenha em mãos o **endereço do sistema** (ex.: `https://apidax.tmsa.ind.br`) e o **usuário e senha de
+  serviço** que a equipe do sistema externo forneceu para o BPM.
+- Se o sistema fica na rede interna da empresa, peça à **equipe de TI** que libere o endereço dele no
+  servidor do BPM. Sem isso, o teste mostra "Destino bloqueado" (veja
+  [Acompanhar e resolver problemas](guia-operacao-e-suporte.md)).
+
+## Passo 1 — Cadastrar a conexão
+
+A **conexão** diz ao BPM onde o sistema está e como entrar nele. Abra a aba **Conexões**.
+
+![Aba Conexões com a conexão do AX cadastrada](imagens/02-conexoes.png)
+
+- Para o AX, use o botão **Conexão da API do AX (apidax)**: ele já preenche quase tudo. Esse botão só
+  aparece enquanto a conexão do AX ainda não existe.
+- Para outro sistema, use **Nova conexão**.
+- Para alterar uma conexão existente, clique em **Editar** no cartão dela.
+
+### Preencha os campos
+
+![Janela de edição da conexão](imagens/03a-conexao-token.png)
+
+| Campo | O que colocar |
 |---|---|
-| Permissão das abas Conexões, Endpoints e Mapeamentos | `settings.manage` (papel de administração de configurações). A autorização é verificada no servidor em cada rota (`Gate::authorize`), nunca só na tela |
-| Aba Visão geral | papel `admin` ou `auditor` |
-| Aba Execuções | `settings.manage`, `processes.manage` ou `audit.read` |
-| Reconciliar uma execução | `processes.manage` |
-| Declaração de hosts (plataforma) | hosts que resolvem para a rede interna e, em produção, todos os hosts precisam estar em `BPM_INTEGRATION_ALLOWED_HOSTS` (lista separada por vírgulas, no ambiente da API — ex.: `deploy/docker/.env` — seguida de `docker compose up -d`) |
+| **Identificador** | Um nome curto e único, sem espaços (ex.: `apidax`). Não pode ser alterado depois. |
+| **Nome** | Como a conexão vai aparecer nas telas. |
+| **Sistema** | O sistema de origem (ex.: `AX2012`). |
+| **Ambiente** | Desenvolvimento, Homologação ou Produção. Em **Produção** o BPM não deixa testar gravações. |
+| **URL base** | O endereço principal do sistema (ex.: `https://apidax.tmsa.ind.br`). |
+| **URL do documento OpenAPI (swagger.json)** | O endereço do catálogo de serviços do sistema. Use o arquivo que termina em `swagger.json`, não a página visual do Swagger. |
+| **Método de autenticação** | Como o BPM entra no sistema (veja abaixo). |
+| **Tempo limite (s)** | Quanto tempo esperar por uma resposta antes de desistir. O padrão, 15 segundos, serve para a maioria dos casos. |
+| **Caminho de verificação** | Um serviço simples de consulta que o botão **Testar conexão** vai chamar de verdade (ex.: `/v1/Financeiro/Moeda`). Recomendado: sem ele, o teste só confere se a senha foi preenchida. |
 
-Limites da plataforma (valores padrão de `apps/api/config/bpm.php`):
+### Escolha a forma de entrar no sistema
 
-| Limite | Padrão | Variável |
+| Opção | Quando usar | O que preencher |
 |---|---|---|
-| Tamanho máximo da resposta de uma chamada | 2 MB | `BPM_INTEGRATION_MAX_RESPONSE_BYTES` |
-| Tamanho máximo do documento OpenAPI | 5 MB | `BPM_INTEGRATION_MAX_OPENAPI_BYTES` |
-| Tempo limite padrão da conexão | 15 s (o campo aceita de 2 a 120) | `BPM_INTEGRATION_TIMEOUT` |
-| Validade do token de login em cache | 50 min | fixa (`bpm.integrations.token_ttl_minutes`) |
-| Exemplo de resposta colado no assistente | 512 KB | fixa no servidor |
-| Prévia de importação do Swagger | expira em 30 minutos | fixa no servidor |
+| **Sem autenticação** | Sistemas internos abertos, que não pedem senha. | Nada. |
+| **Bearer token** | O sistema forneceu um código de acesso fixo (é o caso da conexão atual do AX). | O código no campo **Token**. |
+| **Basic (usuário e senha)** | O sistema pede usuário e senha em toda chamada. | **Usuário** e senha. |
+| **Chave de API em cabeçalho** | O sistema forneceu uma chave de acesso. | O **nome do cabeçalho** que o sistema informou e a chave. |
+| **Login do usuário de serviço → token** | O sistema exige login com usuário e senha e devolve um código temporário. **Recomendado para o AX.** | **Caminho do login** (ex.: `/v1/User/login`), **Usuário de serviço** e senha. O BPM renova o código sozinho. |
+| **OAuth2 client credentials** | Sistemas na nuvem que usam esse padrão. | Endereço de obtenção do código, **Client ID** e **Client secret**, informados pelo fornecedor. |
 
-A execução das etapas de integração e a verificação diária do Swagger dependem dos containers
-`scheduler` e `queue-worker` da stack Docker (veja o [guia de operação](guia-operacao-e-suporte.md)).
+![Conexão configurada com login do usuário de serviço](imagens/03b-conexao-login-servico.png)
 
-## Visão geral do caminho
+**Sobre a senha:**
 
-1. **Conexão** — sistema, URL base, ambiente e autenticação (credencial no cofre, somente escrita).
-2. **Importar do Swagger** — prévia das operações; você escolhe o que importar; tudo entra desabilitado.
-3. **Endpoints** — completar os parâmetros de saída (exemplo ou teste) e revisar a segurança.
-4. **Publicar como consulta** (`api:<identificador>`) para os formulários — ou mapear uma operação do BPM
-   (veja o [guia de mapeamentos e MOCK](guia-mapeamentos-e-mock.md)).
-5. **Habilitar** endpoint e conexão (escritas exigem liberação com referência de aprovação).
-6. **Acompanhar** na aba Execuções.
+- O campo da senha é **somente escrita**: depois de salva, ela aparece como "•••••• (definida — preencha
+  para substituir)" e nunca mais é exibida.
+- Para manter a senha atual, **deixe o campo vazio** ao salvar. Para trocar, digite a nova.
+- O campo **Ou segredo montado** é usado quando a equipe de TI guarda a senha no próprio servidor.
+  Preencha só se ela pedir.
+- **Nunca coloque a senha no endereço** nem nos parâmetros dos serviços. O BPM recusa.
 
-## Passo 1 — Aba Conexões
+### Ligar a conexão e liberar gravações
 
-Texto do topo da aba: "Sistema, URL base, ambiente e autenticação. A credencial fica no cofre (somente
-escrita) e é usada apenas pelo servidor."
+No fim da janela há duas caixas:
 
-### Atalho para a API do AX
+![Opções de habilitar a conexão e liberar escritas](imagens/04-conexao-escritas.png)
 
-Enquanto não existir uma conexão com o identificador `apidax`, a aba mostra o botão **"Conexão da API do
-AX (apidax)"**, que só pré-preenche o formulário (nada é gravado até salvar; nenhum seed cria conexão):
+- **Conexão habilitada** — enquanto estiver desmarcada, o BPM não faz nenhuma chamada a esse sistema.
+- **Liberar escritas (POST/PUT/DELETE) — exige aprovação** — necessária apenas para serviços que
+  **gravam** no sistema externo. Ao marcar, preencha **Referência da aprovação** com o número do
+  chamado ou da ata que autorizou. Sem essa liberação, toda gravação é recusada; consultas continuam
+  funcionando.
 
-| Campo | Valor pré-preenchido |
+Clique em **Salvar**.
+
+### Testar a conexão
+
+No cartão da conexão, clique em **Testar conexão**. O resultado aparece no próprio cartão:
+
+| Resultado | O que significa |
 |---|---|
-| Identificador | `apidax` |
-| Nome | `API Dynamics AX 2012 (apidax)` |
-| Sistema | `AX2012` |
-| URL base | `https://apidax.tmsa.ind.br` |
-| URL do documento OpenAPI | `https://apidax.tmsa.ind.br/swagger/v1/swagger.json` |
-| Método de autenticação | Bearer token (prefixo `Bearer`) |
-| Caminho de verificação | `/v1/Financeiro/Moeda` |
+| **Último teste: verificado** | O BPM entrou no sistema e chamou o serviço de verificação com sucesso. |
+| **Último teste: credencial não verificada** | Não há caminho de verificação: o BPM só conferiu que a senha está preenchida. Preencha o **Caminho de verificação** para um teste real. |
+| **Último teste: falhou** | Algo deu errado. O cartão mostra o motivo e, em **O que fazer:**, a ação recomendada. |
 
-Há também o botão **"Nova conexão"** para qualquer outro sistema.
+A linha **Política de rede** do cartão mostra se o endereço está liberado. Se aparecer um bloqueio,
+peça à equipe de TI para liberar o endereço do sistema.
 
-### Campos da conexão
+## Passo 2 — Importar os serviços do Swagger
 
-| Campo | Rótulo na tela | Observações |
-|---|---|---|
-| Identificador | "Identificador" | único; placeholder `apidax` |
-| Nome | "Nome" | exibição |
-| Sistema | "Sistema" | placeholder `AX2012, Senior, ...` |
-| Ambiente | "Ambiente" | Desenvolvimento, Homologação ou Produção |
-| URL base | "URL base" | placeholder `https://apidax.tmsa.ind.br` |
-| OpenAPI | "URL do documento OpenAPI (swagger.json)" | hint: "Use o JSON (ex.: `/swagger/v1/swagger.json`), não a página `/swagger/index.html`." |
-| Autenticação | "Método de autenticação" | ver tabela abaixo |
-| Tempo limite | "Tempo limite (s)" | mínimo 2, máximo 120; padrão 15 |
-| Verificação | "Caminho de verificação (GET leve usado no “Testar conexão”)" | placeholder `/v1/Financeiro/Moeda` |
-| Habilitação | "Conexão habilitada (chamadas reais pelo servidor)" | desabilitada, nenhuma chamada real sai |
-| Escritas | "Liberar escritas (POST/PUT/DELETE) — exige aprovação" | ver seção de escritas abaixo |
-| Aprovação | "Referência da aprovação (chamado/ata)" | obrigatória para liberar escritas |
-| Credencial | "Token / Senha / Chave da API / Senha do usuário de serviço / Client secret — somente escrita" | o rótulo muda conforme o método |
-| Segredo montado | "Ou segredo montado" | referência `file:<nome>`, placeholder `file:apidax_token` |
+O Swagger é a lista de serviços que o sistema externo publica. Em vez de cadastrar cada serviço à mão,
+o BPM lê essa lista para você.
 
-### Os 6 métodos de autenticação
+1. No cartão da conexão, clique em **Importar do Swagger**.
 
-Rótulos e comportamento (o que o servidor envia):
+   ![Janela Importar do Swagger](imagens/05-importar-swagger.png)
 
-| Método (rótulo) | O que o servidor envia | Campos específicos |
-|---|---|---|
-| "Sem autenticação" | "Nenhum cabeçalho de autenticação (APIs públicas internas)." | — |
-| "Bearer token (Authorization: Bearer …)" | token fixo em `Authorization: Bearer <token>`; é o caso da API do AX (apidax); pode colar com ou sem o prefixo "Bearer " | "Prefixo do valor" (padrão `Bearer`) |
-| "Basic (usuário e senha)" | `Authorization: Basic <usuário:senha em base64>` | "Usuário" + senha |
-| "Chave de API em cabeçalho" | a chave em um cabeçalho próprio, com prefixo opcional | "Nome do cabeçalho" (placeholder `X-API-Key`), "Prefixo (opcional)" |
-| "Login do usuário de serviço → token" | o servidor faz `POST <caminho do login>` com usuário e senha **no corpo** (nunca na URL), guarda o token em cache criptografado (validade padrão 50 min) e envia `Authorization: Bearer <token>`; em HTTP 401, renova o token uma única vez | "Caminho do login", "Usuário de serviço", "Caminho do token na resposta (vazio = detectar)", "Validade do token (min)" |
-| "OAuth2 client credentials" | o servidor pede um token ao endpoint OAuth2 (client ID + secret no corpo), guarda em cache até `expires_in − 60 s` e envia `Authorization: Bearer <token>` | "URL do endpoint de token (https)", "Client ID", "Scope (opcional)" |
+2. Confira o endereço em **URL do swagger.json**. Se o sistema tiver mais de uma versão, troque `v1` por
+   `v2` no endereço. Se o servidor do BPM não conseguir acessar o endereço, peça o arquivo à equipe do
+   sistema e use **ou arquivo .json**.
+3. Clique em **Gerar prévia**. **Nada é gravado nesta etapa.**
 
-Validações do servidor: o caminho do login precisa ser relativo ("Caminho relativo começando com "/"
-(ex.: /v1/User/login).") e o caminho de verificação também ("Caminho relativo de um GET leve, começando
-com "/" (ex.: /v1/Financeiro/Moeda).").
+   ![Prévia da importação com as operações agrupadas](imagens/06-importar-previa.png)
 
-### Credencial somente escrita
+4. Revise a lista:
+   - os serviços aparecem **agrupados por assunto**, com a situação **Novo**, **Contrato alterado** (o
+     sistema mudou esse serviço desde a última importação) ou **Inalterado**;
+   - os filtros no topo ajudam a achar serviços por nome ou grupo e a separar consultas de gravações;
+   - **detalhes** mostra o que o serviço recebe e devolve;
+   - o triângulo de alerta indica algo a observar, como um serviço que pede senha no endereço (não use)
+     ou que não informa o que devolve.
+5. Por padrão vêm marcadas as **consultas novas ou alteradas**. Ajuste a seleção e clique em
+   **Importar selecionadas**.
 
-- A credencial é guardada criptografada no cofre (`db:`) ou referenciada como segredo montado
-  (`file:<nome>`). A tela avisa: "Guardado criptografado no cofre; nunca volta para a tela nem para os
-  logs."
-- Quando já existe credencial, o campo mostra "•••••• (definida — preencha para substituir)"; salvar com
-  o campo vazio preserva o valor atual.
-- Credenciais nunca são parâmetros do endpoint nem vão na URL. O assistente de endpoints recusa
-  constantes que pareçam credencial ("Credenciais não são parâmetros."; "Token/senha/Authorization ficam
-  na autenticação da conexão (...) e são enviados em cabeçalho pelo servidor — nunca como constante ou na
-  URL."). Chave/token na *query string* não é suportado de propósito.
-- A substituição da credencial gera o evento de auditoria `integration.secret_updated`
-  ("Credencial de integração substituída").
+Os serviços importados chegam **desligados**. Nada é usado até você revisar e ligar cada um.
 
-### Testar conexão
+> A prévia vale por 30 minutos. Depois disso, gere de novo.
 
-O botão **"Testar conexão"** (durante o teste: "Testando...") executa as verificações no servidor e o
-cartão da conexão passa a mostrar um dos estados:
+**Importando de novo:** sempre que o sistema externo mudar, repita a importação. O BPM atualiza os
+serviços alterados **sem perder** o que você já configurou (nomes, campos de saída, publicação nos
+formulários e mapeamentos). Serviços que saíram do catálogo ficam marcados como **removido**, mas não são
+apagados. O BPM também confere o catálogo uma vez por dia e marca o que mudou.
 
-- "Último teste: verificado" — com o **caminho de verificação** preenchido, o servidor faz um GET real;
-  HTTP 401/403 viram "credencial recusada";
-- "Último teste: credencial não verificada" — sem caminho de verificação, o teste só confere se a
-  credencial existe (nunca é um sucesso presumido);
-- "Último teste: falhou" — com a mensagem, a duração, o horário, quem executou e, quando há, o bloco
-  "O que fazer:" com a ação recomendada.
+## Passo 3 — Completar cada endpoint
 
-O hint do campo resume: "Sem ele, o teste só confere se a credencial existe (fica “não verificada”). Com
-ele, o servidor faz uma chamada real e detecta token inválido (401/403)." Cada teste é auditado
-(`integration.connection_tested`).
+Abra a aba **Endpoints (fontes de dados)**. A lista mostra todos os serviços, com filtros à esquerda.
 
-### Política de rede (TargetPolicy)
+![Aba Endpoints com filtros e lista de serviços](imagens/07-endpoints.png)
 
-O cartão mostra "Política de rede" com "host declarado pela plataforma", "permitido" ou a mensagem de
-bloqueio. Texto da tela: "Hosts declarados pela plataforma: ... Hosts que resolvem para a rede interna
-(como `apidax.tmsa.ind.br`) e, em produção, todos os hosts precisam estar em
-`BPM_INTEGRATION_ALLOWED_HOSTS`."
+| Coluna | O que mostra |
+|---|---|
+| **Situação** | Marcado = ligado; traço = desligado. Clique para ligar ou desligar. |
+| **Saída** | **definida** = o BPM já sabe o que o serviço devolve; **pendente** = falta configurar. |
+| **Uso** | **consulta** = liberado para formulários; **escrita** = grava no sistema externo. |
 
-Regras aplicadas pelo servidor (`TargetPolicy`) em todo destino configurável:
+Selecione um serviço e clique no lápis (**Editar**). Abre um assistente de 5 etapas. Use **Próximo** e
+**Anterior** para navegar e **Finalizar** para salvar.
 
-- URL com esquema `https` (ou `http` somente para host declarado), sem usuário/senha na URL;
-- endereços de metadata, loopback e hosts bloqueados são proibidos; redirecionamentos não são seguidos;
-- hosts que resolvem para IP privado precisam estar declarados; em "produção" (`APP_ENV=production`),
-  todo host precisa estar declarado.
+### Etapa 1 — Dados do serviço
 
-Mensagens possíveis: "URL inválida (use https://host/caminho, sem usuário/senha na URL).", "Somente
-https é permitido (http só para host declarado pela plataforma).", "Host &lt;host&gt; não está declarado
-pela plataforma (BPM_INTEGRATION_ALLOWED_HOSTS)." e "O host &lt;host&gt; aponta para a rede interna
-(&lt;ip&gt;): ele precisa ser declarado pela plataforma em BPM_INTEGRATION_ALLOWED_HOSTS."
+![Etapa Dados do serviço](imagens/08-endpoint-etapa1.png)
 
-### Liberar escritas
+- Revise o **Nome** (é como o serviço aparece para os outros administradores) e o **Grupo**.
+- Marque **Habilitado** quando o serviço estiver pronto para uso.
+- **Método** e **Caminho** vêm do Swagger e não podem ser alterados aqui. Para mudar, importe de novo.
+- **Tempo de espera** vazio usa o tempo da conexão.
+- Se o sistema externo mudou esse serviço, aparece o aviso **Contrato alterado no Swagger**. Importe de
+  novo pela conexão ou, se estiver tudo certo, marque **Revisei: manter como está**.
 
-Por padrão toda conexão é somente leitura ("bloqueadas (somente leitura)"). Para endpoints POST/PUT/DELETE:
+### Etapa 2 — Parâmetros de entrada
 
-1. Marque "Liberar escritas (POST/PUT/DELETE) — exige aprovação".
-2. Informe a "Referência da aprovação (chamado/ata)" — o cartão passa a exibir "liberadas (<referência>)".
+O que o serviço precisa receber para funcionar (por exemplo, o CNPJ a consultar).
 
-Sem essa liberação, a chamada de escrita falha no servidor com "Escrita não liberada na conexão &lt;id&gt;
-(exige aprovação)." (código `write_not_allowed`). Escritas também não podem ser testadas em conexão de
-ambiente "Produção" (veja "Testar endpoint" no passo 3).
+![Etapa Parâmetros de entrada](imagens/09-endpoint-etapa2.png)
 
-## Passo 2 — Importar do Swagger
+Em **Origem do valor**, escolha:
 
-Na conexão, o botão de importação abre a janela **"Importar do Swagger — &lt;nome da conexão&gt;"**:
+- **Entrada (formulário/processo)** — o valor vem de quem usa o serviço (o que o usuário digitou ou um
+  dado do processo);
+- **Constante** — um valor fixo, enviado sempre. Use só para valores que **não são senha**.
 
-- **"URL do swagger.json"** — o documento é baixado pelo servidor (respeitando a política de rede; tempo
-  limite de 20 s); a URL informada pode atualizar a URL guardada na conexão;
-- **"ou arquivo .json"** — alternativa de upload, quando o Swagger não é acessível da rede do servidor;
-- **"Gerar prévia"** ("Lendo..." durante a leitura) — nada é gravado até você confirmar;
-- **"Importar selecionadas"** ("Importando...") e **"Cancelar"**.
+### Etapa 3 — Parâmetros de saída
 
-A própria janela explica: "O documento é baixado pelo servidor (respeitando a política de rede) e nada é
-gravado até você confirmar. Versões: troque `v1` por `v2` na URL para importar a outra versão da API."
+O que o serviço devolve (por exemplo, nome, cidade e estado do cliente). Só esses campos podem preencher
+formulários.
 
-### Restrições do documento
+![Etapa Parâmetros de saída](imagens/10-endpoint-etapa3.png)
 
-- Somente **OpenAPI 3 em JSON**. Swagger 2.0 é recusado: "Swagger 2.0 não é suportado: exporte em OpenAPI
-  3 (ex.: Swashbuckle "SerializeAsV2 = false")."
-- JSON inválido: "O arquivo não é um JSON válido (use o swagger.json, não a página do Swagger UI)."
-- Documento sem a estrutura mínima: "Documento sem "openapi: 3.x" e "paths"."
-- Acima de 5 MB: "Documento OpenAPI acima do limite de tamanho."
-- A prévia **expira em 30 minutos** — depois disso, gere outra.
+O catálogo do AX não informa o que cada serviço devolve. Por isso é preciso ensinar o BPM, de uma destas
+formas:
 
-### A prévia
+- **Pelo exemplo:** cole em **Exemplo de resposta (JSON)** um exemplo do que o serviço devolve (pode ter
+  valores inventados, desde que a estrutura seja a mesma) e clique em **Inferir campos do exemplo**. O
+  exemplo é guardado sem os valores.
+- **Pelo teste:** em **Testar no servidor**, informe um valor e clique em **Testar endpoint**. O BPM chama
+  o sistema de verdade e mostra a resposta mascarada. Depois clique em **Usar os N campo(s) desta
+  resposta**. Faça isso em **homologação**.
 
-A prévia resume o documento em pílulas ("N operações", "N leitura(s)", "N escrita(s)", "N novo(s)",
-"N alterado(s)", "N inalterado(s)", "N removido(s) do documento", "segurança: ...") e lista as operações
-por grupo, cada uma com a situação "Novo", "Contrato alterado" ou "Inalterado". Filtros: "Buscar por
-caminho, nome ou operationId...", "Todos os grupos", "Qualquer situação" (Novos / Alterados / Inalterados)
-e tipo ("Leitura e escrita", "Somente leitura (GET)", "Somente escrita").
+Depois, revise a tabela:
 
-- **Seleção padrão**: operações novas ou alteradas, somente leitura (GET), excluindo as que recebem
-  credencial na URL (flag `credential_in_query`).
-- Documento igual ao último importado: "Documento idêntico ao último importado."
-- Operações que saíram do documento: "Não estão mais no documento (serão marcados como “removido”, sem
-  apagar): ..."
-- Cada operação sugere um identificador (derivado de `operationId`, grupo, caminho e método).
+- ajuste o **Rótulo** de cada campo para algo que as pessoas entendam;
+- marque **Sensível** em campos com dados pessoais (CPF, telefone, e-mail etc.). Eles ficam escondidos no
+  histórico e exigem confirmação para aparecer em formulários.
 
-Alertas por operação (textos exatos):
+Se a informação útil vier "dentro" de outra (por exemplo, numa lista chamada `data`), informe isso em
+**Caminho do resultado**. Se o serviço devolver uma lista, marque **A resposta é uma lista**: o BPM usa o
+primeiro item.
 
-- "Recebe senha/token na URL (query string): inseguro, não use para autenticação."
-- "Escrita no sistema externo: fica desabilitada até liberação da conexão (aprovação) e não é repetida
-  automaticamente sem reconciliação."
-- "A documentação não descreve a resposta: cole um exemplo (Parâmetros de saída) ou teste em
-  homologação." (é o caso do Swagger do AX hoje)
-- "Operação marcada como obsoleta (deprecated)."
+> **Testar uma gravação** grava de verdade no sistema externo. O BPM pede uma confirmação, exige que as
+> escritas estejam liberadas na conexão e não deixa testar em conexões de Produção.
 
-### O que é importado
+### Etapa 4 — Segurança e uso
 
-- Métodos `GET`, `POST`, `PUT`, `PATCH` e `DELETE`; parâmetros `path`, `query` e `header` do caminho e da
-  operação — **exceto o cabeçalho `Authorization`** (credencial fica na conexão).
-- Corpo da requisição (`requestBody` JSON) **achatado** em caminhos: objetos viram `a.b`; objetos dentro
-  de listas viram `lista[].campo` (profundidade máxima 6, até 300 campos).
-- Resposta: o primeiro schema JSON encontrado entre os status `200`, `201` e `default`; se for uma lista,
-  o endpoint é marcado como "resposta em lista". Sem schema documentado, o endpoint fica sem campos de
-  saída (complete no passo 3).
-- Tudo entra **desabilitado**.
+![Etapa Segurança e uso, com a consulta publicada nos formulários](imagens/11-endpoint-etapa4.png)
 
-### Reimportação (detecção de mudança por hash)
+A parte de cima resume como o BPM entra no sistema e se o endereço está liberado.
 
-O servidor guarda um hash SHA-256 do contrato de cada endpoint (método, caminho, parâmetros, corpo e
-resposta). Ao reimportar:
+Para que o serviço apareça no editor de formulários, marque **Disponibilizar como fonte de consulta no
+editor de formulários** e preencha:
 
-- endpoints novos entram desabilitados; inalterados não são regravados;
-- endpoints alterados são atualizados **preservando** nome, constantes, campos de saída inferidos,
-  publicação como consulta e vínculos — e ficam marcados como "contrato alterado" até revisão;
-- endpoints que sumiram do documento são apenas **marcados como "removido"**, nunca apagados.
+- **Rótulo no editor** — o nome que quem monta o formulário vai ver;
+- **Parâmetro que recebe o valor digitado** — qual entrada do serviço recebe o que o usuário digitar;
+- **Campos que podem preencher o formulário** — marque só o necessário. Se escolher um campo sensível,
+  confirme que o formulário pode exibi-lo.
 
-O comando `php artisan bpm:openapi-check` roda agendado **diariamente às 06:10 (UTC)** e refaz essa
-comparação para conexões habilitadas com URL de OpenAPI, apenas **marcando** contratos alterados/removidos
-(não aplica nada). Após revisar um endpoint marcado, use a caixa **"Revisei: manter como está"** na etapa 1
-do assistente. A importação e as atualizações de contrato são auditadas (`integration.openapi_imported`,
-`integration.endpoint_contract_updated`).
+Apenas serviços de **consulta** podem ser usados em formulários. Serviços que gravam são usados em
+etapas automáticas do fluxo (veja [Mapeamentos e modo simulado](guia-mapeamentos-e-mock.md)).
 
-## Passo 3 — Aba Endpoints (fontes de dados)
+### Etapa 5 — Resumo
 
-A aba lista todos os endpoints com filtros ("Filtros de pesquisa": "Identificador, nome ou caminho",
-"Conexão", "Grupo", "Situação" — Habilitados / Desabilitados / "Consulta nos formulários" / "Contrato
-alterado/removido" — e "Tipo": "Leitura e escrita", "Leitura (GET)", "Escrita") e as colunas "Situação",
-"Identificador", "Nome", "Serviço", "Grupo", "Origem", "Saída" e "Uso". Pílulas: "Habilitado" /
-"Desabilitado", "Swagger" / "Manual", "definida" / "pendente" (saída), "consulta" / "escrita" / "escrita
-bloqueada", "contrato alterado" / "contrato removido".
+![Etapa Resumo](imagens/12-endpoint-etapa5.png)
 
-**Remoção bloqueada**: ao remover, a confirmação avisa "Remover o endpoint "<id>"? Vínculos ativos e
-formulários que usam a consulta impedem a remoção." — ou seja, o endpoint em uso não pode ser removido.
+Confira tudo e clique em **Finalizar**.
 
-### O assistente em 5 etapas
+> Um serviço usado por algum formulário ou mapeamento **não pode ser removido**. Primeiro tire-o de uso.
 
-Abrir um endpoint (ou criar um manual) abre o assistente: **"Dados do serviço"**, **"Parâmetros de
-entrada"**, **"Parâmetros de saída"**, **"Segurança e uso"** e **"Resumo"**, com os botões "Anterior",
-"Próximo", "Finalizar" ("Salvando...") e "Fechar". Ao salvar: "Endpoint salvo."
+## Passo 4 — Ligar e usar
 
-#### Etapa 1 — Dados do serviço
-
-- "Identificador *" (placeholder `Fornecedores.PorCnpj`), "Nome *", "Conexão", "Grupo (tag)"
-  (placeholder `Fornecedores`), "Habilitado".
-- "Método" e "Caminho (URL do serviço = URL base da conexão + caminho) *" (placeholder
-  `/v1/Fornecedores/{CPF_CNPJ}`). Hint: "Parâmetros entre chaves (ex.: `{filter}`) viram parâmetros de
-  caminho automaticamente." Em endpoints importados: "Método e caminho vêm do Swagger (operationId ...);
-  para mudar, reimporte."
-- "Tempo de espera (s) — vazio = da conexão (15 s)" e "Descrição". A tela mostra a "URL completa:".
-- Se o contrato mudou no Swagger: "Contrato alterado no Swagger." / "Contrato removido no Swagger." com a
-  orientação "Reimporte pela conexão para atualizar parâmetros/corpo, ou marque como revisado." e a caixa
-  **"Revisei: manter como está"**.
-
-#### Etapa 2 — Parâmetros de entrada
-
-Tabela com as colunas "Identificador", "Parâmetro" (PATH, QUERY ou HEADER), "Tipo" (STRING, INTEGER,
-NUMBER, BOOLEAN, DATE), "Obrig.", "Origem do valor" e "Valor constante". Origens possíveis:
-
-- **"Entrada (formulário/processo)"** — o valor vem de quem chama (a consulta do formulário ou o vínculo
-  da operação do BPM);
-- **"Constante"** — valor fixo **não secreto**, sempre enviado; credenciais são recusadas aqui
-  ("credencial: use a conexão").
-
-"Adicionar parâmetro" e "remover" permitem ajustes manuais. O corpo da requisição importado aparece em
-"Corpo da requisição (do Swagger)" com o aviso "O preenchimento do corpo é feito no vínculo com a
-operação do BPM (Mapeamentos), campo a campo."
-
-#### Etapa 3 — Parâmetros de saída
-
-Texto da etapa: "Como no SoftExpert, os tipos podem vir de um exemplo de resposta. Aqui o exemplo é
-guardado só como estrutura (tipos e formatos), sem os valores reais."
-
-- "Caminho do resultado (vazio = raiz)" (placeholder `data ou result.items`) — quando a lista/objeto útil
-  está dentro de um envelope;
-- "A resposta é uma lista (usa o primeiro item nas consultas)";
-- "Exemplo de resposta (JSON)" + **"Inferir campos do exemplo"** — até 512 KB ("Exemplo grande demais
-  (máx. 512 KB)."; "JSON inválido."; "Caminho inválido (ex.: data ou result.items)."); sucesso: "N
-  campo(s) inferido(s). Revise rótulos e marque o que é sensível.";
-- **"Testar no servidor"** — "Chamada real pela conexão (...). Use em homologação; a resposta volta
-  mascarada." Endpoint novo precisa ser salvo antes ("Salve o endpoint antes de testar.");
-- A tabela de campos ("Caminho", "Rótulo", "Tipo", "Sensível") permite revisar o resultado; "Usar os N
-  campo(s) desta resposta" aproveita os campos inferidos de um teste. Vazia: "Sem campos de saída. Cole
-  um exemplo ou teste o endpoint."
-
-**Sintaxe de caminhos JSON** (usada em campos de saída, caminho do resultado e mapeamentos): `a.b` desce
-em objetos; `lista[].campo` e `lista[0].campo` leem **o primeiro item** da lista; `$` é a raiz;
-maiúsculas/minúsculas são toleradas. Caminhos são validados por formato (letras, números, `_`, `.`, `[]`,
-`-`, `$`, até 200 caracteres).
-
-**Testar endpoint**: chama a API de verdade pelo servidor. Para endpoints de **escrita**, é preciso
-marcar a confirmação "Entendo que este teste grava no sistema externo (bloqueado em produção).", a
-conexão precisa ter escritas liberadas, o ambiente não pode ser "Produção", e o teste **não é
-idempotente** (é uma gravação real). Durante o teste: "Chamando...". O teste é auditado
-(`integration.endpoint_tested`).
-
-#### Etapa 4 — Segurança e uso
-
-Mostra a "Autenticação" (da conexão), a "Política de rede" ("destino permitido" ou o motivo do bloqueio),
-o "Tipo" ("Leitura"/"Escrita") e, para escritas, "escritas liberadas na conexão (...)" ou "escritas
-BLOQUEADAS na conexão (somente leitura)". Bloco "Registro": "Cada chamada fica em Execuções com
-pedido/resposta mascarados (CPF, CNPJ, e-mail, telefone e campos marcados como sensíveis)."
-
-**Publicação como consulta** (só leitura): marque "Disponibilizar como fonte de consulta no editor de
-formulários (componente “Consulta AX/API”)" e preencha:
-
-- "Rótulo no editor" — como a fonte aparece no editor de formulários;
-- "Parâmetro que recebe o valor digitado" ("Selecione...") — o parâmetro de entrada que recebe o valor da
-  consulta;
-- "Campos que podem preencher o formulário" — os campos de saída liberados; campos sensíveis exigem a
-  confirmação "Confirmo que o formulário pode exibir dados sensíveis (...).";
-- A tela mostra a **"Chave da fonte no editor: api:&lt;identificador&gt;"** e o lembrete "O servidor refaz
-  a consulta ao salvar o formulário."
-- "Escritas não podem ser consulta; use-as no vínculo de uma tarefa de integração (Mapeamentos)."
-
-#### Etapa 5 — Resumo
-
-Consolida "Identificador", "Serviço", "Situação" ("Habilitado"/"Desabilitado"), "Entrada", "Saída" e
-"Formulários" ("não publicado" quando aplicável). Revise e clique "Finalizar".
-
-## Passo 4 — Habilitar e usar
-
-1. Habilite o endpoint (etapa 1) e a conexão ("Conexão habilitada (chamadas reais pelo servidor)").
-2. A consulta publicada `api:<identificador>` já pode ser usada no componente "Consulta AX" do editor de
-   formulários — veja o [guia de consumo em formulários](guia-consumir-formulario.md).
-3. Para as operações fixas do PO 159 (consultas `tpr`/`item`/`purchaseOrder`/`supplier` e a escrita
-   `transferAndBlock`), crie o vínculo na aba Mapeamentos — veja o
-   [guia de mapeamentos e MOCK](guia-mapeamentos-e-mock.md).
-4. Acompanhe as chamadas na aba Execuções — veja o [guia de operação e suporte](guia-operacao-e-suporte.md).
+1. Ligue o serviço (caixa **Habilitado**, na etapa 1, ou a coluna **Situação** da lista) e a conexão
+   (**Conexão habilitada**).
+2. A consulta já aparece no editor de formulários: veja
+   [Usar consultas nos formulários](guia-consumir-formulario.md).
+3. Para ligar as operações prontas do BPM (consultas do processo de item reprovado e a gravação no AX),
+   use a aba *Mapeamentos*: veja [Mapeamentos e modo simulado](guia-mapeamentos-e-mock.md).
+4. Acompanhe as chamadas na aba *Execuções*: veja
+   [Acompanhar e resolver problemas](guia-operacao-e-suporte.md).

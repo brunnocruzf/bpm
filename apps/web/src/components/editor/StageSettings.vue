@@ -31,6 +31,7 @@ watch(() => props.stage.config, (c) => { config.value = JSON.parse(JSON.stringif
 
 const groups = computed(() => session.meta?.groups ?? [])
 const dateFields = computed(() => props.fields.filter((f) => f.type === 'datetime'))
+const selectedOperation = computed(() => session.meta?.serviceOperations.find((o) => o.key === config.value.operation) ?? null)
 const changeableTypes: StageType[] = ['user_task', 'exclusive_gateway', 'parallel_gateway', 'service_task', 'timer']
 
 function onName() {
@@ -124,9 +125,13 @@ function setConfig(key: string, value: unknown) {
           <label for="st-op">Integração executada</label>
           <select id="st-op" :value="config.operation ?? ''" :disabled="!editable" @change="setConfig('operation', ($event.target as HTMLSelectElement).value || null)">
             <option value="">Selecione...</option>
-            <option v-for="op in session.meta?.serviceOperations" :key="op.key" :value="op.key">{{ op.label }}</option>
+            <option v-for="op in session.meta?.serviceOperations" :key="op.key" :value="op.key">{{ op.label }}{{ op.active === false ? ' (inativa)' : '' }}</option>
           </select>
-          <div v-if="config.operation" class="tm-hint">Grava no processo: {{ session.meta?.serviceOperations.find((o) => o.key === config.operation)?.outputs.join(', ') }}</div>
+          <template v-if="selectedOperation">
+            <div class="tm-hint">Lê do processo: {{ selectedOperation.inputs.join(', ') || '—' }}</div>
+            <div class="tm-hint">Grava no processo: {{ selectedOperation.outputs.join(', ') || '—' }}</div>
+            <div v-if="selectedOperation.active === false" class="tm-hint" style="color:var(--red)">Mapeamento inativo: a etapa vai falhar até ativá-lo em Integrações → Mapeamentos.</div>
+          </template>
         </div>
       </template>
 

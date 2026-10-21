@@ -14,12 +14,19 @@ describe('cópia dos guias (npm run docs:sync)', () => {
       ['integracoes', 'integracoes'],
       ['adr', 'adr'],
     ]) {
-      const files = readdirSync(`${contentDir}/${copy}`)
+      const files = readdirSync(`${contentDir}/${copy}`).filter((f) => f.endsWith('.md'))
       expect(files.length).toBeGreaterThan(0)
       for (const file of files) {
         const fromRepo = readFileSync(`${repoDocs}/${source}/${file}`, 'utf8')
         const fromCopy = readFileSync(`${contentDir}/${copy}/${file}`, 'utf8')
         expect(fromCopy, `${copy}/${file} desatualizado: rode npm run docs:sync`).toBe(fromRepo)
+      }
+      const images = `${repoDocs}/${source}/imagens`
+      if (existsSync(images)) {
+        for (const img of readdirSync(images)) {
+          const copied = `${contentDir}/${copy}/imagens/${img}`
+          expect(existsSync(copied) && readFileSync(copied).equals(readFileSync(`${images}/${img}`)), `${copy}/imagens/${img} desatualizada: rode npm run docs:sync`).toBe(true)
+        }
       }
     }
   })

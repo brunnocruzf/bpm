@@ -43,6 +43,7 @@ class FlowValidator
             $this->error('no_human_task', 'Adicione pelo menos uma etapa humana.');
         }
 
+        $serviceOps = null;
         foreach ($g->ordered() as $s) {
             $outs = $g->out[$s->id];
             $ins = $g->in[$s->id];
@@ -80,8 +81,13 @@ class FlowValidator
                     }
                     break;
                 case Stage::SERVICE_TASK:
-                    if (! array_key_exists((string) $s->configValue('operation'), StageCatalog::SERVICE_OPERATIONS)) {
+                    $serviceOps ??= StageCatalog::serviceOperations();
+                    $op = $serviceOps[(string) $s->configValue('operation')] ?? null;
+                    if (! $op) {
                         $this->error('service_operation', "Selecione a integração executada por \"$name\".", $s);
+                    } elseif (($op['active'] ?? true) === false) {
+                        // mapeamento personalizado inativo: a etapa falharia (não há dados simulados)
+                        $this->warning('service_operation_inactive', "A integração \"{$op['label']}\" de \"$name\" está com o mapeamento inativo: a etapa vai falhar até ativá-lo em Integrações → Mapeamentos.", $s);
                     }
                     break;
                 case Stage::TIMER:

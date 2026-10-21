@@ -1,167 +1,132 @@
-# Guia — Operação e suporte das integrações
+# Acompanhar e resolver problemas
 
-Este guia é para quem opera e dá suporte ao BPM TMSA: acompanhar a saúde das integrações, ler a aba
-Execuções, reconciliar escritas incertas, solucionar erros e rastrear chamadas. Contexto e configuração:
-[guia de criação de integração](guia-criar-integracao.md) e
-[guia de mapeamentos e MOCK](guia-mapeamentos-e-mock.md).
+Este guia é para quem acompanha o dia a dia das integrações: ver se está tudo funcionando, entender por
+que uma chamada falhou e resolver os casos que precisam de uma decisão humana.
 
-## Aba Visão geral
+Configuração: [Criar uma integração](guia-criar-integracao.md) e
+[Mapeamentos e modo simulado](guia-mapeamentos-e-mock.md).
 
-A aba é visível a todos, mas os dados vêm de `GET /api/v1/admin/integrations`, que exige papel `admin`
-ou `auditor` — quem tem apenas `processes.manage` vê o menu, mas não os dados da Visão geral.
+## Visão geral: está tudo funcionando?
 
-Métricas do topo:
+Abra **Administração → Integrações e entregas**, aba **Visão geral**.
 
-- **Flowable REST** — "Disponível" / "Indisponível";
-- **Conexões habilitadas** — habilitadas / total;
-- **Chamadas (24 h)** — total e quantas com falha;
-- **Engine · e-mails** — comandos do outbox pendentes e e-mails com falha.
+![Aba Visão geral com indicadores e alertas](imagens/01-visao-geral.png)
 
-Alertas automáticos (com atalho para a aba correspondente):
+No topo:
 
-- "Conexão <nome>: o último teste falhou.";
-- "Conexão <nome>: N endpoint(s) com contrato alterado no Swagger — reimporte e revise.";
-- "N chamada(s) com falha nas últimas 24 h.";
-- "Há escrita(s) com resultado incerto aguardando reconciliação.";
-- "N operação(ões) do BPM ainda em MOCK (dados simulados): <operações>." (leva à aba Mapeamentos).
+| Indicador | O que mostra |
+|---|---|
+| **Flowable REST** | Se o motor que executa os processos está **Disponível**. |
+| **Conexões habilitadas** | Quantas conexões estão ligadas, do total cadastrado. |
+| **Chamadas (24 h)** | Quantas chamadas a sistemas externos houve no último dia e quantas falharam. |
+| **Engine · e-mails** | Comandos aguardando o motor de processos e e-mails que não puderam ser enviados. |
 
-Painéis: "Como integrar (passo a passo)", "Conexões" (com a pílula "desabilitada" / "teste falhou" /
-"ok" / "não testada"), **"Operações do BPM → transporte efetivo"** (pílula âmbar MOCK, verde REST…) e
-"Chamadas recentes".
+Logo abaixo aparecem **alertas** automáticos, com um link para resolver:
 
-## Aba Execuções
+- "Conexão …: o último teste falhou." — teste de novo a conexão e veja o motivo;
+- "Conexão …: N endpoint(s) com contrato alterado no Swagger" — o sistema externo mudou: importe de
+  novo e revise;
+- "N chamada(s) com falha nas últimas 24 h." — veja em *Execuções*;
+- "Há escrita(s) com resultado incerto aguardando reconciliação." — alguém precisa decidir (veja abaixo);
+- "N operação(ões) do BPM ainda em MOCK (dados simulados)" — essas operações ainda usam dados fictícios;
+- "N mapeamento(s) personalizado(s) inativo(s)" — mapeamentos criados em *Novo mapeamento* que estão
+  desligados: os formulários e etapas que os usam vão falhar até ativá-los.
 
-Texto do topo: "Cada chamada a sistema externo, com pedido e resposta mascarados (sem CPF, CNPJ, e-mail,
-telefone ou campos sensíveis) e o correlation ID para rastreio." A aba exige `settings.manage`,
-`processes.manage` ou `audit.read`.
+No quadro **Operações do BPM → transporte efetivo**, os mapeamentos personalizados aparecem com o nome
+embaixo da chave (`map:…`) e a pílula **INATIVO** (vermelha) quando estão desligados.
 
-- **Filtros**: resultado ("Todos os resultados", "Somente falhas", "Sucesso", "Não encontrado",
-  "Resultado incerto (reconciliar)"), período ("Última hora", "Últimas 24 h", "Últimos 7 dias", "Últimos
-  30 dias") e busca livre ("Operação, endpoint ou correlation ID..."). Estatística "Últimas 24 h:".
-- **Colunas**: "Quando", "Operação", "Endpoint / transporte", "Resultado", "HTTP", "Duração".
-- **Resultados**: `success` "Sucesso", `not_found` "Não encontrado", `unknown` "Resultado incerto",
-  `reconciled_retry` "Reconciliado (repetir)".
-- **Detalhes**: "Pedido (mascarado)", "Resposta (mascarada)", explicação do erro com "O que fazer:",
-  "Correlation ID", "chave de idempotência" e o vínculo com a solicitação (instância do processo).
+Os quadros mostram o passo a passo de configuração, as conexões, como cada operação do BPM está
+funcionando (simulada ou real) e as chamadas mais recentes.
 
-### Reconciliar uma escrita incerta
+> A *Visão geral* mostra dados apenas para administradores e auditores.
 
-Exige `processes.manage`. A janela "Reconciliar escrita com resultado incerto" explica: "A chamada
-<operação> esgotou o tempo depois do envio: o sistema de destino pode ter gravado. Confira lá antes de
-decidir." Opções:
+## Execuções: o histórico de cada chamada
 
-- **"Foi executada"** — "informar as saídas (a próxima tentativa devolve este resultado, sem reenviar)";
-  preencha "Saídas (uma por linha: campo=valor)" (ex.: `numeroDiarioTransferencia=OT-000124`);
-- **"Não foi executada"** — "a próxima tentativa reenvia".
+A aba **Execuções** lista cada chamada feita a um sistema externo. Dados pessoais (CPF, CNPJ, e-mail,
+telefone e campos sensíveis) aparecem mascarados.
 
-Campo "Observação" (até 300 caracteres) e botões "Confirmar"/"Cancelar". Confirmações: "Reconciliado como
-executado: a próxima tentativa devolve o resultado informado, sem reenviar." / "Reconciliado como não
-executado: a próxima tentativa reenvia." A reconciliação é auditada (`integration.execution_reconciled`).
-Faça isso **dentro da janela de tentativas** da etapa de integração (nova tentativa a cada 5 minutos) —
-veja o [guia da etapa Integração](guia-etapa-integracao.md).
+![Aba Execuções com filtros e lista de chamadas](imagens/15-execucoes.png)
 
-## Solução de problemas
+- **Filtros:** por resultado ("Somente falhas", "Sucesso", "Não encontrado", "Resultado incerto
+  (reconciliar)"), por período e por texto (operação, serviço ou código de rastreio).
+- **Resultado:** **Sucesso**, **Não encontrado**, **Resultado incerto** ou **Reconciliado (repetir)**.
+- **detalhes:** mostra o que foi enviado e recebido (mascarado), a explicação do erro com **O que
+  fazer:**, o **Correlation ID** (código de rastreio) e a solicitação ligada à chamada.
 
-Cada falha registra um código com título, causa provável e ação recomendada (visíveis nos detalhes da
-execução). Os códigos das integrações REST:
+![Detalhes de uma execução](imagens/16-execucao-detalhes.png)
 
-| Sintoma | Código | Título | O que fazer |
-|---|---|---|---|
-| Destino bloqueado | `target_blocked` | "Destino bloqueado pela política de rede" | declarar o host em `BPM_INTEGRATION_ALLOWED_HOSTS`; usar https |
-| HTTP 403 | `forbidden` | "Acesso negado pela API (403)" | revisar permissões do usuário de serviço na API |
-| API recusou os dados (400/422) | `request_rejected` | "Requisição recusada pela API" | conferir o de/para do vínculo e os campos obrigatórios |
-| Parâmetro obrigatório sem valor | `request_invalid` | "Requisição incompleta" | garantir a entrada no formulário/processo ou no vínculo |
-| Resposta > 2 MB | `response_too_large` | "Resposta grande demais" | reduzir o escopo do endpoint ou ajustar `BPM_INTEGRATION_MAX_RESPONSE_BYTES` |
-| Escrita bloqueada | `write_not_allowed` | "Escrita não liberada" | liberar escritas na conexão com a referência da aprovação |
-| Tentativa anterior incerta | `reconciliation_required` | "Reconciliação pendente" | conferir no sistema de destino e usar **Reconciliar** em Execuções |
-| Login sem token na resposta | `token_not_found` | "Token não encontrado na resposta" | informar o "Caminho do token na resposta" na conexão |
-| Credencial não testada de verdade | `not_verified` | "Credencial não verificada" | configurar o "Caminho de verificação" e testar a conexão |
-| Credencial recusada (401) | `credential_invalid` (`rest:credential_invalid`) | "Credencial recusada pela API" | renovar/substituir a credencial (somente escrita) |
-| Tempo esgotado | `timeout` | "Tempo esgotado" | verificar rota/firewall; em escrita, o resultado fica incerto |
-| Sem conexão | `connection_failed` | "Não foi possível conectar" | DNS, porta e egress do servidor da API |
-| Limite de requisições | `throttled` | "Limite de envio/requisições" | aguardar e revisar limites na API de destino |
-| Erro interno da API (5xx) | `provider_error` | "Erro do provedor" / indisponibilidade | acionar o responsável pela API com o correlation ID |
-| Endpoint/conexão desligado com vínculo ativo | `not_configured` | configuração pendente | habilitar endpoint e conexão — a operação não volta ao MOCK |
-| Transporte AX não implementado | `not_configured` | "ainda não configurado (contrato AX pendente)" | usar vínculo REST ou MOCK |
+> Ao pedir ajuda à equipe técnica ou à equipe do sistema externo, informe sempre o **Correlation ID**:
+> com ele é possível achar a chamada exata nos registros.
 
-## Rastreio por correlation ID
+## Reconciliar uma gravação com resultado incerto
 
-Cada execução registra um **correlation ID**, exibido nos detalhes da execução e propagado nos logs da
-API. Para acompanhar de ponta a ponta na stack Docker:
+Quando uma gravação demora demais **depois** de enviada, o BPM não sabe se o sistema externo gravou.
+Para não gravar em dobro, ele marca a chamada como **Resultado incerto** e bloqueia novas tentativas até
+alguém decidir.
 
-```bash
-docker compose logs api queue-worker scheduler
-```
+Quem pode: usuários com permissão de **gestão de processos**.
 
-Filtre pelo correlation ID (ou pelo prefixo dele) para cruzar a requisição HTTP, o worker de integração
-(`bpm:external-jobs`, a cada 15 s) e a verificação diária do Swagger (`bpm:openapi-check`, 06:10 UTC).
+1. Em *Execuções*, filtre por **Resultado incerto (reconciliar)**.
+2. **Confira no sistema externo** se a gravação aconteceu (ex.: se o diário de transferência existe no
+   AX).
+3. Clique em **Reconciliar** e escolha:
+   - **Foi executada** — informe o resultado em **Saídas**, um por linha, no formato `campo=valor` (ex.:
+     `numeroDiarioTransferencia=OT-000124`). A próxima tentativa usa esse resultado **sem enviar de
+     novo**;
+   - **Não foi executada** — a próxima tentativa envia de novo.
+4. Se quiser, escreva uma **Observação** (até 300 caracteres) e clique em **Confirmar**.
+
+Faça isso o quanto antes: a etapa automática tenta de novo a cada 5 minutos e, esgotadas as tentativas,
+a solicitação fica parada (veja [Etapa do tipo Integração](guia-etapa-integracao.md)).
+
+## Problemas comuns e o que fazer
+
+A explicação de cada erro aparece nos detalhes da execução. Os mais comuns:
+
+| O que aparece | Causa provável | O que fazer |
+|---|---|---|
+| **Destino bloqueado pela política de rede** | O endereço do sistema não foi liberado no servidor do BPM. | Peça à equipe de TI para liberar o endereço. |
+| **Credencial recusada pela API** | Senha, token ou chave inválidos ou vencidos. | Na conexão, informe a nova senha e teste de novo. |
+| **Acesso negado pela API** | O usuário de serviço não tem permissão naquele serviço. | Peça à equipe do sistema externo para liberar o acesso. |
+| **Credencial não verificada** | A conexão não tem caminho de verificação. | Preencha o **Caminho de verificação** e teste a conexão. |
+| **Token não encontrado na resposta** | O login funcionou, mas o BPM não achou o código de acesso na resposta. | Preencha **Caminho do token na resposta** na conexão. |
+| **Requisição recusada pela API** | O sistema não aceitou os dados enviados. | Confira o mapeamento (entrada) e os campos obrigatórios. |
+| **Requisição incompleta** | Faltou uma informação obrigatória. | Garanta que o formulário ou o processo preencha o dado, ou ajuste o mapeamento. |
+| **Escrita não liberada** | A conexão não está liberada para gravar. | Libere as escritas na conexão, com o número da aprovação. |
+| **Reconciliação pendente** | Uma tentativa anterior ficou com resultado incerto. | Reconcilie em *Execuções* (veja acima). |
+| **Tempo esgotado** | O sistema demorou demais para responder. | Tente de novo; se persistir, acione a equipe de TI. Em gravações, o resultado fica incerto. |
+| **Não foi possível conectar** | O servidor do BPM não alcança o sistema. | Acione a equipe de TI. |
+| **Limite de envio/requisições** | O sistema externo limitou o número de chamadas. | Aguarde alguns minutos. |
+| **Erro do provedor** / indisponível | Erro dentro do sistema externo. | Acione a equipe do sistema externo com o Correlation ID. |
+| **Resposta grande demais** | O serviço devolveu dados demais. | Use um serviço mais específico ou acione a equipe de TI. |
+| Pílula vermelha **REST — endpoint/conexão desligado** | O mapeamento está ativo, mas o serviço ou a conexão está desligado. | Ligue os dois, ou desative o mapeamento para voltar ao modo simulado. |
+| "A consulta … não está ativa no momento" (formulário) ou etapa com "mapeamento inativo" | Um mapeamento criado em *Novo mapeamento* está inativo (ele não tem modo simulado). | Ative-o na aba *Mapeamentos* (**Editar** → *Resumo* → **Ativar mapeamento**). |
 
 ## Auditoria
 
-Os 12 eventos `integration.*` (todos gravados com `AuditLogger::record`, sem segredos nem valores de
-formulário):
+Toda mudança de configuração e toda execução ficam registradas em **Auditoria**, sem senhas e sem os
+valores dos formulários. Eventos que você pode procurar:
 
-| Evento | Rótulo |
-|---|---|
-| `integration.completed` | "Integração concluída" |
-| `integration.failed` | "Integração falhou" |
-| `integration.connection_saved` | "Conexão de integração salva" |
-| `integration.connection_tested` | "Conexão de integração testada" |
-| `integration.secret_updated` | "Credencial de integração substituída" |
-| `integration.openapi_imported` | "Endpoints importados do OpenAPI/Swagger" |
-| `integration.endpoint_contract_updated` | "Contrato do endpoint atualizado pela importação" |
-| `integration.endpoint_saved` | "Endpoint de integração salvo" |
-| `integration.endpoint_deleted` | "Endpoint de integração removido" |
-| `integration.endpoint_tested` | "Endpoint de integração testado" |
-| `integration.binding_saved` | "Vínculo de operação com endpoint salvo" |
-| `integration.execution_reconciled` | "Escrita com resultado incerto reconciliada" |
+- Integração concluída / Integração falhou;
+- Conexão de integração salva / testada;
+- Credencial de integração substituída;
+- Endpoints importados do OpenAPI/Swagger / Contrato do endpoint atualizado pela importação;
+- Endpoint de integração salvo / removido / testado;
+- Vínculo de operação com endpoint salvo;
+- Mapeamento personalizado criado / excluído;
+- Escrita com resultado incerto reconciliada.
 
-Pedidos, respostas, logs e mensagens de erro passam pelo mascaramento (`Masker`): CPF, CNPJ, e-mail,
-telefone, campos marcados como sensíveis, tokens, JWT, blocos PEM e credenciais em URL são redigidos.
+## Pontos de atenção
 
-## Comportamentos que exigem cuidado
-
-1. **MOCK sem trava em produção** e vínculo desativado/ausente = volta ao MOCK (é o rollback documentado):
-   um processo real pode gravar dados sintéticos (ex.: `DT-…`).
-2. Fonte `api:` desabilitada/despublicada depois de usada num formulário: "Consultar" recebe 404 e a
-   submissão **pula a consulta** (destinos vazios, sem erro). Reimportar o Swagger pode trocar os campos
-   de saída e esvaziar destinos.
-3. `GET /lookups/{fonte}`: qualquer usuário autenticado consulta qualquer fonte publicada.
-4. Etapa de integração: falha = nova tentativa a cada 5 min até esgotar as tentativas (o número vem do
-   Flowable; padrão de fábrica 3) → dead-letter **sem retomada pelo BPM**; escrita incerta precisa ser
-   reconciliada nessa janela; exceção inesperada não consome tentativa (o job volta a cada ~5 min,
-   indefinidamente).
-5. **HTTP 404 numa escrita conta como sucesso** (com saídas vazias).
-6. Ativar vínculo não confere se endpoint/conexão estão habilitados nem se a escrita aponta para endpoint
-   de escrita; a idempotência é por endpoint — trocar o endpoint entre tentativas pode reenviar a escrita.
-7. O validador do fluxo não confere se as entradas da operação (`numeroOcdev`, `codigoItem`,
-   `ordemCompra`) existem nos dados do processo; o editor não mostra as entradas exigidas.
-8. Falha de integração não muda o status da instância nem aparece em "Etapas atuais"; o diagrama não
-   destaca a etapa de integração.
-9. Erro 4xx (diferente de 404) numa consulta vira "indisponível" (503) para o usuário; as mensagens do
-   formulário dizem "AX" mesmo para fontes REST, e o construtor chama o componente de "Consulta AX".
-10. A Visão geral exige papel admin/auditor, mas o menu da tela aparece para quem tem
-    `processes.manage`; o `metadata.lookups.result` da submissão fica sem máscara (é o resultado integral
-    da consulta).
-
-## Referência rápida de rotas
-
-Todas sob `/api/v1`, autenticadas; a autorização fina é feita no controller (não no arquivo de rotas):
-
-| Método e caminho | Permissão | Limite |
-|---|---|---|
-| `GET /lookups/{source}` | qualquer autenticado | 120/min |
-| `GET /admin/integrations` (Visão geral) | papel admin/auditor | — |
-| `GET`/`POST /admin/integrations/connections` | `settings.manage` | 20/min (POST) |
-| `PUT /admin/integrations/connections/{id}` | `settings.manage` | 30/min |
-| `POST /admin/integrations/connections/{id}/test` | `settings.manage` | 10/min |
-| `POST /admin/integrations/connections/{id}/openapi/preview` e `…/apply` | `settings.manage` | 10/min |
-| `GET`/`POST /admin/integrations/endpoints` | `settings.manage` | 30/min (POST) |
-| `POST /admin/integrations/endpoints/infer` | `settings.manage` | 30/min |
-| `GET`/`PUT`/`DELETE /admin/integrations/endpoints/{id}` | `settings.manage` | 60/min (PUT) |
-| `POST /admin/integrations/endpoints/{id}/test` | `settings.manage` | 20/min |
-| `GET /admin/integrations/bindings` e `PUT /admin/integrations/bindings/{operação}` | `settings.manage` | — |
-| `GET /admin/integrations/executions` | `settings.manage`, `processes.manage` ou `audit.read` | — |
-| `POST /admin/integrations/executions/{id}/reconcile` | `processes.manage` | — |
-| `GET /admin/engine-commands` | papel admin, auditor ou process_admin | — |
-| `POST /admin/engine-commands/{id}/retry` | `processes.manage` | — |
+1. **Modo simulado em processos reais.** Sem mapeamento ativo, a operação usa dados fictícios, inclusive
+   em produção. Desativar um mapeamento por engano faz processos reais gravarem números fictícios (DT-…).
+2. **Consulta desligada depois de usada.** Se uma consulta for desligada ou despublicada, os formulários
+   que a usam param de preenchê-la. Importar de novo o Swagger pode mudar os campos devolvidos.
+3. **Qualquer usuário** com acesso ao BPM pode usar qualquer consulta publicada.
+4. **Etapa automática parada.** Depois de esgotar as tentativas, a solicitação fica parada na etapa de
+   integração e precisa do suporte técnico para seguir.
+5. **"Não encontrado" numa gravação conta como sucesso**, sem resultado. Se isso não fizer sentido para
+   a operação, revise o serviço escolhido.
+6. **Ativar um mapeamento não confere** se o serviço e a conexão estão ligados. Confira a pílula verde
+   **REST (real)** depois de salvar.
+7. **As mensagens dos formulários dizem "AX"** mesmo quando o sistema é outro.

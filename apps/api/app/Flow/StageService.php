@@ -404,7 +404,7 @@ class StageService
                     ? ['mode' => $config['actionPlan']['mode'], 'field' => preg_match('/^[A-Za-z][A-Za-z0-9_]{0,62}$/', (string) ($config['actionPlan']['field'] ?? '')) ? $config['actionPlan']['field'] : 'acoes']
                     : null,
             ], fn ($v) => $v !== null),
-            Stage::SERVICE_TASK => ['operation' => array_key_exists((string) ($config['operation'] ?? ''), StageCatalog::SERVICE_OPERATIONS) ? $config['operation'] : null],
+            Stage::SERVICE_TASK => ['operation' => array_key_exists((string) ($config['operation'] ?? ''), StageCatalog::serviceOperations()) ? $config['operation'] : null],
             Stage::TIMER => ($config['mode'] ?? 'duration') === 'date'
                 ? ['mode' => 'date', 'dateField' => preg_match('/^[A-Za-z][A-Za-z0-9_]{0,62}$/', (string) ($config['dateField'] ?? '')) ? $config['dateField'] : null]
                 : ['mode' => 'duration', 'duration' => strtoupper(substr((string) ($config['duration'] ?? 'P1D'), 0, 20))],

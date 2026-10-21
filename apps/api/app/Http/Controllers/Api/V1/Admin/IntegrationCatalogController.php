@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Audit\AuditDiff;
 use App\Authorization\Permissions;
-use App\Flow\StageCatalog;
 use App\Forms\FieldCatalog;
 use App\Http\Controllers\Api\V1\ApiController;
+use App\Integrations\Ax\AxGateway;
+use App\Integrations\BpmOperations;
 use App\Integrations\IntegrationUnavailable;
 use App\Integrations\Rest\JsonPaths;
 use App\Integrations\Rest\OpenApiImporter;
@@ -18,6 +19,7 @@ use App\Models\IntegrationBinding;
 use App\Models\IntegrationConnection;
 use App\Models\IntegrationEndpoint;
 use App\Models\IntegrationExecution;
+use App\Models\ProcessStageVersion;
 use App\Settings\SecretStore;
 use App\Support\ApiProblem;
 use App\Support\AuditLogger;
@@ -28,6 +30,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 /**
  * Catálogo de integrações REST (Administração → Integrações e entregas; ADR-0016), no estilo das
@@ -246,56 +249,82 @@ class IntegrationCatalogController extends ApiController
 
     // ------------------------------------------------------------------ vínculos (operações do BPM → endpoints)
 
+    /** Operações do BPM (fixas do PO 159 + mapeamentos personalizados) e seus vínculos. */
     public function bindings(): JsonResponse
     {
         Gate::authorize(Permissions::SETTINGS_MANAGE);
         $rows = IntegrationBinding::with('endpoint.connection')->get()->keyBy('operation');
-        $ops = [];
-        foreach (FieldCatalog::LOOKUP_SOURCES as $key => $def) {
-            $ops[] = ['operation' => $def['operation'], 'label' => 'Consulta nos formulários: '.$def['label'], 'kind' => 'lookup', 'inputs' => ['value' => 'Valor digitado no formulário'], 'outputs' => $def['fields'], 'lookupSource' => $key];
-        }
-        foreach (StageCatalog::SERVICE_OPERATIONS as $key => $def) {
-            $ops[] = ['operation' => $def['axOperation'], 'label' => 'Tarefa de integração: '.$def['label'], 'kind' => 'write', 'inputs' => array_combine($def['inputs'], $def['inputs']), 'outputs' => array_combine($def['outputs'], $def['outputs']), 'serviceOperation' => $key];
-        }
 
-        return response()->json(['data' => array_map(function ($op) use ($rows) {
+        return response()->json(['data' => array_map(function (array $op) use ($rows) {
             $b = $rows->get($op['operation']);
 
-            return [...$op, 'configuredTransport' => (string) config('bpm.ax.transports.'.$op['operation'], 'MOCK'), 'binding' => $b ? [
-                'endpointId' => $b->endpoint_id, 'endpointKey' => $b->endpoint?->key, 'endpointName' => $b->endpoint?->name, 'connection' => $b->endpoint?->connection->name,
-                'enabled' => $b->enabled, 'inputMap' => (object) ($b->input_map ?? []), 'outputMap' => (object) ($b->output_map ?? []), 'updatedAt' => $b->updated_at?->toIso8601String(),
-                'usable' => $b->endpoint && $b->endpoint->enabled && $b->endpoint->connection->enabled,
-            ] : null];
-        }, $ops)]);
+            return [...$op, 'inputs' => (object) $op['inputs'], 'outputs' => (object) $op['outputs'],
+                'configuredTransport' => $op['custom'] ? null : AxGateway::configuredTransport($op['operation']),
+                'usage' => $op['custom'] ? $this->customUsage($op['operation'], $op['kind']) : null,
+                'binding' => $b ? [
+                    'endpointId' => $b->endpoint_id, 'endpointKey' => $b->endpoint?->key, 'endpointName' => $b->endpoint?->name, 'connection' => $b->endpoint?->connection->name,
+                    'enabled' => $b->enabled, 'inputMap' => (object) ($b->input_map ?? []), 'outputMap' => (object) ($b->output_map ?? []), 'updatedAt' => $b->updated_at?->toIso8601String(),
+                    'usable' => $b->endpoint && $b->endpoint->enabled && $b->endpoint->connection->enabled,
+                ] : null];
+        }, BpmOperations::all())]);
+    }
+
+    /** Novo mapeamento: operação do BPM criada pelo administrador (consulta nos formulários ou etapa automática do fluxo). */
+    public function storeBinding(Request $request): JsonResponse
+    {
+        Gate::authorize(Permissions::SETTINGS_MANAGE);
+        $data = $request->validate([
+            'key' => ['required', 'string', 'regex:'.IntegrationBinding::CUSTOM_KEY],
+            'kind' => ['required', Rule::in(IntegrationBinding::KINDS)],
+        ], [
+            'key.required' => 'Informe o identificador.',
+            'key.regex' => 'Identificador inválido: comece com uma letra e use de 3 a 41 letras, números ou _ (sem espaços ou acentos).',
+            'kind.required' => 'Escolha o tipo do mapeamento.',
+            'kind.in' => 'Escolha o tipo do mapeamento.',
+        ]);
+        $operation = IntegrationBinding::CUSTOM_PREFIX.$data['key'];
+        if (IntegrationBinding::whereRaw('lower(operation) = ?', [mb_strtolower($operation)])->exists()) {
+            throw ApiProblem::validation(['key' => ['Já existe um mapeamento com este identificador.']]);
+        }
+
+        return $this->saveCustom($request, new IntegrationBinding(['operation' => $operation, 'custom' => true, 'kind' => $data['kind'], 'enabled' => false]), 201);
+    }
+
+    /** Exclui um mapeamento personalizado que não esteja em uso (formulários ou etapas de fluxo). */
+    public function deleteBinding(string $operation): Response
+    {
+        Gate::authorize(Permissions::SETTINGS_MANAGE);
+        $b = IntegrationBinding::custom()->where('operation', $operation)->first()
+            ?? throw ApiProblem::notFound('Somente mapeamentos criados em "Novo mapeamento" podem ser excluídos.');
+        $usage = $this->customUsage($b->operation, (string) $b->kind);
+        if ($usage['forms'] > 0) {
+            throw ApiProblem::conflict("Consulta usada em {$usage['forms']} formulário(s): retire-a dos formulários antes de excluir.", 'binding_in_use');
+        }
+        if ($usage['stages'] > 0) {
+            throw ApiProblem::conflict("Integração usada em {$usage['stages']} etapa(s) de fluxo: troque a integração dessas etapas antes de excluir.", 'binding_in_use');
+        }
+        AuditLogger::record('integration.binding_deleted', 'integration_binding', $b->id, ['operation' => $b->operation, 'kind' => $b->kind], null, $this->user(), context: ['object_name' => (string) $b->label]);
+        $b->delete();
+
+        return response()->noContent();
     }
 
     public function saveBinding(Request $request, string $operation): JsonResponse
     {
         Gate::authorize(Permissions::SETTINGS_MANAGE);
-        $known = collect(json_decode((string) $this->bindings()->getContent(), true)['data'])->keyBy('operation');
-        $op = $known->get($operation) ?? throw ApiProblem::notFound('Operação desconhecida.');
+        $op = BpmOperations::find($operation) ?? throw ApiProblem::notFound('Operação desconhecida.');
+        if ($op['custom']) {
+            return $this->saveCustom($request, IntegrationBinding::where('operation', $operation)->firstOrFail());
+        }
         $data = $request->validate(['endpointId' => ['nullable', 'uuid'], 'enabled' => ['boolean'], 'inputMap' => ['array'], 'outputMap' => ['array']]);
         $endpoint = ! empty($data['endpointId']) ? $this->endpoint((string) $data['endpointId']) : null;
         $errors = [];
         if ($endpoint && $op['kind'] === 'lookup' && $endpoint->method !== 'GET') {
             $errors['endpointId'][] = 'Consultas precisam de endpoint de leitura (GET).';
         }
-        $paramNames = array_map(fn ($p) => (string) $p['name'], (array) ($endpoint ? $endpoint->params : []));
-        $inputMap = [];
-        foreach ((array) ($data['inputMap'] ?? []) as $target => $source) {
-            $target = (string) $target;
-            $source = (string) $source;
-            if ($source === '') {
-                continue;
-            }
-            $okTarget = in_array($target, $paramNames, true) || (str_starts_with($target, 'body:') && preg_match('/^body:[A-Za-z0-9_.\[\]\-]{1,200}$/', $target));
-            $okSource = (str_starts_with($source, 'input:') && array_key_exists(substr($source, 6), (array) $op['inputs'])) || (str_starts_with($source, 'const:') && mb_strlen($source) <= 206);
-            if (! $okTarget || ! $okSource || (str_starts_with($source, 'const:') && preg_match(self::AUTH_LIKE, $target))) {
-                $errors['inputMap'][] = "Entrada inválida: $target ⇐ $source.";
-
-                continue;
-            }
-            $inputMap[$target] = $source;
+        [$inputMap, $inputErrors] = $this->sanitizeInputMap((array) ($data['inputMap'] ?? []), $endpoint, fn (string $field) => array_key_exists($field, $op['inputs']));
+        if ($inputErrors) {
+            $errors['inputMap'] = $inputErrors;
         }
         $outputMap = [];
         foreach ((array) ($data['outputMap'] ?? []) as $field => $path) {
@@ -322,6 +351,139 @@ class IntegrationCatalogController extends ApiController
             diff: AuditDiff::between($before, $b->only(['endpoint_id', 'enabled', 'input_map', 'output_map'])), context: ['object_name' => $op['label']]);
 
         return $this->bindings();
+    }
+
+    /**
+     * Grava um mapeamento personalizado. A definição da operação sai do próprio de/para:
+     *  - entrada: consulta recebe só o valor digitado ("input:value"); etapa automática lê os dados do
+     *    processo citados ("input:<chave>");
+     *  - saída: cada item {key, label, path} vira um dado devolvido ao BPM (campo do Consulta AX ou dado do processo).
+     */
+    private function saveCustom(Request $request, IntegrationBinding $b, int $status = 200): JsonResponse
+    {
+        $data = $request->validate([
+            'label' => ['required', 'string', 'max:120'],
+            'description' => ['nullable', 'string', 'max:400'],
+            'endpointId' => ['required', 'uuid'],
+            'enabled' => ['boolean'],
+            'inputMap' => ['array'],
+            'outputs' => ['array', 'max:30'],
+            'outputs.*.key' => ['required', 'string', 'regex:'.IntegrationBinding::FIELD_KEY],
+            'outputs.*.label' => ['nullable', 'string', 'max:120'],
+            'outputs.*.path' => ['required', 'string', 'regex:/^[A-Za-z0-9_.\[\]\-$]{1,200}$/'],
+        ], [
+            'label.required' => 'Informe o nome do mapeamento.',
+            'endpointId.required' => 'Escolha o endpoint que o mapeamento vai chamar.',
+            'outputs.max' => 'No máximo 30 dados de saída.',
+            'outputs.*.key.required' => 'Informe a chave do dado no BPM.',
+            'outputs.*.key.regex' => 'Chave inválida: comece com uma letra e use apenas letras, números ou _.',
+            'outputs.*.path.required' => 'Informe o caminho na resposta.',
+            'outputs.*.path.regex' => 'Caminho inválido (ex.: nome ou contato.email).',
+        ]);
+        $endpoint = $this->endpoint((string) $data['endpointId']);
+        $lookup = $b->kind === 'lookup';
+        $errors = [];
+        if ($lookup && $endpoint->method !== 'GET') {
+            $errors['endpointId'][] = 'Consultas nos formulários precisam de um endpoint de leitura (GET).';
+        }
+        [$inputMap, $inputErrors] = $this->sanitizeInputMap((array) ($data['inputMap'] ?? []), $endpoint,
+            fn (string $field) => $lookup ? $field === 'value' : preg_match(IntegrationBinding::FIELD_KEY, $field) === 1);
+        if ($inputErrors) {
+            $errors['inputMap'] = $inputErrors;
+        }
+        $inputs = $lookup
+            ? [['key' => 'value', 'label' => BpmOperations::LOOKUP_INPUT['value']]]
+            : collect($inputMap)->filter(fn ($s) => str_starts_with($s, 'input:'))->map(fn ($s) => substr($s, 6))->unique()->values()->map(fn ($k) => ['key' => $k, 'label' => $k])->all();
+        $outputs = [];
+        $outputMap = [];
+        foreach (array_values((array) ($data['outputs'] ?? [])) as $i => $row) {
+            $key = (string) $row['key'];
+            if (array_key_exists($key, $outputMap)) {
+                $errors["outputs.$i.key"][] = "Chave repetida: $key.";
+
+                continue;
+            }
+            $label = trim((string) ($row['label'] ?? ''));
+            $outputs[] = ['key' => $key, 'label' => $label !== '' ? $label : $key];
+            $outputMap[$key] = (string) $row['path'];
+        }
+        $enabled = (bool) ($data['enabled'] ?? false);
+        if ($enabled) {
+            if ($outputMap === []) {
+                $errors['outputs'][] = 'Para ativar, escolha pelo menos um dado de saída.';
+            }
+            if ($lookup && ! in_array('input:value', $inputMap, true)) {
+                $errors['inputMap'][] = 'Para ativar, escolha qual parâmetro do endpoint recebe o valor digitado no formulário.';
+            }
+            if (! $lookup && $inputMap === []) {
+                $errors['inputMap'][] = 'Para ativar, informe pelo menos uma entrada do endpoint.';
+            }
+            foreach ((array) ($endpoint->params ?? []) as $p) {
+                if (! empty($p['required']) && ($p['mode'] ?? 'input') === 'input' && ! array_key_exists((string) $p['name'], $inputMap)) {
+                    $errors['inputMap'][] = "Para ativar, informe o parâmetro obrigatório \"{$p['name']}\".";
+                }
+            }
+        }
+        if ($errors) {
+            throw ApiProblem::validation($errors);
+        }
+        $fields = ['endpoint_id', 'enabled', 'label', 'description', 'input_map', 'output_map', 'outputs'];
+        $before = $b->exists ? $b->only($fields) : [];
+        $b->fill(['endpoint_id' => $endpoint->id, 'enabled' => $enabled, 'label' => trim((string) $data['label']), 'description' => trim((string) ($data['description'] ?? '')) ?: null,
+            'inputs' => $inputs, 'outputs' => $outputs, 'input_map' => $inputMap, 'output_map' => $outputMap, 'updated_by' => $this->user()->id])->save();
+        AuditLogger::record($status === 201 ? 'integration.binding_created' : 'integration.binding_saved', 'integration_binding', $b->id,
+            ['operation' => $b->operation, 'kind' => $b->kind, 'endpoint' => $endpoint->key, 'enabled' => $b->enabled], null, $this->user(),
+            diff: AuditDiff::between($before, $b->only($fields)), context: ['object_name' => (string) $b->label]);
+
+        return $this->bindings()->setStatusCode($status);
+    }
+
+    /**
+     * De/para da entrada: destino = parâmetro do endpoint ou "body:<caminho>"; origem = "input:<dado>" | "const:<valor>".
+     * Constante nunca vai para destino com cara de credencial (fica na conexão).
+     *
+     * @param  array<mixed>  $map
+     * @param  callable(string):bool  $validInput
+     * @return array{0: array<string,string>, 1: list<string>}
+     */
+    private function sanitizeInputMap(array $map, ?IntegrationEndpoint $endpoint, callable $validInput): array
+    {
+        $paramNames = array_map(fn ($p) => (string) $p['name'], (array) ($endpoint ? $endpoint->params : []));
+        $inputMap = [];
+        $errors = [];
+        foreach ($map as $target => $source) {
+            $target = (string) $target;
+            $source = (string) $source;
+            if ($source === '') {
+                continue;
+            }
+            $okTarget = in_array($target, $paramNames, true) || (str_starts_with($target, 'body:') && preg_match('/^body:[A-Za-z0-9_.\[\]\-]{1,200}$/', $target));
+            $okSource = (str_starts_with($source, 'input:') && $validInput(substr($source, 6))) || (str_starts_with($source, 'const:') && mb_strlen($source) <= 206);
+            if (! $okTarget || ! $okSource || (str_starts_with($source, 'const:') && preg_match(self::AUTH_LIKE, $target))) {
+                $errors[] = "Entrada inválida: $target ⇐ $source.";
+
+                continue;
+            }
+            $inputMap[$target] = $source;
+        }
+
+        return [$inputMap, $errors];
+    }
+
+    /**
+     * Uso de um mapeamento personalizado: consulta → formulários que a citam; etapa → etapas de fluxo.
+     *
+     * @return array{forms:int, stages:int}
+     */
+    private function customUsage(string $operation, string $kind): array
+    {
+        if ($kind === 'lookup') {
+            $like = '%"'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $operation).'"%';
+
+            return ['forms' => FormSchemaVersion::where('schema', 'like', $like)->count(), 'stages' => 0];
+        }
+
+        return ['forms' => 0, 'stages' => ProcessStageVersion::where('stage_type', ProcessStageVersion::SERVICE_TASK)->where('config->operation', $operation)->count()];
     }
 
     // ------------------------------------------------------------------ execuções

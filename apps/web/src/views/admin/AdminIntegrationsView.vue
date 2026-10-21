@@ -19,7 +19,8 @@ import { ENV_LABEL, RESULT_LABEL, RESULT_TONE, type Connection } from '@/compone
 
 interface Health {
   engine: { name: string; healthy: boolean }
-  ax: { operation: string; transport: string; configured: string }[]
+  /** custom: mapeamento personalizado (transport INATIVO quando sem vínculo ativo) */
+  ax: { operation: string; transport: string; configured: string | null; label: string | null; custom: boolean }[]
   connections: { id: string; key: string; name: string; system: string; enabled: boolean; environment: string; endpoints: number; enabledEndpoints: number; lastTestOk: boolean | null; lastTestedAt: string | null; openapiImportedAt: string | null; changedEndpoints: number }[]
   executions24h: Record<string, number>
   outbox: Record<string, number>
@@ -74,6 +75,7 @@ async function retry(c: Command) {
 const execTotal = computed(() => Object.values(health.value?.executions24h ?? {}).reduce((a, b) => a + Number(b), 0))
 const execFailures = computed(() => Object.entries(health.value?.executions24h ?? {}).filter(([r]) => !['success', 'not_found'].includes(r)).reduce((a, [, n]) => a + Number(n), 0))
 const mockOps = computed(() => (health.value?.ax ?? []).filter((a) => a.transport === 'MOCK'))
+const inactiveCustom = computed(() => (health.value?.ax ?? []).filter((a) => a.custom && a.transport === 'INATIVO'))
 const alerts = computed(() => {
   const out: { tone: string; text: string; tab?: string }[] = []
   for (const c of health.value?.connections ?? []) {
@@ -83,6 +85,7 @@ const alerts = computed(() => {
   if (execFailures.value) out.push({ tone: 'warn', text: `${execFailures.value} chamada(s) com falha nas últimas 24 h.`, tab: 'executions' })
   if ((health.value?.executions24h?.unknown ?? 0) > 0) out.push({ tone: 'err', text: 'Há escrita(s) com resultado incerto aguardando reconciliação.', tab: 'executions' })
   if (mockOps.value.length) out.push({ tone: 'info', text: `${mockOps.value.length} operação(ões) do BPM ainda em MOCK (dados simulados): ${mockOps.value.map((m) => m.operation).join(', ')}.`, tab: 'bindings' })
+  if (inactiveCustom.value.length) out.push({ tone: 'warn', text: `${inactiveCustom.value.length} mapeamento(s) personalizado(s) inativo(s) — formulários e etapas que os usam vão falhar: ${inactiveCustom.value.map((m) => m.label ?? m.operation).join(', ')}.`, tab: 'bindings' })
   return out
 })
 const tone = (s: string) => (s === 'CONFIRMED' || s === 'SENT' ? 'green' : s === 'FAILED' ? 'red' : s === 'SKIPPED' ? 'neutral' : 'amber')
@@ -142,7 +145,7 @@ onMounted(load)
         <section class="tm-panel">
           <div class="tm-panel-head"><div class="tm-panel-title">Operações do BPM → transporte efetivo</div></div>
           <table class="tm-table" style="min-width:0">
-            <tbody><tr v-for="a in health.ax" :key="a.operation"><td><code>{{ a.operation }}</code></td><td><span class="tm-pill" :class="a.transport === 'MOCK' ? 'amber' : a.transport.startsWith('REST') ? 'green' : 'blue'">{{ a.transport }}</span></td></tr></tbody>
+            <tbody><tr v-for="a in health.ax" :key="a.operation"><td><code>{{ a.operation }}</code><div v-if="a.label" class="tm-hint">{{ a.label }}</div></td><td><span class="tm-pill" :class="a.transport === 'MOCK' ? 'amber' : a.transport.startsWith('REST') ? 'green' : a.transport === 'INATIVO' ? 'red' : 'blue'">{{ a.transport }}</span></td></tr></tbody>
           </table>
           <div class="tm-hint" style="padding:0 14px 12px">MOCK = dados simulados. Ao ativar um mapeamento, a operação passa a chamar o endpoint real. Escritas nunca usam SQL.</div>
         </section>

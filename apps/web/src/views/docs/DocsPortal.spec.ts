@@ -30,10 +30,10 @@ describe('Portal de documentação de integrações (público)', () => {
     expect(items.slice(0, 6)).toEqual([
       'Visão geral',
       'Criar uma integração',
-      'Mapeamentos e MOCK',
-      'Consumir em formulários (Form.io)',
+      'Mapeamentos e modo simulado',
+      'Usar consultas nos formulários',
       'Etapa do tipo Integração',
-      'Operação e suporte',
+      'Acompanhar e resolver problemas',
     ])
     const groups = wrapper.findAll('.docs-group__toggle').map((b) => b.text())
     expect(groups).toEqual(['Primeiros passos', 'Guias', 'Referência'])

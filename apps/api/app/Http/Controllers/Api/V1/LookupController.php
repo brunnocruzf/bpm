@@ -22,6 +22,9 @@ class LookupController extends ApiController
         try {
             $result = $lookups->run($source, $value);
         } catch (IntegrationUnavailable $e) {
+            if ($e->reason === 'not_configured') {
+                throw ApiProblem::unavailable("A consulta \"{$def['label']}\" não está ativa no momento. Avise o administrador das integrações; seus dados não foram perdidos.");
+            }
             throw ApiProblem::unavailable('O '.($def['system'] ?? 'AX').' não respondeu. Tente novamente; seus dados não foram perdidos.');
         }
 

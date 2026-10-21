@@ -78,6 +78,9 @@ class SubmissionProcessor
             try {
                 $result = $this->lookups->run($sourceKey, $value, $ctx->instance?->id);
             } catch (IntegrationUnavailable $e) {
+                if ($e->reason === 'not_configured') {
+                    throw ApiProblem::unavailable("A consulta de \"{$c['label']}\" não está ativa no momento. Avise o administrador das integrações; seus dados não foram perdidos.");
+                }
                 throw ApiProblem::unavailable("Não foi possível consultar o $system para \"{$c['label']}\". Seus dados não foram perdidos; tente novamente em instantes.");
             }
             if ($result === null) {

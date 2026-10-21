@@ -32,14 +32,14 @@ export const DOC_PAGES: DocPage[] = [
   },
   {
     slug: 'mapeamentos-e-mock',
-    title: 'Mapeamentos e MOCK',
+    title: 'Mapeamentos e modo simulado',
     group: 'Guias',
     file: 'guia-mapeamentos-e-mock.md',
     load: () => import('./content/integracoes/guia-mapeamentos-e-mock.md?raw').then((m) => m.default),
   },
   {
     slug: 'consumir-formulario',
-    title: 'Consumir em formulários (Form.io)',
+    title: 'Usar consultas nos formulários',
     group: 'Guias',
     file: 'guia-consumir-formulario.md',
     load: () => import('./content/integracoes/guia-consumir-formulario.md?raw').then((m) => m.default),
@@ -53,7 +53,7 @@ export const DOC_PAGES: DocPage[] = [
   },
   {
     slug: 'operacao-e-suporte',
-    title: 'Operação e suporte',
+    title: 'Acompanhar e resolver problemas',
     group: 'Guias',
     file: 'guia-operacao-e-suporte.md',
     load: () => import('./content/integracoes/guia-operacao-e-suporte.md?raw').then((m) => m.default),
@@ -87,6 +87,17 @@ export function resolveDocLink(href: string): string | null {
   const name = href.split('/').pop() ?? ''
   const page = DOC_PAGES.find((p) => p.file === name)
   return page ? docPath(page.slug) : null
+}
+
+// Capturas de tela dos guias (docs/integracoes/imagens → src/docs/content/integracoes/imagens): URLs com hash do build.
+const DOC_IMAGES = import.meta.glob('./content/*/imagens/*.png', { eager: true, query: '?url', import: 'default' }) as Record<string, string>
+
+/** Imagem relativa do Markdown (ex.: "imagens/01-visao-geral.png") → URL empacotada; null = não existe. */
+export function resolveDocImage(src: string): string | null {
+  const name = src.split('/').pop() ?? ''
+  if (!/^[\w.-]+\.png$/.test(name)) return null
+  const key = Object.keys(DOC_IMAGES).find((k) => k.endsWith(`/imagens/${name}`))
+  return key ? DOC_IMAGES[key] : null
 }
 
 // Rotas PÚBLICAS (documentação do repositório, sem dados sensíveis): meta.public dispensa o login no guard.

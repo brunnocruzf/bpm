@@ -40,7 +40,8 @@ export interface Meta {
   categories: string[]
   autoSources: Option[]
   lookupSources: { key: string; label: string; fields: Option[] }[]
-  serviceOperations: { key: string; label: string; outputs: string[] }[]
+  /** active = false: mapeamento personalizado inativo (a etapa falha até ativar em Integrações → Mapeamentos) */
+  serviceOperations: { key: string; label: string; inputs: string[]; outputs: string[]; active: boolean }[]
   endResults: Option[]
   conditionOperators: Option[]
 }

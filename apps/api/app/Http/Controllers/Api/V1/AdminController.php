@@ -9,6 +9,7 @@ use App\Engine\FlowableRestClient;
 use App\Integrations\Ax\AxGateway;
 use App\Models\BpmGroup;
 use App\Models\EngineCommand;
+use App\Models\IntegrationBinding;
 use App\Models\IntegrationConnection;
 use App\Models\IntegrationEndpoint;
 use App\Models\IntegrationExecution;
@@ -29,8 +30,10 @@ class AdminController extends ApiController
 
         return response()->json([
             'engine' => ['name' => 'Flowable REST', 'healthy' => $engine->health()],
-            // transporte EFETIVO (vínculo REST ativo tem prioridade sobre o configurado)
-            'ax' => collect(config('bpm.ax.transports'))->map(fn ($transport, $op) => ['operation' => $op, 'transport' => $ax->transportName((string) $op), 'configured' => $transport])->values(),
+            // transporte EFETIVO (vínculo REST ativo tem prioridade sobre o configurado); mapeamentos personalizados
+            // sem vínculo ativo aparecem como INATIVO (não têm dados simulados)
+            'ax' => collect(config('bpm.ax.transports'))->map(fn ($transport, $op) => ['operation' => $op, 'transport' => $ax->transportName((string) $op), 'configured' => $transport, 'label' => null, 'custom' => false])->values()
+                ->concat(IntegrationBinding::custom()->orderBy('label')->get(['operation', 'label'])->map(fn (IntegrationBinding $b) => ['operation' => $b->operation, 'transport' => $ax->transportName($b->operation), 'configured' => null, 'label' => $b->label, 'custom' => true])),
             'connections' => IntegrationConnection::withCount(['endpoints', 'endpoints as enabled_endpoints_count' => fn ($q) => $q->where('enabled', true)])->orderBy('name')->get()
                 ->map(fn (IntegrationConnection $c) => ['id' => $c->id, 'key' => $c->key, 'name' => $c->name, 'system' => $c->system, 'enabled' => $c->enabled, 'environment' => $c->environment,
                     'endpoints' => $c->endpoints_count, 'enabledEndpoints' => $c->enabled_endpoints_count, 'lastTestOk' => $c->last_test['ok'] ?? null, 'lastTestedAt' => $c->last_tested_at?->toIso8601String(),

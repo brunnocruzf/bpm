@@ -2,6 +2,7 @@
 
 namespace App\Forms;
 
+use App\Integrations\BpmOperations;
 use App\Models\IntegrationEndpoint;
 
 /**
@@ -53,13 +54,14 @@ final class FieldCatalog
     ];
 
     /**
-     * Fontes fixas + endpoints publicados como consulta ("api:<identificador>").
+     * Fontes fixas + endpoints publicados como consulta ("api:<identificador>") + consultas criadas em
+     * Integrações → Mapeamentos ("map:<chave>").
      *
      * @return array<string, array{label:string, operation:string, fields:array<string,string>, system?:string}>
      */
     public static function lookupSources(): array
     {
-        $sources = self::LOOKUP_SOURCES;
+        $sources = self::LOOKUP_SOURCES + BpmOperations::customLookupSources();
         try {
             foreach (IntegrationEndpoint::with('connection')->where('enabled', true)->where('method', 'GET')->get() as $e) {
                 $cfg = (array) ($e->lookup ?? []);

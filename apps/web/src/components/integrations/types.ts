@@ -45,11 +45,19 @@ export interface Preview {
   operations: PreviewOperation[]; removed: { endpointId: string; key: string; method: string; path: string; enabled: boolean }[]; warnings: string[]
 }
 
+/**
+ * Operação do BPM ligável a um endpoint. Fixas (PO 159): consultas 'lookup' e a escrita 'write' do AX, com transporte
+ * configurado (MOCK) sem vínculo. Personalizadas (custom, "map:<chave>"): 'lookup' (consulta nos formulários) ou
+ * 'task' (etapa automática do fluxo); sem vínculo ativo ficam inativas (não há dados simulados).
+ */
 export interface BindingOp {
-  operation: string; label: string; kind: 'lookup' | 'write'; inputs: Record<string, string>; outputs: Record<string, string>; configuredTransport: string
+  operation: string; label: string; kind: 'lookup' | 'write' | 'task'; inputs: Record<string, string>; outputs: Record<string, string>; configuredTransport: string | null
+  custom: boolean; description: string | null; usage: { forms: number; stages: number } | null
   lookupSource?: string; serviceOperation?: string
   binding: null | { endpointId: string | null; endpointKey: string | null; endpointName: string | null; connection: string | null; enabled: boolean; inputMap: Record<string, string>; outputMap: Record<string, string>; updatedAt: string | null; usable: boolean }
 }
+
+export const KIND_LABEL: Record<BindingOp['kind'], string> = { lookup: 'consulta nos formulários', write: 'etapa automática · escrita', task: 'etapa automática do fluxo' }
 
 export interface Execution {
   id: string; at: string; system: string; operation: string; transport: string; endpoint: string | null; result: string; httpStatus: number | null; attempt: number

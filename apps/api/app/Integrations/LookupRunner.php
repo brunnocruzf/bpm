@@ -10,6 +10,7 @@ use App\Models\IntegrationEndpoint;
 /**
  * Executa a consulta de um campo "axlookup" dos formulários:
  *  - fontes fixas do PO 159 (tpr, item, purchaseOrder, supplier) → AxGateway (vínculo REST ou MOCK);
+ *  - fontes "map:<chave>" criadas em Mapeamentos → AxGateway (vínculo REST; inativo falha);
  *  - fontes "api:<identificador>" → endpoint de leitura publicado no catálogo de integrações.
  */
 class LookupRunner
@@ -22,9 +23,8 @@ class LookupRunner
         if (str_starts_with($source, FieldCatalog::API_PREFIX)) {
             return $this->rest->lookup($this->endpoint($source), $value, $processInstanceId);
         }
-        $def = FieldCatalog::LOOKUP_SOURCES[$source] ?? throw new IntegrationUnavailable('Fonte de consulta inexistente.', 'not_configured');
 
-        return $this->ax->lookup($def['operation'], $value, $processInstanceId);
+        return $this->ax->lookup($this->operation($source), $value, $processInstanceId);
     }
 
     public function transportName(string $source): string
@@ -33,7 +33,14 @@ class LookupRunner
             return 'REST:'.$this->endpoint($source)->connection->key;
         }
 
-        return $this->ax->transportName(FieldCatalog::LOOKUP_SOURCES[$source]['operation'] ?? '');
+        return $this->ax->transportName($this->operation($source));
+    }
+
+    private function operation(string $source): string
+    {
+        $def = FieldCatalog::LOOKUP_SOURCES[$source] ?? BpmOperations::customLookupSources()[$source] ?? null;
+
+        return $def['operation'] ?? throw new IntegrationUnavailable('Fonte de consulta inexistente.', 'not_configured');
     }
 
     private function endpoint(string $source): IntegrationEndpoint

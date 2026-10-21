@@ -82,6 +82,26 @@ Guia: `docs/integracoes/README.md` (ADR-0016).
 - Mudança no Swagger: `docker compose exec api php artisan bpm:openapi-check` (também diário) marca endpoints alterados; reimporte pela conexão e revise.
 - Rollback: desative o **vínculo** (a operação volta ao transporte configurado, MOCK) ou o endpoint/conexão.
 
+Os guias de `docs/integracoes` são escritos para usuários. Referência técnica (antes nos guias):
+
+| Variável | Padrão | Uso |
+|---|---|---|
+| `BPM_INTEGRATION_ALLOWED_HOSTS` | — | hosts liberados (lista por vírgula); obrigatório para IP privado e, em produção, para todos |
+| `BPM_INTEGRATION_MAX_RESPONSE_BYTES` | 2 MB | resposta máxima de uma chamada (`response_too_large`) |
+| `BPM_INTEGRATION_MAX_OPENAPI_BYTES` | 5 MB | documento OpenAPI máximo |
+| `BPM_INTEGRATION_TIMEOUT` | 15 s | tempo limite padrão (2–120 na conexão) |
+| `BPM_AX_{TPR,ITEM,PO,SUPPLIER,TRANSFER}_TRANSPORT` | `MOCK` | transporte sem vínculo ativo; `REST_FACADE`/`AIF_WCF`/`SQL_READONLY_VIEW` não implementados (`not_configured`); o Compose não repassa |
+
+- Fixos: token de login em cache 50 min (OAuth2: `expires_in − 60 s`, renova uma vez em 401); exemplo de resposta 512 KB; prévia do OpenAPI expira em 30 min; só OpenAPI 3 JSON.
+- Agendador: `bpm:external-jobs` a cada 15 s (10 jobs do tópico `tmsa-integration`, trava PT5M); falha → retry PT5M (instância/operação ausente PT2M) consumindo tentativa do Flowable (padrão 3) → dead-letter sem retomada pela UI; exceção não tratada não consome tentativa. `bpm:openapi-check` diário 06:10 UTC.
+- Idempotência da escrita: chave `<instância>:<elemento>:<job>` por endpoint; `success` devolve saídas gravadas, `unknown` bloqueia com `reconciliation_required`. HTTP 404 em escrita = sucesso com saídas vazias; 4xx≠404 em consulta vira 503 para o usuário.
+- Consultas: `GET /api/v1/lookups/{fonte}` (qualquer autenticado, `throttle:120,1`, valor ≤ 60); a submissão refaz a consulta (`SubmissionProcessor`) e grava `metadata.lookups` (sem máscara).
+- Códigos de erro: `target_blocked`, `forbidden`, `request_rejected`, `request_invalid`, `response_too_large`, `write_not_allowed`, `reconciliation_required`, `token_not_found`, `not_verified`, `credential_invalid`, `timeout`, `connection_failed`, `throttled`, `provider_error`, `not_configured`.
+- Auditoria: `integration.{completed,failed,connection_saved,connection_tested,secret_updated,openapi_imported,endpoint_contract_updated,endpoint_saved,endpoint_deleted,endpoint_tested,binding_saved,binding_created,binding_deleted,execution_reconciled}`.
+- Mapeamentos personalizados ("Novo mapeamento"): linha em `integration_binding` com `custom = true`, `kind` (`lookup` | `task`), `label`, `inputs`/`outputs`; operação, fonte do Consulta AX e integração do fluxo usam a mesma chave `map:<chave>` (`App\Integrations\BpmOperations`). Sem transporte simulado: inativo → `not_configured` (transporte `INATIVO` na Visão geral; o validador do fluxo emite `service_operation_inactive`). Rotas: `POST /admin/integrations/bindings`, `PUT|DELETE /admin/integrations/bindings/{operação}` (exclusão recusada com `binding_in_use` se citado em formulário ou etapa).
+- Rastreio: correlation ID nos detalhes da execução e nos logs — `docker compose logs api queue-worker scheduler | grep <id>`.
+- Rotas (`/api/v1/admin/integrations/...`): `connections` (+`/{id}/test`, `/openapi/preview|apply`), `endpoints` (+`/infer`, `/{id}/test`), `bindings/{operação}`, `executions` (+`/{id}/reconcile`, exige `processes.manage`). Visão geral: papel admin/auditor; demais: `settings.manage` (execuções também `processes.manage`/`audit.read`). Código: `apps/api/app/Integrations/Rest/*`, `LookupRunner`, `ExternalJobWorker`; testes `IntegrationCatalogTest` (fixture `tests/Fixtures/openapi-ax-sample.json`).
+
 ## Comando em RECONCILIATION_REQUIRED / FAILED
 
 1. Verifique `last_error` (mascarado) na tela de integrações ou via `GET /api/v1/admin/engine-commands`.

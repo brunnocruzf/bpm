@@ -1,135 +1,118 @@
-# Guia — Etapa do tipo Integração no workflow
+# Etapa do tipo Integração
 
-Este guia mostra como o designer de fluxos adiciona uma etapa do tipo **Integração** (tarefa de serviço),
-como ela é executada pelo engine e pelo worker, o que acontece em falhas e como exibir as saídas no
-formulário da etapa seguinte. Para ligar a operação a um endpoint real (ou entender o MOCK), veja o
-[guia de mapeamentos e MOCK](guia-mapeamentos-e-mock.md). Decisão:
-[ADR-0006](../adr/0006-integracao-ax-2012-r3.md).
+Uma etapa do tipo **Integração** é uma etapa **automática** do fluxo: ninguém precisa abrir uma tarefa.
+Quando o processo chega nela, o BPM executa a operação escolhida no sistema externo (por exemplo, gravar
+um diário de transferência no AX), guarda o resultado nos dados do processo e segue para a próxima
+etapa.
 
-## Adicionar a etapa
+A operação executada pode ser:
 
-No editor de fluxos, a paleta de etapas tem o botão **"Adicionar integração"**. A etapa entra com o nome
-padrão **"Nova integração"** e chave gerada a partir de `integracao`. Na lista de etapas e no diagrama o
-tipo aparece como **"Integração"** (tipo técnico `service_task`, ícone de engrenagem).
+- a **operação pronta** do AX (diário de transferência e bloqueio), que usa o modo simulado até ser
+  ligada a um serviço real na aba *Mapeamentos*;
+- uma **etapa automática criada em Novo mapeamento**, para qualquer serviço cadastrado (consultar ou
+  gravar). Veja [Criar um novo mapeamento](guia-mapeamentos-e-mock.md#criar-um-novo-mapeamento).
 
-## Configurar
+## Passo 1 — Adicionar a etapa
 
-A única configuração da etapa é o campo **"Integração executada"** (opção vazia "Selecione..."), que
-lista as operações do catálogo de integrações. Hoje o catálogo tem uma única operação:
+1. Abra o fluxo no editor (**Catálogo de fluxos → editar**), na aba **Etapas**.
+2. Clique em **Adicionar integração**. A etapa entra com o nome "Nova integração".
+3. Renomeie a etapa com algo que explique o que ela faz (ex.: "AX: diário, marcação OCDev e bloqueio").
 
-- `ax.transferAndBlock` — "AX: diário de transferência, marcação da OCDev na OC e bloqueio do item".
+Na lista de etapas e no diagrama, ela aparece com o tipo **Integração** e um ícone de engrenagem.
 
-Ao escolher a operação, a tela mostra o hint **"Grava no processo: numeroDiarioTransferencia,
-ocdevMarcadaNaOc, itemBloqueado"** — as saídas que a operação grava nos dados do processo. As entradas
-exigidas (`numeroOcdev`, `codigoItem`, `ordemCompra`) são lidas dos dados do processo; o editor **não
-mostra** essas entradas nem confere se elas existem — garanta que etapas anteriores as preencheram (no PO
-159, são os campos das consultas da etapa 01). Não há outras opções na etapa.
+## Passo 2 — Configurar
 
-## Validações e BPMN
+Selecione a etapa. O painel **Configuração da etapa** mostra:
 
-- **Publicação**: o validador exige a operação — "Selecione a integração executada por \"<nome>\"."
-  (código `service_operation`).
-- **Importação de BPMN**: o elemento precisa ser `serviceTask` com `flowable:type="external-worker"` e a
-  operação precisa existir no catálogo; caso contrário: "Integração \"<nome>\": selecione uma operação do
-  catálogo de integrações TMSA."
-- **XML gerado** (BPMN 2.0):
+![Etapa do tipo Integração selecionada no editor do fluxo](imagens/19-etapa-integracao.png)
 
-```xml
-<serviceTask id="..." name="..." flowable:type="external-worker" flowable:topic="tmsa-integration">
-  <extensionElements>
-    <tmsa:integration operation="ax.transferAndBlock"/>
-  </extensionElements>
-</serviceTask>
-```
+- **Tipo de etapa:** Integração.
+- **Raia no diagrama:** a área em que a etapa aparece no desenho do processo.
+- **Integração executada:** escolha a operação. A lista traz a operação pronta **AX: diário de
+  transferência, marcação da OCDev na OC e bloqueio do item** e as etapas automáticas criadas em **Novo
+  mapeamento** (as inativas aparecem com "(inativa)").
+- Logo abaixo aparece o que a operação **lê do processo** e o que ela **grava no processo**. Na operação
+  pronta, ela lê número da OCDev, código do item e ordem de compra, e grava o número do diário de
+  transferência, se a OCDev foi marcada na OC e se o item foi bloqueado.
+- **Próximo passo:** para qual etapa o processo segue depois.
 
-## Como a execução acontece
+Essa etapa **não tem formulário**.
 
-```mermaid
-flowchart LR
-    A[Flowable] -- "tópico tmsa-integration" --> B["bpm:external-jobs (scheduler, a cada 15 s)"]
-    B --> C[ExternalJobWorker]
-    C --> D[AxGateway]
-    D --> E{Vínculo ativo?}
-    E -- Sim --> F[RestIntegration → RestCaller → TargetPolicy → API externa]
-    E -- Não --> G[MockAxTransport: dados simulados]
-```
+> **Importante:** a operação usa informações preenchidas em etapas anteriores (as que aparecem em "Lê do
+> processo"). O editor não confere se elas existem. Garanta que alguma etapa anterior do fluxo as
+> preencha, com a mesma chave.
 
-1. O agendador roda `php artisan bpm:external-jobs` **a cada 15 segundos** (`withoutOverlapping`,
-   `onOneServer`), que busca até **10 jobs** do tópico `tmsa-integration` com **trava de PT5M** no
-   Flowable.
-2. Para cada job, o `ExternalJobWorker` localiza a instância e a etapa, lê a operação do catálogo e monta
-   as **entradas a partir dos dados do processo** (apenas as chaves declaradas na operação).
-3. A chamada usa a **chave de idempotência `<instância>:<elemento>:<job>`** — a mesma tentativa nunca
-   grava duas vezes, e uma escrita já concluída com aquela chave devolve as saídas gravadas sem reenviar.
-4. As **saídas** (filtradas pelas chaves do catálogo) são gravadas nos dados do processo, em transação,
-   e devolvidas ao Flowable ao completar o job — ficam disponíveis também como **variáveis do processo**
-   no engine. A projeção da instância é sincronizada em seguida.
-5. Auditoria: sucesso grava `integration.completed` ("Integração concluída"); falha grava
-   `integration.failed` ("Integração falhou"). A linha do tempo da instância mostra **"Integração
-   executada"** ou **"Falha de integração (nova tentativa agendada)"**.
+Ao **Validar** ou **Publicar** o fluxo, o BPM avisa:
 
-Cada chamada também aparece na aba **Execuções** (pedido/resposta mascarados, HTTP, duração, chave de
-idempotência e correlation ID) — veja o [guia de operação e suporte](guia-operacao-e-suporte.md).
+- se faltar escolher a integração: "Selecione a integração executada por …";
+- se a etapa usar um mapeamento novo **inativo**: "… está com o mapeamento inativo: a etapa vai falhar
+  até ativá-lo em Integrações → Mapeamentos."
 
-## Falhas e tentativas
+> Quem estava com o editor aberto antes de o mapeamento ser criado precisa **recarregar a página** para
+> vê-lo na lista.
 
-- Falha de integração (API fora, erro 4xx/5xx, destino bloqueado etc.): o worker agenda **nova tentativa
-  em 5 minutos (PT5M)**, consumindo uma tentativa. O número de tentativas vem do Flowable (padrão de
-  fábrica: 3).
-- Instância ou operação não encontrada: nova tentativa em 2 minutos (PT2M), também consumindo tentativa.
-- Esgotadas as tentativas, o job fica em **dead-letter** no Flowable para análise — **não há tela de
-  retomada no BPM**; a instância fica parada na etapa de integração até intervenção.
-- Erro inesperado (exceção fora dos tipos tratados) é apenas registrado em log ("Falha no worker de
-  integração") **sem consumir tentativa**: o job volta a ser pego quando a trava expira (ciclo de ~5
-  minutos, indefinidamente).
-- A falha **não muda o status da instância** nem aparece em "Etapas atuais": o acompanhamento é pela
-  linha do tempo, pela aba Execuções e pela auditoria.
+## Como a etapa é executada
 
-### Cenários de falha
+1. Quando o processo chega na etapa, o BPM a executa automaticamente em poucos segundos.
+2. A operação usa os dados do processo e chama o sistema externo (a operação pronta responde em modo
+   simulado se não houver mapeamento ativo).
+3. O resultado é gravado nos dados do processo e o processo segue para o próximo passo.
+4. A linha do tempo da solicitação registra **Integração executada**.
 
-| Cenário | Resultado | O que acontece |
+Cada tentativa também aparece na aba *Execuções* de **Integrações e entregas**.
+
+## Quando algo dá errado
+
+Se a chamada falhar (sistema fora do ar, senha recusada, serviço desligado etc.):
+
+- o BPM **tenta de novo a cada 5 minutos**, algumas vezes (normalmente 3 tentativas);
+- a linha do tempo mostra **Falha de integração (nova tentativa agendada)**;
+- enquanto isso, a solicitação continua "em andamento", **parada nessa etapa**. Ela não aparece em
+  "Etapas atuais", porque só tarefas de pessoas aparecem ali.
+
+| Situação | O que acontece | O que fazer |
 |---|---|---|
-| Sem vínculo ativo (padrão) | MOCK | a escrita simulada sempre "funciona" e grava `DT-######` nos dados |
-| Vínculo ativo, endpoint/conexão desabilitado | falha (`not_configured`) | nova tentativa a cada 5 min até habilitar ou esgotar — **não volta ao MOCK** |
-| API recusa (4xx ≠ 404), credencial, 5xx, limite | falha (`request_rejected`, `credential_invalid`, `forbidden`, `provider_error`, `throttled`…) | nova tentativa a cada 5 min |
-| Escrita sem liberação na conexão | falha (`write_not_allowed`) | nova tentativa; libere as escritas com a referência de aprovação |
-| **Tempo esgotado após o envio** (escrita) | **resultado incerto (`unknown`)** | a repetição é bloqueada (`reconciliation_required`) até reconciliar na aba Execuções |
-| HTTP 404 na escrita | **conta como sucesso, com saídas vazias** | confira o contrato do endpoint se isso não fizer sentido para a operação |
-| Tentativas esgotadas | dead-letter | sem retomada pela tela; intervenção manual |
+| Operação pronta sem mapeamento ativo | Funciona em **modo simulado** e grava um número fictício (DT-…). | Ligue o mapeamento antes de usar o processo de verdade. |
+| Mapeamento novo inativo | Falha e tenta de novo (não há modo simulado). | Ative o mapeamento na aba *Mapeamentos*. |
+| Mapeamento ativo, mas serviço ou conexão desligado | Falha e tenta de novo. | Ligue o serviço e a conexão. |
+| Sistema externo recusou, senha inválida, fora do ar | Falha e tenta de novo. | Veja o motivo em *Execuções* e corrija. |
+| Gravação não liberada na conexão | Falha e tenta de novo. | Libere as escritas na conexão, com o número da aprovação. |
+| **Demorou demais depois de enviar** | O BPM não sabe se gravou e **não repete** até alguém conferir. | **Reconcilie** em *Execuções* (veja abaixo). |
+| Todas as tentativas esgotadas | A solicitação fica parada nessa etapa. | Acione o suporte técnico: hoje não há como retomar pela tela. |
 
-### Reconciliação de escrita incerta (e a janela de tempo)
+### Quando o BPM não sabe se gravou
 
-Quando uma escrita esgota o tempo **depois** de enviada, o sistema de destino pode ter gravado. Por
-isso a execução fica `unknown` e a próxima tentativa falha com `reconciliation_required` em vez de
-reenviar. Enquanto houver tentativas (nova tentativa a cada 5 minutos — com o padrão de 3 tentativas, a
-janela é de poucos minutos), alguém com `processes.manage` deve abrir **Execuções → Reconciliar** e
-informar "Foi executada" (com as saídas, que a próxima tentativa devolve sem reenviar) ou "Não foi
-executada" (a próxima tentativa reenvia). Detalhes e textos da janela:
-[guia de operação e suporte](guia-operacao-e-suporte.md).
+Se o sistema externo demorar demais **depois** de receber a gravação, pode ser que ele tenha gravado.
+Para não gravar em dobro, o BPM bloqueia as novas tentativas até alguém conferir.
 
-## Exibir as saídas no formulário seguinte e usar em decisões
+Alguém com permissão de gestão de processos deve, **o quanto antes** (as tentativas acontecem a cada 5
+minutos):
 
-As saídas ficam nos dados do processo com os nomes declarados na operação. Para exibi-las, o formulário
-da etapa seguinte traz campos **somente leitura** com essas chaves. No PO 159:
+1. conferir no sistema externo se a gravação aconteceu;
+2. abrir **Integrações e entregas → Execuções**, localizar a chamada com **Resultado incerto** e clicar em
+   **Reconciliar**;
+3. escolher **Foi executada** (e informar o resultado, como o número do diário) ou **Não foi executada**
+   (a próxima tentativa envia de novo).
 
-- a etapa de integração é `s40_ax` ("AX: diário, marcação OCDev e bloqueio"), no caminho
-  `m_qualidade → s40_ax → a40_separacao → a41_frete` — `m_qualidade` recebe os caminhos de
-  `a39_fiscal_ocdev`, de `a45_sup_ocdev` (via `g46_nf_espelho`) e de `a47_nf_espelho` (via `m_trilha_b`);
-- a etapa seguinte, **"40 — Separação, entrega e transferência"** (`a40_separacao`), exibe as saídas como
-  campos somente leitura: "Nº do diário de transferência (AX)", "OCDev marcada na OC de origem (AX)" e
-  "Item bloqueado para outras necessidades (AX)", junto da confirmação manual "Confirmo a separação e a
-  entrega física do material".
+Detalhes em [Acompanhar e resolver problemas](guia-operacao-e-suporte.md).
 
-Como as saídas viram dados e variáveis do processo, também podem ser usadas em **condições de decisão**
-(gateways) pela DSL de roteamento.
+## Mostrar o resultado na etapa seguinte
+
+O resultado da integração fica nos dados do processo. Para mostrá-lo, adicione ao formulário da etapa
+seguinte **campos somente leitura** com as chaves que a operação grava.
+
+No processo de item reprovado no recebimento, a etapa **40 — Separação, entrega e transferência**, logo
+depois da integração, mostra:
+
+- Nº do diário de transferência (AX);
+- OCDev marcada na OC de origem (AX);
+- Item bloqueado para outras necessidades (AX).
+
+Esses valores também podem ser usados nas **condições de decisão** do fluxo.
 
 ## Onde acompanhar
 
-- **Linha do tempo** da instância (e da tarefa): eventos "Integração executada" e "Falha de integração
-  (nova tentativa agendada)".
-- **Administração → Integrações e entregas → Execuções**: cada tentativa com resultado, HTTP, duração,
-  pedido/resposta mascarados, chave de idempotência e correlation ID.
-- **Auditoria**: `integration.completed` e `integration.failed`.
-- A etapa de integração **não aparece em "Etapas atuais"** (só tarefas humanas aparecem) nem é destacada
-  no diagrama da instância — enquanto as tentativas acontecem, a instância segue "em andamento" parada
-  naquele ponto do fluxo.
+- **Linha do tempo** da solicitação: "Integração executada" ou "Falha de integração (nova tentativa
+  agendada)".
+- **Integrações e entregas → Execuções:** cada tentativa, com resultado, tempo e detalhes.
+- **Auditoria:** "Integração concluída" e "Integração falhou".

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
-import { docPath, findDocPage, resolveDocLink } from '@/docs/catalog'
+import { docPath, findDocPage, resolveDocImage, resolveDocLink } from '@/docs/catalog'
 import { renderMarkdown, type RenderedDoc } from '@/docs/markdown'
 
 const props = withDefaults(defineProps<{ slug?: string }>(), { slug: 'visao-geral' })
@@ -22,7 +22,7 @@ watch(
     try {
       const source = await page.load()
       if (current !== request) return
-      doc.value = renderMarkdown(source, resolveDocLink)
+      doc.value = renderMarkdown(source, resolveDocLink, resolveDocImage)
       document.title = `${page.title} · Documentação de integrações`
     } catch {
       if (current === request) failed.value = true

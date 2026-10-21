@@ -3,16 +3,20 @@
  * Mapeamentos: liga cada operação do BPM (consultas fixas do PO 159 e tarefas de integração) a um
  * endpoint do catálogo com de/para de entrada e saída. Sem vínculo ativo, vale o transporte
  * configurado (MOCK). Vínculo ativo com endpoint desligado falha — nunca volta ao MOCK em silêncio.
+ * "Novo mapeamento" cria operações personalizadas (consulta nos formulários ou etapa automática do fluxo).
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import Dialog from 'primevue/dialog'
 import { api, ApiError } from '@/api/http'
 import { fmtDateTime } from '@/composables/format'
 import { useNotify } from '@/composables/notify'
-import type { BindingOp, Endpoint, EndpointRow } from './types'
+import { useSession } from '@/stores/session'
+import MappingWizard from './MappingWizard.vue'
+import { KIND_LABEL, type BindingOp, type Endpoint, type EndpointRow } from './types'
 
 const emit = defineEmits<{ changed: [] }>()
 const notify = useNotify()
+const session = useSession()
 const ops = ref<BindingOp[]>([])
 const endpoints = ref<EndpointRow[]>([])
 const editing = ref<BindingOp | null>(null)
@@ -20,6 +24,12 @@ const detail = ref<Endpoint | null>(null)
 const saving = ref(false)
 const errors = ref<Record<string, string[]>>({})
 const form = reactive({ endpointId: '' as string, enabled: false, inputMap: {} as Record<string, string>, outputMap: {} as Record<string, string>, extraTargets: [] as string[] })
+/** assistente de mapeamento personalizado: op = null → novo */
+const wizard = ref<{ op: BindingOp | null } | null>(null)
+const deleting = ref<string | null>(null)
+
+const fixedOps = computed(() => ops.value.filter((o) => !o.custom))
+const customOps = computed(() => ops.value.filter((o) => o.custom))
 
 async function load() {
   try {
@@ -31,6 +41,12 @@ async function load() {
   }
 }
 onMounted(load)
+
+async function afterChange() {
+  await load()
+  emit('changed')
+  await session.refreshMeta()
+}
 
 const candidates = computed(() => endpoints.value.filter((e) => (editing.value?.kind === 'lookup' ? e.method === 'GET' : true)))
 
@@ -83,8 +99,7 @@ async function save() {
     await api(`/admin/integrations/bindings/${editing.value.operation}`, { method: 'PUT', body: { endpointId: form.endpointId || null, enabled: form.enabled, inputMap: form.inputMap, outputMap: form.outputMap } })
     notify.success(form.enabled ? 'Vínculo ativo: a operação passa a chamar o endpoint real.' : 'Vínculo salvo (inativo: continua no transporte configurado).')
     editing.value = null
-    await load()
-    emit('changed')
+    await afterChange()
   } catch (err) {
     if (err instanceof ApiError) errors.value = err.errors
     notify.error(err)
@@ -92,15 +107,44 @@ async function save() {
     saving.value = false
   }
 }
+
+async function onWizardSaved() {
+  wizard.value = null
+  await afterChange()
+}
+
+function usageText(op: BindingOp) {
+  if (!op.usage) return ''
+  if (op.kind === 'lookup') return op.usage.forms ? `usada em ${op.usage.forms} formulário(s)` : 'ainda não usada em formulários'
+  return op.usage.stages ? `usada em ${op.usage.stages} etapa(s) de fluxo` : 'ainda não usada em fluxos'
+}
+const inUse = (op: BindingOp) => !!op.usage && op.usage.forms + op.usage.stages > 0
+
+async function remove(op: BindingOp) {
+  if (inUse(op) || !window.confirm(`Excluir o mapeamento "${op.label}"?\n\nEle deixa de aparecer no ${op.kind === 'lookup' ? 'editor de formulários' : 'editor de fluxos'}. Esta ação não pode ser desfeita.`)) return
+  deleting.value = op.operation
+  try {
+    await api(`/admin/integrations/bindings/${encodeURIComponent(op.operation)}`, { method: 'DELETE' })
+    notify.success('Mapeamento excluído.')
+    await afterChange()
+  } catch (err) {
+    notify.error(err)
+  } finally {
+    deleting.value = null
+  }
+}
 </script>
 
 <template>
   <section class="tm-panel">
-    <div class="tm-panel-head"><div><div class="tm-panel-title">Mapeamentos das operações do BPM</div><div class="tm-panel-caption">Ligue as consultas dos formulários e as tarefas de integração aos endpoints reais, com de/para de entrada e saída. Sem vínculo ativo vale o transporte configurado (MOCK).</div></div></div>
+    <div class="tm-panel-head">
+      <div><div class="tm-panel-title">Mapeamentos das operações do BPM</div><div class="tm-panel-caption">Ligue as consultas dos formulários e as tarefas de integração aos endpoints reais, com de/para de entrada e saída. Sem vínculo ativo vale o transporte configurado (MOCK).</div></div>
+      <button class="tm-btn primary" @click="wizard = { op: null }"><i class="pi pi-plus" aria-hidden="true" /> Novo mapeamento</button>
+    </div>
     <table class="tm-table" style="min-width:0">
       <thead><tr><th>Operação do BPM</th><th>Transporte efetivo</th><th>Endpoint</th><th>De/para</th><th>Atualizado</th><th /></tr></thead>
       <tbody>
-        <tr v-for="op in ops" :key="op.operation">
+        <tr v-for="op in fixedOps" :key="op.operation">
           <td><strong>{{ op.label }}</strong><div class="tm-hint"><code>{{ op.operation }}</code> · {{ op.kind === 'lookup' ? 'leitura' : 'escrita' }}</div></td>
           <td>
             <span v-if="op.binding?.enabled" class="tm-pill" :class="op.binding.usable ? 'green' : 'red'">{{ op.binding.usable ? 'REST (real)' : 'REST — endpoint/conexão desligado' }}</span>
@@ -113,7 +157,37 @@ async function save() {
         </tr>
       </tbody>
     </table>
+
+    <div class="custom-head">
+      <div><div class="tm-panel-title">Mapeamentos personalizados</div><div class="tm-panel-caption">Criados em “Novo mapeamento”: consultas para os formulários e etapas automáticas para os fluxos. Sem vínculo ativo ficam inativos (não há dados simulados).</div></div>
+    </div>
+    <table class="tm-table" style="min-width:0">
+      <thead><tr><th>Mapeamento</th><th>Situação</th><th>Endpoint</th><th>De/para</th><th>Uso</th><th>Atualizado</th><th /></tr></thead>
+      <tbody>
+        <tr v-for="op in customOps" :key="op.operation">
+          <td><strong>{{ op.label }}</strong><div class="tm-hint"><code>{{ op.operation }}</code> · {{ KIND_LABEL[op.kind] }}</div><div v-if="op.description" class="tm-hint">{{ op.description }}</div></td>
+          <td>
+            <span v-if="op.binding?.enabled" class="tm-pill" :class="op.binding.usable ? 'green' : 'red'">{{ op.binding.usable ? 'Ativo (REST real)' : 'Ativo — endpoint/conexão desligado' }}</span>
+            <span v-else class="tm-pill neutral">Inativo</span>
+          </td>
+          <td>{{ op.binding?.endpointKey ? `${op.binding.endpointName} (${op.binding.connection})` : '—' }}<div v-if="op.binding?.endpointKey" class="tm-hint"><code>{{ op.binding.endpointKey }}</code></div></td>
+          <td class="tm-hint">{{ op.binding ? `${Object.keys(op.binding.inputMap).length} entrada(s) · ${Object.keys(op.binding.outputMap).length} saída(s)` : '—' }}</td>
+          <td class="tm-hint">{{ usageText(op) }}</td>
+          <td class="tm-hint">{{ fmtDateTime(op.binding?.updatedAt) }}</td>
+          <td>
+            <div class="row-actions">
+              <button class="tm-btn small" @click="wizard = { op }"><i class="pi pi-pencil" aria-hidden="true" /> Editar</button>
+              <button class="tm-btn small danger" :disabled="inUse(op) || deleting === op.operation" :title="inUse(op) ? 'Em uso: retire-o dos formulários/fluxos antes de excluir.' : 'Excluir mapeamento'"
+                :aria-label="`Excluir ${op.label}`" @click="remove(op)"><i class="pi pi-trash" aria-hidden="true" /></button>
+            </div>
+          </td>
+        </tr>
+        <tr v-if="!customOps.length"><td colspan="7" class="tm-empty">Nenhum mapeamento personalizado. Use “Novo mapeamento” para criar uma consulta para os formulários ou uma etapa automática para os fluxos.</td></tr>
+      </tbody>
+    </table>
   </section>
+
+  <MappingWizard v-if="wizard" :op="wizard.op" :endpoints="endpoints" @close="wizard = null" @saved="onWizardSaved" />
 
   <Dialog :visible="!!editing" modal :header="editing ? `Mapear — ${editing.label}` : ''" :style="{ width: 'min(980px, 96vw)' }" @update:visible="(v) => !v && (editing = null)">
     <template v-if="editing">
@@ -182,5 +256,8 @@ h3 { margin: 14px 0 6px; font-size: 12px; color: #4a5e70; }
 .addbody .tm-input { flex: 1; }
 .check { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: #43586a; }
 .err { color: var(--red); }
+.custom-head { padding: 18px 16px 10px; border-top: 1px solid var(--line); margin-top: 6px; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.tm-btn.danger:not(:disabled) { color: var(--red); }
 code { font-size: 11px; background: #eef2f5; padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
 </style>

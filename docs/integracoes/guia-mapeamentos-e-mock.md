@@ -1,216 +1,299 @@
-# Guia — Mapeamentos (vínculos) e o MOCK
+# Mapeamentos e modo simulado (MOCK)
 
-Este guia explica a aba **Mapeamentos** de **Administração → Integrações e entregas**: o que é o MOCK,
-como ligar cada operação do BPM a um endpoint real do catálogo (o "vínculo") e qual transporte vale em
-cada situação. Antes deste guia, crie a conexão e os endpoints pelo
-[guia de criação de integração](guia-criar-integracao.md). Decisões:
-[ADR-0016](../adr/0016-catalogo-de-integracoes-rest.md) e [ADR-0006](../adr/0006-integracao-ax-2012-r3.md).
+Um **mapeamento** diz ao BPM qual serviço do sistema externo chamar e qual informação vai para onde.
+Existem dois tipos:
 
-## O MOCK em detalhe
+- **Operações prontas** — já vêm com o BPM e são usadas pelo processo de item reprovado no recebimento:
+  quatro consultas nos formulários e uma gravação no AX. Enquanto não são ligadas a um serviço real,
+  funcionam em **modo simulado**.
+- **Mapeamentos novos (personalizados)** — criados por você em **Novo mapeamento**, para qualquer
+  processo: uma **consulta no formulário** ou uma **etapa automática do fluxo**.
 
-### O que é e por que existe
+Antes, cadastre a conexão e os serviços pelo guia [Criar uma integração](guia-criar-integracao.md).
 
-O MOCK é o transporte simulado (`MockAxTransport`) das operações do BPM. Ele existe para permitir
-desenvolver, demonstrar e testar os fluxos **sem nenhum sistema externo**: não inventa contrato do AX e
-nunca sai da rede. Cada operação tem seu transporte configurável por variável de ambiente
-(`apps/api/config/bpm.php`), e o padrão de todas é `MOCK`:
+## O modo simulado (MOCK)
 
-| Operação | Variável | Padrão |
-|---|---|---|
-| `tpr.lookup` | `BPM_AX_TPR_TRANSPORT` | `MOCK` |
-| `item.lookup` | `BPM_AX_ITEM_TRANSPORT` | `MOCK` |
-| `purchaseOrder.lookup` | `BPM_AX_PO_TRANSPORT` | `MOCK` |
-| `supplier.lookup` | `BPM_AX_SUPPLIER_TRANSPORT` | `MOCK` |
-| `transferAndBlock` | `BPM_AX_TRANSFER_TRANSPORT` | `MOCK` |
+Enquanto uma operação pronta não está ligada a um serviço real, ela funciona em **modo simulado**: o BPM
+responde com **dados fictícios** e não acessa nenhum sistema. Isso permite montar, demonstrar e testar
+os processos antes de a integração estar pronta.
 
-O Compose de `deploy/docker` **não repassa** essas variáveis: enquanto nada for configurado (e não houver
-vínculo ativo), tudo roda em MOCK. Os demais valores aceitos (`REST_FACADE`, `AIF_WCF`,
-`SQL_READONLY_VIEW`) não estão implementados e respondem "Transporte &lt;t&gt; para &lt;operação&gt; ainda
-não configurado (contrato AX pendente)." (código `not_configured`). Escrita via SQL é proibida: "Escrita
-no AX via SQL é proibida."
+Onde você vê que está em modo simulado:
 
-### Dados sintéticos por operação
+- na pílula âmbar **MOCK** da *Visão geral* e da aba *Mapeamentos*;
+- no aviso da *Visão geral*: "N operação(ões) do BPM ainda em MOCK (dados simulados)";
+- na mensagem do formulário depois de consultar, e no histórico da aba *Execuções*.
 
-Os valores são determinísticos, calculados a partir de `crc32` do valor consultado:
+> Mapeamentos novos **não** têm modo simulado: enquanto estiverem inativos, a consulta ou a etapa não
+> funciona.
 
-- `tpr.lookup` — gera um cliente `C-####` com nomes como "Cliente Exemplo Ltda (fictício)", "Montadora
-  Demonstração S.A. (fictício)" e "Indústria Modelo Ltda (fictício)";
-- `item.lookup` — descrições como "Chapa de aço 2mm", "Rolamento 6205", "Parafuso M8 x 30", com unidade
-  alternando entre `PC` e `KG`;
-- `purchaseOrder.lookup` — escolhe um fornecedor pelo hash e devolve a situação "Recebida parcialmente";
-- `supplier.lookup` — **só encontra** `F-1001` ("Fornecedor Alfa (fictício)"), `F-1002` ("Fornecedor Beta
-  (fictício)") e `F-1003` ("Fornecedor Gama (fictício)");
-- `transferAndBlock` — devolve `numeroDiarioTransferencia` no formato `DT-######`,
-  `ocdevMarcadaNaOc = true`, `itemBloqueado = true` e `axReferencia` com o valor de `numeroOcdev`. O
-  resultado fica em cache permanente por chave de idempotência (`mock-ax:<chave>`), então a mesma
-  tentativa nunca gera dois diários diferentes.
+### Dados fictícios devolvidos
 
-### Convenções de teste
+| Operação | O que o modo simulado devolve |
+|---|---|
+| Consulta TPR → Cliente | Um cliente fictício, como "Cliente Exemplo Ltda (fictício)". |
+| Consulta Código do item → Material | Uma descrição fictícia, como "Rolamento 6205", com unidade PC ou KG. |
+| Consulta Ordem de compra | Um fornecedor fictício e a situação "Recebida parcialmente". |
+| Consulta Código do fornecedor → Contato | Só encontra os códigos **F-1001**, **F-1002** e **F-1003** (Fornecedores Alfa, Beta e Gama, fictícios). |
+| Gravação no AX (diário de transferência e bloqueio) | Um número de diário fictício no formato **DT-000000** e a confirmação de que a OCDev foi marcada e o item bloqueado. |
 
-- Valor vazio ou começando com `NAOEXISTE` (ex.: `NAOEXISTE123`) → "não encontrado" (a consulta devolve
-  vazio);
-- Valor começando com `INDISPONIVEL` (só nas consultas) → simula queda: "AX (simulado) indisponível."
-  (código `timeout`). A escrita simulada nunca falha.
+Para testar situações especiais nas consultas:
 
-### Onde o MOCK aparece
+- digite um valor começando com **NAOEXISTE** (ex.: `NAOEXISTE123`) para simular "não encontrado";
+- digite um valor começando com **INDISPONIVEL** para simular o sistema fora do ar.
 
-- Nas pílulas de "Transporte efetivo" da Visão geral e da aba Mapeamentos (MOCK em âmbar);
-- no campo `transport` das respostas de consulta e das execuções registradas;
-- no snapshot `metadata.lookups` das submissões e nos relatórios que o exibem.
-
-**O que não usa MOCK**: as consultas publicadas `api:<identificador>` chamam o endpoint real
-diretamente, sem vínculo e sem MOCK.
+> **Atenção:** os dados simulados são gravados no processo como se fossem reais. Um processo real
+> executado em modo simulado terá números fictícios (ex.: `DT-…`). Confira a aba *Mapeamentos* antes de
+> colocar um processo em uso.
 
 ## A aba Mapeamentos
 
-Texto do topo: "Mapeamentos das operações do BPM — Ligue as consultas dos formulários e as tarefas de
-integração aos endpoints reais, com de/para de entrada e saída. Sem vínculo ativo vale o transporte
-configurado (MOCK)."
+Abra **Administração → Integrações e entregas → Mapeamentos**. A tela tem duas partes: em cima, as
+operações prontas; embaixo, os **mapeamentos personalizados**. O botão **Novo mapeamento** fica no
+canto superior direito.
 
-### As 5 operações
+![Aba Mapeamentos com as operações prontas, os mapeamentos personalizados e o botão Novo mapeamento](imagens/20-mapeamentos-novo.png)
 
-| Operação | Rótulo exibido | Tipo | Entradas (lado BPM) | Saídas (lado BPM) | Quem consome |
-|---|---|---|---|---|---|
-| `tpr.lookup` | "Consulta nos formulários: TPR → Cliente" | leitura | `value` ("Valor digitado no formulário") | `customerCode`, `customerName` | componente "Consulta AX", fonte `tpr` |
-| `item.lookup` | "Consulta nos formulários: Código do item → Material" | leitura | `value` | `itemDescription`, `unit` | componente "Consulta AX", fonte `item` |
-| `purchaseOrder.lookup` | "Consulta nos formulários: Ordem de compra" | leitura | `value` | `supplierCode`, `supplierName`, `status` | componente "Consulta AX", fonte `purchaseOrder` |
-| `supplier.lookup` | "Consulta nos formulários: Código do fornecedor → Contato" | leitura | `value` | `supplierName`, `contactName`, `phone`, `email` | componente "Consulta AX", fonte `supplier` |
-| `transferAndBlock` | "Tarefa de integração: AX: diário de transferência, marcação da OCDev na OC e bloqueio do item" | escrita | `numeroOcdev`, `codigoItem`, `ordemCompra` | `numeroDiarioTransferencia`, `ocdevMarcadaNaOc`, `itemBloqueado` | etapa do tipo Integração (`ax.transferAndBlock`) |
+### Operações prontas
 
-A tabela tem as colunas "Operação do BPM", "Transporte efetivo", "Endpoint", "De/para" e "Atualizado".
+| Operação | Tipo | Onde é usada |
+|---|---|---|
+| **Consulta nos formulários: TPR → Cliente** | consulta | Componente *Consulta AX* com a fonte "TPR → Cliente". |
+| **Consulta nos formulários: Código do item → Material** | consulta | Fonte "Código do item → Material". |
+| **Consulta nos formulários: Ordem de compra** | consulta | Fonte "Ordem de compra". |
+| **Consulta nos formulários: Código do fornecedor → Contato** | consulta | Fonte "Código do fornecedor → Contato". |
+| **Tarefa de integração: AX: diário de transferência, marcação da OCDev na OC e bloqueio do item** | gravação | Etapa do tipo *Integração* no fluxo. |
 
-### Pílulas de transporte efetivo
+A coluna **Transporte efetivo** mostra como cada operação está funcionando agora:
 
-- **"MOCK"** (âmbar) — não há vínculo ativo; vale o transporte configurado (dados simulados);
-- **"REST (real)"** (verde) — há vínculo ativo e o endpoint e a conexão estão habilitados;
-- **"REST — endpoint/conexão desligado"** (vermelho) — há vínculo ativo, mas o endpoint ou a conexão está
-  desabilitado: **a operação falha** (não volta ao MOCK).
+| Pílula | O que significa |
+|---|---|
+| **MOCK** (âmbar) | Modo simulado: dados fictícios. |
+| **REST (real)** (verde) | Ligada a um serviço real, com serviço e conexão ligados. |
+| **REST — endpoint/conexão desligado** (vermelho) | Ligada a um serviço real, mas o serviço ou a conexão está desligado. **A operação falha** até você ligá-los; ela **não** volta sozinha ao modo simulado. |
 
-### A janela "Mapear", linha a linha
+## Ligar uma operação pronta a um serviço real
 
-O botão de cada operação abre a janela "Mapear — &lt;rótulo da operação&gt;":
+Clique em **Mapear** na linha da operação.
 
-1. **Endpoint** — para consultas, o campo é "Endpoint (leitura)" e só aceita `GET` (o servidor recusa
-   outros métodos: "Consultas precisam de endpoint de leitura (GET)."). A opção "Nenhum (usar transporte
-   configurado)" limpa o vínculo. Se o endpoint ou a conexão estiver desabilitado, a janela avisa:
-   "Endpoint ou conexão desabilitado: com o vínculo ativo, a operação vai falhar até habilitar (não volta
-   ao MOCK)."
-2. **"Entrada — destino no endpoint ⇐ origem no BPM"** — tabela "Destino no endpoint" / "Origem" /
-   "Constante":
-   - os destinos são os **parâmetros de entrada** do endpoint (PATH/QUERY/HEADER) mais os campos de corpo
-     `body:<caminho>` importados do Swagger; o campo com placeholder "campo do corpo não documentado
-     (ex.: lines[].itemId)" + "Adicionar" permite incluir um campo de corpo manualmente;
-   - as origens são `input:<campo>` (uma entrada da operação, ex.: `input:value` ou `input:codigoItem`),
-     "Valor constante" (`const:<valor>` — texto fixo, não secreto, até 200 caracteres; recusado em
-     parâmetros que pareçam credencial) ou "— não enviar —".
-3. **"Saída — campo do BPM ⇐ caminho na resposta"** — tabela "Campo do BPM" / "Caminho na resposta"
-   (placeholder "ex.: nome ou contato.email"). A lista de caminhos sugere os campos de saída do endpoint;
-   se não houver: "O endpoint ainda não tem campos de saída: defina-os na etapa “Parâmetros de saída”
-   (exemplo ou teste) para escolher da lista." — o caminho pode ser digitado mesmo assim.
-4. **"Ativar vínculo"** — "a operação passa a chamar o endpoint real". Em escritas, o lembrete: "(escrita
-   idempotente: nunca repete um envio concluído; resultado incerto exige reconciliação)".
-5. **"Salvar"** ("Salvando...") ou "Cancelar". Mensagens de sucesso: "Vínculo ativo: a operação passa a
-   chamar o endpoint real." ou "Vínculo salvo (inativo: continua no transporte configurado)."
+![Janela Mapear com entrada, saída e Ativar vínculo](imagens/14-mapear.png)
 
-Validações do servidor ao salvar: "Operação desconhecida.", "Entrada inválida: &lt;destino&gt; ⇐
-&lt;origem&gt;.", "Saída inválida: &lt;campo&gt; ⇐ &lt;caminho&gt;." e, para ativar sem o mínimo: "Para
-ativar, escolha o endpoint e mapeie entrada e saída." Cada salvamento é auditado
-(`integration.binding_saved`).
+1. **Endpoint** — escolha o serviço real. Consultas só aceitam serviços de consulta. A opção **Nenhum
+   (usar transporte configurado)** desfaz a ligação.
+2. **Entrada** — para cada informação que o serviço precisa receber (**Destino no endpoint**), escolha de
+   onde ela vem (**Origem**):
+   - **Valor digitado no formulário** (nas consultas) ou um dado do processo (na gravação);
+   - **Valor constante** — um texto fixo, que não seja senha;
+   - **— não enviar —**.
 
-## Semântica em execução
+   Se o serviço precisar de um campo que o catálogo não mostra, digite o nome dele no campo **campo do
+   corpo não documentado** e clique em **Adicionar**.
+3. **Saída** — para cada informação que o BPM espera (**Campo do BPM**), informe onde ela está na
+   resposta do serviço (**Caminho na resposta**), por exemplo `nome` ou `contato.email`. A lista sugere os
+   campos que você configurou em *Parâmetros de saída* do serviço.
+4. Marque **Ativar vínculo** para que a operação passe a usar o serviço real.
+5. Clique em **Salvar**.
 
-Quando uma operação com vínculo ativo é chamada (por uma consulta de formulário ou pela etapa de
-integração):
+Mensagens ao salvar:
 
-- **constantes do endpoint** (etapa 2 do assistente) são sempre enviadas e são **sempre texto**;
-- parâmetro obrigatório sem valor interrompe a chamada: "Parâmetro obrigatório "&lt;nome&gt;" não
-  informado." (código `request_invalid`);
-- parâmetros PATH são codificados na URL; o corpo é montado campo a campo com a mesma sintaxe de caminhos
-  JSON (`body:lines[].itemId` escreve **somente no primeiro item** da lista);
-- na resposta, aplica-se o "Caminho do resultado" do endpoint; se o resultado for uma lista, vale o
-  **primeiro item**; apenas valores escalares (texto, número, booleano, data) são projetados nos campos;
-- em **consultas**, HTTP 404 ou resposta vazia significam "não encontrado" (a consulta devolve vazio, sem
-  erro de transporte);
-- em **escritas**, a idempotência é por chave **e por endpoint**: se já existe execução `success` com a
-  mesma chave de idempotência naquele endpoint, o servidor devolve as saídas gravadas **sem reenviar**;
-  se existe execução `unknown` (tempo esgotado após o envio), a repetição é bloqueada com "Uma tentativa
-  anterior teve resultado incerto (tempo esgotado após o envio): confira no sistema de destino e
-  reconcilie antes de repetir." (código `reconciliation_required`) até alguém reconciliar na aba
-  Execuções. Trocar o endpoint do vínculo entre tentativas pode reenviar a escrita.
+- "Vínculo ativo: a operação passa a chamar o endpoint real." — pronto, já vale.
+- "Vínculo salvo (inativo: continua no transporte configurado)." — a configuração foi guardada, mas a
+  operação continua em modo simulado até você marcar **Ativar vínculo**.
 
-## Transporte efetivo (o que vale em cada situação)
+## Criar um novo mapeamento
 
-```mermaid
-flowchart TD
-    A[Chamada da operação do BPM] --> B{Vínculo ativo?}
-    B -- Sim --> C{Endpoint e conexão habilitados?}
-    C -- Sim --> D[RestIntegration → RestCaller → TargetPolicy → API externa]
-    C -- Não --> E[Falha: "Endpoint ou conexão desabilitado" - não volta ao MOCK]
-    B -- Não --> F[Transporte configurado - padrão MOCK: dados simulados]
-```
+Use **Novo mapeamento** quando um processo precisar de uma integração que não está entre as operações
+prontas. Por exemplo:
 
-Regras:
+- **Consulta no formulário:** o usuário digita o CNPJ e o formulário traz nome, cidade e UF do cliente;
+- **Etapa automática do fluxo:** depois da abertura, o processo confere sozinho o cliente no AX e guarda
+  o nome nos dados do processo; ou grava um pedido no sistema externo.
 
-- **O vínculo ativo sempre vence** o transporte configurado — inclusive em produção.
-- Vínculo ativo com endpoint/conexão desligado **falha** ("Endpoint &lt;id&gt; ou conexão &lt;id&gt;
-  desabilitado.", código `not_configured`); não há retorno silencioso ao MOCK.
-- Sem vínculo ativo (inexistente ou desmarcado), vale o transporte configurado — o padrão é MOCK.
-- **O vínculo é global**: vale para todos os fluxos e formulários que usam a operação (não é por fluxo
-  nem por ambiente de execução).
-- **Rollback para MOCK**: desmarque "Ativar vínculo" e salve. A operação volta imediatamente ao
-  transporte configurado. ⚠ Isso também significa que um vínculo desativado por engano faz um processo
-  real gravar dados sintéticos (ex.: `DT-…`) — veja "Comportamentos que exigem cuidado" no
-  [guia de operação e suporte](guia-operacao-e-suporte.md).
+Antes, o serviço (endpoint) precisa estar cadastrado na aba *Endpoints*, de preferência com os
+**Parâmetros de saída** já definidos (veja [Criar uma integração](guia-criar-integracao.md)).
 
-## Exemplos ilustrativos (fixture de teste)
+Clique em **Novo mapeamento**. Abre um assistente de 5 etapas: use **Próximo** e **Anterior** para
+navegar e **Salvar** para gravar.
 
-Os exemplos abaixo usam a fixture sintética
-[`apps/api/tests/Fixtures/openapi-ax-sample.json`](../../apps/api/tests/Fixtures/openapi-ax-sample.json).
-**São ilustrativos**: o Swagger real do AX não descreve as respostas, então os caminhos de saída devem
-vir dos campos inferidos do **seu** endpoint (exemplo ou teste em homologação). Não invente campos.
+### Etapa 1 — Identificação
 
-### Consulta: `supplier.lookup` ⇄ `GET /v1/Fornecedores/{CPF_CNPJ}`
+![Novo mapeamento, etapa Identificação, com o tipo Consulta no formulário](imagens/21-novo-mapeamento-tipo.png)
 
-A fixture descreve a operação `ListaFornCNPJ` (grupo "Fornecedores", "Lista um Fornecedor") com o
-parâmetro PATH obrigatório `CPF_CNPJ`. Um vínculo possível:
+1. Escolha **o que o mapeamento faz**:
+   - **Consulta no formulário** — o usuário digita um valor, clica em **Consultar** e o formulário é
+     preenchido. A consulta aparece no componente *Consulta AX* do editor de formulários;
+   - **Etapa automática do fluxo** — o processo envia dados ao sistema externo e guarda o resultado. A
+     etapa aparece na etapa do tipo *Integração* do editor de fluxos.
+2. **Nome** — como o mapeamento vai aparecer para quem monta formulários e fluxos (ex.: "Cliente por
+   CNPJ").
+3. **Identificador** — preenchido automaticamente a partir do nome (ex.: `clientePorCnpj`). Pode ser
+   ajustado: comece com uma letra e use só letras, números ou `_`. **Não pode ser alterado depois.**
+4. **Descrição** (opcional) — para que serve e quem usa.
+
+O tipo também não pode ser trocado depois de salvar.
+
+### Etapa 2 — Endpoint
+
+![Novo mapeamento, etapa Endpoint, com o serviço Lista um Cliente escolhido](imagens/22-novo-mapeamento-endpoint.png)
+
+1. Digite parte do nome ou do caminho em **Filtrar** para encontrar o serviço.
+2. Escolha o **Endpoint**. Consultas no formulário só aceitam serviços de **leitura**; a etapa automática
+   aceita leitura ou gravação.
+3. Confira o quadro abaixo: endereço do serviço, conexão e quantas informações ele recebe e devolve.
+
+Avisos que podem aparecer:
+
+- **Endpoint ou conexão desligado** — o mapeamento pode ser salvo, mas vai falhar até você ligá-los.
+- **A conexão não está liberada para escritas** — para serviços que gravam: libere as escritas na
+  conexão, com o número da aprovação.
+- **O endpoint ainda não tem campos de saída** — configure-os na aba *Endpoints* ou digite os caminhos
+  na etapa *Saída*.
+
+### Etapa 3 — Entrada
+
+Diga de onde vem cada informação que o serviço precisa receber.
+
+**Na consulta no formulário**, escolha qual parâmetro recebe o **Valor digitado no formulário**:
+
+![Entrada de uma consulta: CPF_CNPJ recebe o valor digitado no formulário](imagens/23-novo-mapeamento-entrada.png)
+
+**Na etapa automática**, escolha **Dado do processo** e digite a **chave** de um campo preenchido numa
+etapa anterior do fluxo (a chave aparece na aba *API* da configuração do campo, no editor de
+formulários):
+
+![Entrada de uma etapa automática: CPF_CNPJ recebe o dado do processo cnpjCliente](imagens/29-etapa-automatica-entrada.png)
+
+Em qualquer tipo, você também pode usar **Valor fixo** (um texto que é sempre enviado, que não seja
+senha) ou **— não enviar —**. Parâmetros marcados como **obrigatório** precisam receber um valor. Para
+serviços que gravam, o campo **campo do corpo não documentado** + **Adicionar** inclui uma informação que
+o catálogo não mostra.
+
+### Etapa 4 — Saída
+
+Escolha quais informações da resposta voltam para o BPM.
+
+![Saída: nome, cidade e UF do cliente escolhidos, com chave e rótulo](imagens/24-novo-mapeamento-saida.png)
+
+1. Marque **Usar** em cada informação desejada.
+2. Ajuste a **Chave no BPM** (comece com letra; use letras, números ou `_`) e o **Rótulo** (como a
+   informação aparece para as pessoas).
+3. Se o serviço não tiver campos de saída cadastrados, digite o caminho da informação na resposta (ex.:
+   `nome` ou `contato.email`) e clique em **Adicionar campo**.
+
+O que acontece com essas informações:
+
+- **Consulta no formulário:** elas aparecem em *Dado do AX*, no componente *Consulta AX*, para preencher
+  campos do formulário.
+- **Etapa automática:** elas são gravadas nos dados do processo com a chave escolhida. Para mostrá-las
+  numa etapa seguinte, crie no formulário dessa etapa um campo **somente leitura com a mesma chave**.
+
+Informações marcadas como **sensível** (CPF, e-mail, telefone…) aparecem mascaradas no histórico.
+
+### Etapa 5 — Resumo e ativação
+
+![Resumo do novo mapeamento com Ativar mapeamento marcado](imagens/25-novo-mapeamento-resumo.png)
+
+Confira o resumo. Marque **Ativar mapeamento** para que ele passe a chamar o serviço real e clique em
+**Salvar**.
+
+- Ativo: "Mapeamento salvo e ativo: já pode ser usado."
+- Inativo: "Mapeamento salvo, ainda inativo: ative-o quando estiver pronto." Enquanto inativo, a
+  consulta mostra "A consulta … não está ativa no momento" e a etapa automática falha.
+
+Para ativar, o BPM exige pelo menos uma informação de saída e que os parâmetros obrigatórios recebam um
+valor (na consulta, que algum parâmetro receba o valor digitado).
+
+### Depois de salvar
+
+O mapeamento aparece em **Mapeamentos personalizados**:
+
+![Lista de mapeamentos personalizados com situação, uso, Editar e Excluir](imagens/26-mapeamentos-personalizados.png)
+
+| Coluna | O que mostra |
+|---|---|
+| **Mapeamento** | Nome, chave usada pelo BPM (`map:…`), tipo e descrição. |
+| **Situação** | **Ativo (REST real)**; **Ativo — endpoint/conexão desligado** (vai falhar até ligar); ou **Inativo**. |
+| **Uso** | Em quantos formulários (consulta) ou etapas de fluxo (etapa automática) ele é usado. |
+
+- **Editar** abre o mesmo assistente para mudar nome, descrição, endpoint, entrada, saída ou a ativação.
+  Mudar a chave de uma saída já usada em formulários faz esses formulários deixarem de recebê-la.
+- **Excluir** (lixeira) só fica disponível quando o mapeamento **não está em uso**. Antes, retire-o dos
+  formulários ou troque a integração das etapas que o usam.
+
+### Onde o novo mapeamento aparece
+
+**Consulta no formulário** — no editor de formulários, componente **Consulta AX**, lista **Fonte da
+consulta** (o nome aparece com o sistema entre parênteses). Configure como no guia
+[Usar consultas nos formulários](guia-consumir-formulario.md).
+
+![Lista Fonte da consulta mostrando o novo mapeamento Cliente por CNPJ](imagens/27-fonte-no-editor.png)
+
+**Etapa automática do fluxo** — no editor de fluxos, etapa do tipo **Integração**, lista **Integração
+executada**. Ao escolher, a tela mostra o que a etapa **lê** e **grava** no processo. Veja
+[Etapa do tipo Integração](guia-etapa-integracao.md).
+
+![Etapa automática do fluxo escolhida na identificação do novo mapeamento](imagens/28-etapa-automatica-tipo.png)
+
+> Quem já estava com o editor aberto precisa **recarregar a página** para ver o mapeamento novo.
+
+## Regras importantes
+
+- **O mapeamento vale para todos os processos e formulários** que usam aquela operação, de uma vez.
+- **Operação pronta: voltar ao modo simulado** é simples: abra **Mapear**, desmarque **Ativar vínculo** e
+  salve. A mudança vale na hora.
+- **Mapeamento novo inativo não funciona**: não há dados simulados para ele. A *Visão geral* avisa
+  quando há mapeamentos personalizados inativos, e a validação do fluxo avisa quando uma etapa usa um.
+- **Serviço ou conexão desligado com o vínculo ativo faz a operação falhar** (pílula vermelha). Ligue os
+  dois ou desative o vínculo.
+- Nas consultas, "não encontrado" no sistema externo aparece para o usuário como "não foi encontrado",
+  sem erro.
+- Nas gravações, se uma tentativa demorar demais e ficar a dúvida se gravou, o BPM **não repete** até
+  alguém conferir. Veja [Acompanhar e resolver problemas](guia-operacao-e-suporte.md).
+- Trocar o serviço de uma gravação enquanto há tentativas pendentes pode fazer o BPM enviar de novo.
+  Evite trocar no meio de um processo.
+
+## Exemplos para as operações prontas
+
+Os exemplos abaixo são **ilustrativos**. Os nomes dos campos da resposta precisam vir do **seu** serviço
+(da etapa *Parâmetros de saída*), não destes exemplos.
+
+### Consulta: código do fornecedor → contato
+
+Serviço "Lista um Fornecedor", que recebe o CPF ou CNPJ.
 
 | Destino no endpoint | Origem |
 |---|---|
-| `CPF_CNPJ` (PATH) | `input:value` |
+| CPF_CNPJ | Valor digitado no formulário |
 
-| Campo do BPM | Caminho na resposta (exemplo fictício) |
+| Campo do BPM | Caminho na resposta (exemplo) |
 |---|---|
-| `supplierName` | `nome` |
-| `contactName` | `contato.nome` |
-| `phone` | `contato.telefone` |
-| `email` | `contato.email` |
+| Fornecedor | `nome` |
+| Contato | `contato.nome` |
+| Telefone | `contato.telefone` |
+| E-mail | `contato.email` |
 
-### Escrita: `transferAndBlock` ⇄ `POST /v1/Financeiro/CriarOrdemTransferencia`
+### Gravação: diário de transferência no AX
 
-A fixture descreve a operação `CriarOT` (grupo "Financeiro", "Criar Ordem De Transferencia") com corpo
-JSON `OrdemDeTransferencia` (`inventLocationIdFrom`, `inventLocationIdTo`, `shipDate`, `transferId` e a
-lista `lines[]` com `itemId`, `lineNum`, `transferQty`). Um vínculo possível (a conexão precisa ter
-escritas liberadas):
+Serviço "Criar Ordem De Transferencia". A conexão precisa estar com as escritas liberadas.
 
 | Destino no endpoint | Origem |
 |---|---|
-| `body:transferId` | `input:numeroOcdev` |
-| `body:lines[].itemId` | `input:codigoItem` |
-| `body:lines[].transferQty` | `const:1` |
-| `body:lines[].lineNum` | `const:1` |
+| transferId | dado do processo: número da OCDev |
+| lines[].itemId | dado do processo: código do item |
+| lines[].transferQty | valor constante `1` |
+| lines[].lineNum | valor constante `1` |
 
-| Campo do BPM | Caminho na resposta (exemplo fictício) |
+| Campo do BPM | Caminho na resposta (exemplo) |
 |---|---|
-| `numeroDiarioTransferencia` | `transferId` |
-| `ocdevMarcadaNaOc` | `ocMarcada` |
-| `itemBloqueado` | `bloqueado` |
+| Nº do diário de transferência | `transferId` |
+| OCDev marcada na OC | `ocMarcada` |
+| Item bloqueado | `bloqueado` |
 
-> Pendência real: qual operação (ou conjunto de operações) do AX executa de fato "diário de
-> transferência + marcação da OCDev na OC + bloqueio do item" ainda aguarda validação com o time do AX
-> (ver `docs/pendencias-validacao.md`). Até lá, vale o transporte MOCK.
+> **Pendente:** ainda falta confirmar com a equipe do AX qual serviço faz, de fato, "diário de
+> transferência + marcação da OCDev na OC + bloqueio do item". Até lá, essa operação continua em modo
+> simulado.
 
-## Leitura seguinte
+## Leia também
 
-- Consumir as consultas em formulários: [guia de consumo em formulários](guia-consumir-formulario.md).
-- Consumir a escrita na etapa de integração: [guia da etapa Integração](guia-etapa-integracao.md).
-- Acompanhar execuções e reconciliar escritas: [guia de operação e suporte](guia-operacao-e-suporte.md).
+- [Usar consultas nos formulários](guia-consumir-formulario.md)
+- [Etapa do tipo Integração](guia-etapa-integracao.md)
+- [Acompanhar e resolver problemas](guia-operacao-e-suporte.md)

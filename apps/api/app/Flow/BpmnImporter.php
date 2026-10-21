@@ -268,7 +268,7 @@ class BpmnImporter
                     $node['type'] = Stage::SERVICE_TASK;
                     $integration = $xp->query('b:extensionElements/tmsa:integration', $el)->item(0);
                     $op = $integration instanceof DOMElement ? $integration->getAttribute('operation') : '';
-                    if ($el->getAttributeNS(BpmnGenerator::NS_FLOWABLE, 'type') !== 'external-worker' || ! array_key_exists($op, StageCatalog::SERVICE_OPERATIONS)) {
+                    if ($el->getAttributeNS(BpmnGenerator::NS_FLOWABLE, 'type') !== 'external-worker' || ! array_key_exists($op, StageCatalog::serviceOperations())) {
                         $this->err($id, "Integração \"$name\": selecione uma operação do catálogo de integrações TMSA.");
                     }
                     $node['config'] = ['operation' => $op ?: null];

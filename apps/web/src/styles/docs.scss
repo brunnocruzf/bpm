@@ -242,6 +242,17 @@
   text-align: left;
 }
 
+// capturas de tela dos guias
+.docs-article img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem 0 1.25rem;
+  border: 1px solid var(--docs-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgb(15 30 45 / 8%);
+}
+
 // bloco de destaque (aviso): blockquote do Markdown
 .docs-callout {
   margin: 1rem 0;

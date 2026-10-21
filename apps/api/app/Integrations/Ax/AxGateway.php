@@ -2,6 +2,7 @@
 
 namespace App\Integrations\Ax;
 
+use App\Integrations\BpmOperations;
 use App\Integrations\IntegrationUnavailable;
 use App\Integrations\Rest\RestIntegration;
 use App\Models\IntegrationBinding;
@@ -29,17 +30,30 @@ class AxGateway
         return IntegrationBinding::with('endpoint.connection')->where('operation', $operation)->where('enabled', true)->first();
     }
 
-    /** Nome do transporte efetivo (exibido nas consultas e no painel). */
+    /** Nome do transporte efetivo (exibido nas consultas e no painel). Mapeamento personalizado sem vínculo ativo: INATIVO. */
     public function transportName(string $operation): string
     {
         $binding = $this->binding($operation);
+        if ($binding?->endpoint) {
+            return 'REST:'.$binding->endpoint->connection->key;
+        }
 
-        return $binding?->endpoint ? 'REST:'.$binding->endpoint->connection->key : $this->transportFor($operation)->name();
+        return BpmOperations::isFixed($operation) ? $this->transportFor($operation)->name() : 'INATIVO';
+    }
+
+    /** Transporte configurado de uma operação fixa (as chaves têm ponto: não dá para usar config("...$operation")). */
+    public static function configuredTransport(string $operation): string
+    {
+        return (string) (((array) config('bpm.ax.transports'))[$operation] ?? 'MOCK');
     }
 
     public function transportFor(string $operation): AxTransport
     {
-        $name = (string) config("bpm.ax.transports.$operation", 'MOCK');
+        if (! BpmOperations::isFixed($operation)) {
+            // mapeamento personalizado: não há dados simulados; inativo, falha (nunca inventa resultado)
+            throw new IntegrationUnavailable("O mapeamento \"$operation\" está inativo: ative-o em Integrações → Mapeamentos.", 'not_configured');
+        }
+        $name = self::configuredTransport($operation);
 
         return match ($name) {
             'MOCK' => app(MockAxTransport::class),
