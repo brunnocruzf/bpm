@@ -177,7 +177,7 @@ Route::prefix('v1')->group(function () {
 
         // Configurações (settings.manage). Segredos são somente escrita.
         Route::prefix('admin/settings')->group(function () {
-            $slug = 'branding|entra/auth|entra/directory-sync|email|audit-retention|reports|attachments-storage';
+            $slug = 'branding|entra/auth|entra/directory-sync|email|audit-retention|reports|attachments-storage|categories';
             Route::get('/', [SettingsController::class, 'index']);
             Route::post('branding/assets', [SettingsController::class, 'uploadAsset'])->middleware('throttle:20,1');
             Route::get('branding/assets/{id}', [SettingsController::class, 'previewAsset'])->whereUuid('id');

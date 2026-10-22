@@ -5,6 +5,7 @@ import Menu from 'primevue/menu'
 import { useSession } from '@/stores/session'
 import { useBranding } from '@/stores/branding'
 import { auth } from '@/auth'
+import NewCategoryDialog from '@/components/NewCategoryDialog.vue'
 
 const session = useSession()
 const brand = useBranding()
@@ -14,6 +15,7 @@ const sidebarOpen = ref(false)
 const knowledgeOpen = ref(false)
 const userMenu = ref()
 const search = ref('')
+const newCategoryOpen = ref(false)
 const envLabel = import.meta.env.VITE_ENV_LABEL || 'BPM TMSA'
 const method = auth.method()
 const methodLabel = { entra: 'Login: Microsoft Entra ID', demo: 'Visitante — ambiente de demonstração', superadmin: 'SuperAdmin — acesso de emergência', local: 'Login: conta local' }[method ?? 'entra']
@@ -85,7 +87,10 @@ watch(() => route.fullPath, () => { sidebarOpen.value = false })
         <RouterLink class="tm-side-item" :class="{ active: route.name === 'monitor' || route.name === 'instance' }" :to="{ name: 'monitor' }"><i class="pi pi-eye" />Acompanhar</RouterLink>
       </nav>
       <nav>
-        <div class="tm-side-label">Áreas</div>
+        <div class="tm-side-label">
+          Áreas
+          <button v-if="session.can('settingsManage')" type="button" class="tm-side-label-action" title="Nova área" aria-label="Adicionar área" @click="newCategoryOpen = true"><i class="pi pi-plus-circle" aria-hidden="true" /></button>
+        </div>
         <RouterLink class="tm-side-item tm-side-sub" :class="{ active: activeCategory === 'Todas' }" :to="{ name: 'catalog' }"><i class="pi pi-folder" />Todas</RouterLink>
         <RouterLink v-for="c in categories" :key="c" class="tm-side-item tm-side-sub" :class="{ active: activeCategory === c }" :to="{ name: 'catalog', query: { category: c } }"><i class="pi pi-folder" />{{ c }}</RouterLink>
       </nav>
@@ -124,4 +129,5 @@ watch(() => route.fullPath, () => { sidebarOpen.value = false })
       </div>
     </main>
   </div>
+  <NewCategoryDialog v-model:visible="newCategoryOpen" />
 </template>

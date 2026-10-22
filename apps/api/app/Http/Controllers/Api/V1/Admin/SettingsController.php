@@ -22,6 +22,7 @@ use App\Settings\SettingType;
 use App\Settings\Types\AttachmentStorageSettings;
 use App\Settings\Types\AuditRetentionSettings;
 use App\Settings\Types\BrandingSettings;
+use App\Settings\Types\CategoriesSettings;
 use App\Settings\Types\DirectorySyncSettings;
 use App\Settings\Types\EmailSettings;
 use App\Settings\Types\EntraAuthSettings;
@@ -51,6 +52,7 @@ class SettingsController extends ApiController
         'audit-retention' => AuditRetentionSettings::class,
         'reports' => ReportSettings::class,
         'attachments-storage' => AttachmentStorageSettings::class,
+        'categories' => CategoriesSettings::class,
     ];
 
     public function __construct(private readonly SettingsRepository $settings) {}

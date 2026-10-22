@@ -10,6 +10,8 @@ use App\Identity\UserPhotoService;
 use App\Models\BpmGroup;
 use App\Models\TaskProjection;
 use App\Models\User;
+use App\Settings\SettingsRepository;
+use App\Settings\Types\CategoriesSettings;
 use Illuminate\Http\JsonResponse;
 
 class SessionController extends ApiController
@@ -56,11 +58,13 @@ class SessionController extends ApiController
             ->orderBy('name')->get(['username', 'name', 'area', 'roles', 'groups']));
     }
 
-    public function meta(): JsonResponse
+    public function meta(SettingsRepository $settings): JsonResponse
     {
+        $categories = new CategoriesSettings();
+
         return response()->json([
             'groups' => BpmGroup::orderBy('name')->get(['key', 'name', 'description']),
-            'categories' => ['Qualidade', 'Compras', 'Operações', 'Financeiro', 'Outros'],
+            'categories' => $categories->present($settings->value($categories))['items'],
             ...FieldCatalog::describe(),
             ...StageCatalog::describe(),
         ]);
