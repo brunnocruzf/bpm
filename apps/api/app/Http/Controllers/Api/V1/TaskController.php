@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\SupplierAction;
 use App\Models\TaskProjection;
 use App\Runtime\Access;
+use App\Runtime\GridFilters;
 use App\Runtime\Idempotency;
 use App\Runtime\RuntimePresenter;
 use App\Runtime\SupplierActionService;
@@ -48,8 +49,10 @@ class TaskController extends ApiController
         if ($flow = $request->query('flow')) {
             $query->whereHas('instance.catalog', fn ($q) => $q->where('key', $flow));
         }
+        GridFilters::tasks($query, $request);
         $order = $scope === 'completed' ? ['completed_at', 'desc'] : ['created_at', 'asc'];
-        $page = $query->orderBy(...$order)->paginate(min(100, max(5, (int) $request->query('perPage', 25))));
+        GridFilters::sortTasks($query, $request, $order);
+        $page = $query->paginate(min(100, max(5, (int) $request->query('perPage', 25))));
 
         return response()->json([
             'data' => collect($page->items())->map(fn ($t) => $this->presenter->taskSummary($t, $user))->all(),

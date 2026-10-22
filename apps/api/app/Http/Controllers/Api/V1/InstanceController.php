@@ -8,6 +8,7 @@ use App\Forms\SubmissionProcessor;
 use App\Models\ProcessInstance;
 use App\Models\TaskProjection;
 use App\Runtime\Access;
+use App\Runtime\GridFilters;
 use App\Runtime\Idempotency;
 use App\Runtime\InstanceService;
 use App\Runtime\RuntimePresenter;
@@ -67,11 +68,10 @@ class InstanceController extends ApiController
         if ($request->query('scope') === 'mine') {
             $query->where('requester_id', $user->id);
         }
-        if ($q = trim((string) $request->query('q', ''))) {
-            $query->where(fn ($w) => $w->where('number', 'like', "%$q%")->orWhere('requester_name', 'like', "%$q%")->orWhere('requester_area', 'like', "%$q%"));
-        }
+        GridFilters::instances($query, $request);
         $perPage = min(100, max(5, (int) $request->query('perPage', 20)));
-        $page = $query->orderByDesc('started_at')->paginate($perPage);
+        GridFilters::sortInstances($query, $request);
+        $page = $query->paginate($perPage);
 
         return response()->json([
             'data' => collect($page->items())->map(fn ($i) => $this->presenter->instanceSummary($i))->all(),

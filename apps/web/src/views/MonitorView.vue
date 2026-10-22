@@ -1,50 +1,59 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import Paginator from 'primevue/paginator'
 import { api } from '@/api/http'
 import type { CatalogItem, InstanceSummary, Paged } from '@/api/types'
 import { useNotify } from '@/composables/notify'
 import { fmtDateTime } from '@/composables/format'
+import { DUE_FILTERS, useGridFilters } from '@/composables/gridFilters'
 import StatusPill from '@/components/StatusPill.vue'
 
 interface Metrics { running: number; awaitingMe: number; completedThisMonth: number; onTimePercent: number | null; overdueTasks: number }
 
-const route = useRoute()
+const AGE = [{ value: '0-7', label: 'Até 7 dias' }, { value: '8-30', label: '8 a 30 dias' }, { value: '31-90', label: '31 a 90 dias' }, { value: '91-', label: 'Mais de 90 dias' }]
+const STATUS = [{ value: 'starting,running', label: 'Em andamento' }, { value: 'completed', label: 'Concluída' }, { value: 'cancelled', label: 'Cancelada' }, { value: 'error', label: 'Erro de integração' }]
+
 const router = useRouter()
 const notify = useNotify()
 const flows = ref<CatalogItem[]>([])
-const flow = ref((route.query.flow as string) || '')
-const status = ref('')
-const q = ref((route.query.q as string) || '')
 const items = ref<InstanceSummary[]>([])
 const total = ref(0)
 const page = ref(1)
 const metrics = ref<Metrics | null>(null)
 const loading = ref(false)
+const COLUMNS = [
+  { key: 'number', label: 'Nº / ano' }, { key: 'requester', label: 'Solicitante' }, { key: 'area', label: 'Área do solicitante' },
+  { key: 'started', label: 'Data do registro' }, { key: 'stage', label: 'Etapa atual' }, { key: 'assignee', label: 'Responsável' },
+  { key: 'age', label: 'Idade' }, { key: 'due', label: 'Prazo' }, { key: 'status', label: 'Status' },
+]
+const { filters, active, clear, toggleSort, sortIcon } = useGridFilters(
+  ['flow', 'q', 'number', 'requester', 'area', 'startedFrom', 'startedTo', 'stage', 'assignee', 'age', 'due', 'status', 'sort', 'dir'] as const,
+  () => { page.value = 1; load() },
+)
 
-const flowName = computed(() => flows.value.find((f) => f.key === flow.value)?.name)
+const flowName = computed(() => flows.value.find((f) => f.key === filters.flow)?.name)
 
+let seq = 0
 async function load() {
+  const mine = ++seq
   loading.value = true
   try {
     const [list, m] = await Promise.all([
-      api<Paged<InstanceSummary>>('/process-instances', { query: { flow: flow.value, status: status.value, q: q.value, page: page.value, perPage: 20 } }),
-      api<Metrics>('/process-instances/metrics', { query: { flow: flow.value } }),
+      api<Paged<InstanceSummary>>('/process-instances', { query: { ...filters, page: page.value, perPage: 20 } }),
+      api<Metrics>('/process-instances/metrics', { query: { flow: filters.flow } }),
     ])
+    if (mine !== seq) return // resposta de um filtro já substituído
     items.value = list.data
     total.value = list.meta.total
     metrics.value = m
   } catch (e) {
     notify.error(e)
   } finally {
-    loading.value = false
+    if (mine === seq) loading.value = false
   }
 }
 
-let timer: number | undefined
-watch(q, () => { window.clearTimeout(timer); timer = window.setTimeout(() => { page.value = 1; load() }, 350) })
-watch([flow, status], () => { page.value = 1; router.replace({ query: { ...(flow.value ? { flow: flow.value } : {}), ...(q.value ? { q: q.value } : {}) } }); load() })
 onMounted(async () => {
   load()
   try { flows.value = (await api<{ data: CatalogItem[] }>('/catalog/processes')).data.filter((f) => f.publishedVersion) } catch { /* filtro opcional */ }
@@ -65,23 +74,57 @@ onMounted(async () => {
   </div>
   <div class="tm-toolbar">
     <div class="tm-toolbar-left">
-      <select v-model="flow" class="tm-select" aria-label="Fluxo">
+      <select v-model="filters.flow" class="tm-select" aria-label="Fluxo">
         <option value="">Todos os fluxos</option>
         <option v-for="f in flows" :key="f.key" :value="f.key">{{ f.name }}</option>
       </select>
-      <select v-model="status" class="tm-select" aria-label="Status">
-        <option value="">Todos os status</option>
-        <option value="starting,running">Em andamento</option>
-        <option value="completed">Concluídas</option>
-        <option value="cancelled,error">Canceladas / erro</option>
-      </select>
       <span class="tm-muted" style="font-size:12px">{{ total }} solicitação(ões){{ flowName ? ` · ${flowName}` : '' }}</span>
     </div>
-    <input v-model="q" class="tm-input" placeholder="Número, solicitante ou área..." aria-label="Buscar" />
+    <div class="tm-toolbar-left">
+      <button v-if="active" class="tm-btn ghost small" @click="clear"><i class="pi pi-filter-slash" /> Limpar filtros</button>
+      <input v-model="filters.q" class="tm-input" placeholder="Número, solicitante ou área..." aria-label="Buscar" />
+    </div>
   </div>
-  <div class="tm-table-wrap">
+  <div class="tm-table-wrap" :class="{ busy: loading }">
     <table class="tm-table">
-      <thead><tr><th>Nº / ano</th><th>Solicitante</th><th>Área do solicitante</th><th>Data do registro</th><th>Etapa atual</th><th>Responsável</th><th>Idade</th><th>Prazo</th><th>Status</th></tr></thead>
+      <thead>
+        <tr>
+          <th v-for="c in COLUMNS" :key="c.key" class="tm-sortable" :class="{ sorted: filters.sort === c.key }" :aria-sort="filters.sort !== c.key ? 'none' : filters.dir === 'desc' ? 'descending' : 'ascending'" @click="toggleSort(c.key)">
+            {{ c.label }} <i :class="sortIcon(c.key)" />
+          </th>
+        </tr>
+        <tr class="tm-filter-row">
+          <th><input v-model="filters.number" class="tm-col-filter" :class="{ on: filters.number }" placeholder="Nº ou fluxo" aria-label="Filtrar por número ou fluxo" /></th>
+          <th><input v-model="filters.requester" class="tm-col-filter" :class="{ on: filters.requester }" placeholder="Nome" aria-label="Filtrar por solicitante" /></th>
+          <th><input v-model="filters.area" class="tm-col-filter" :class="{ on: filters.area }" placeholder="Área" aria-label="Filtrar por área do solicitante" /></th>
+          <th>
+            <div class="tm-col-range">
+              <input v-model="filters.startedFrom" type="date" class="tm-col-filter" :class="{ on: filters.startedFrom }" title="Registrada a partir de" aria-label="Registrada a partir de" />
+              <input v-model="filters.startedTo" type="date" class="tm-col-filter" :class="{ on: filters.startedTo }" title="Registrada até" aria-label="Registrada até" />
+            </div>
+          </th>
+          <th><input v-model="filters.stage" class="tm-col-filter" :class="{ on: filters.stage }" placeholder="Etapa" aria-label="Filtrar por etapa atual" /></th>
+          <th><input v-model="filters.assignee" class="tm-col-filter" :class="{ on: filters.assignee }" placeholder="Grupo ou pessoa" aria-label="Filtrar por responsável" /></th>
+          <th>
+            <select v-model="filters.age" class="tm-col-filter" :class="{ on: filters.age }" aria-label="Filtrar por idade">
+              <option value="">Todas</option>
+              <option v-for="o in AGE" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </th>
+          <th>
+            <select v-model="filters.due" class="tm-col-filter" :class="{ on: filters.due }" aria-label="Filtrar por prazo">
+              <option value="">Todos</option>
+              <option v-for="o in DUE_FILTERS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </th>
+          <th>
+            <select v-model="filters.status" class="tm-col-filter" :class="{ on: filters.status }" aria-label="Filtrar por status">
+              <option value="">Todos</option>
+              <option v-for="o in STATUS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </th>
+        </tr>
+      </thead>
       <tbody>
         <tr v-if="loading && !items.length"><td colspan="9" class="tm-empty">Carregando...</td></tr>
         <tr v-else-if="!items.length"><td colspan="9"><div class="tm-empty"><strong>Nenhuma solicitação</strong>Ajuste os filtros ou abra uma nova pelo catálogo.</div></td></tr>

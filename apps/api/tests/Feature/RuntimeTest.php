@@ -160,6 +160,59 @@ class RuntimeTest extends TestCase
         $this->assertTrue(AuditEvent::where('action', 'task.claimed')->exists());
     }
 
+    public function test_grids_filter_by_each_column(): void
+    {
+        $a = $this->startAndReachAnalysis();
+        $b = $this->startAndReachAnalysis();
+        $a->update(['requester_area' => 'Almoxarifado Central', 'started_at' => now()->subDays(40)]);
+        TaskProjection::where('process_instance_id', $a->id)->where('stage_key', 'analise')->update(['due_at' => now()->subDay(), 'engine_created_at' => now()->subDays(3)]);
+        $taskB = TaskProjection::where('process_instance_id', $b->id)->where('stage_key', 'analise')->first();
+        $taskB->update(['due_at' => null, 'engine_created_at' => now()->subHour()]);
+        $this->as('gef')->postJson("/api/v1/tasks/{$taskB->id}/claim")->assertOk();
+        $local = now(config('bpm.sequences.timezone'));
+
+        $instances = fn (array $f) => $this->as('auditor')->getJson('/api/v1/process-instances?'.http_build_query($f))->assertOk()->json('data.*.id');
+        $this->assertSame([$a->id], $instances(['number' => '000001']));
+        $this->assertCount(2, $instances(['number' => 'COMPRA']), 'Nome do fluxo, sem diferenciar maiúsculas');
+        $this->assertCount(2, $instances(['requester' => 'carla']));
+        $this->assertSame([$a->id], $instances(['area' => 'ALMOX']));
+        $this->assertSame([$a->id], $instances(['q' => 'almox']));
+        $this->assertSame([$b->id], $instances(['startedFrom' => $local->toDateString()]));
+        $this->assertSame([$a->id], $instances(['startedTo' => $local->copy()->subDays(30)->toDateString()]));
+        $this->assertCount(2, $instances(['stage' => 'ANÁLISE']));
+        $this->assertSame([], $instances(['stage' => 'abertura']), 'Somente etapas atuais');
+        $this->assertSame([$b->id], $instances(['assignee' => 'gabriel']));
+        $this->assertCount(2, $instances(['assignee' => 'gef']));
+        $this->assertSame([$a->id], $instances(['age' => '31-']));
+        $this->assertSame([$b->id], $instances(['age' => '0-7']));
+        $this->assertSame([$a->id], $instances(['due' => 'overdue']));
+        $this->assertSame([$b->id], $instances(['due' => 'none']));
+
+        $tasks = fn (array $f, string $user = 'gef') => $this->as($user)->getJson('/api/v1/tasks?'.http_build_query($f))->assertOk()->json('data.*.instance.id');
+        $this->assertCount(2, $tasks(['scope' => 'mine', 'flow' => 'compra', 'stage' => 'análise']));
+        $this->assertSame([$b->id], $tasks(['scope' => 'mine', 'number' => '000002']));
+        $this->assertSame([$a->id], $tasks(['scope' => 'mine', 'requester' => 'almox']));
+        $this->assertSame([$a->id], $tasks(['scope' => 'mine', 'q' => 'almox']));
+        $this->assertSame([$b->id], $tasks(['scope' => 'mine', 'assignee' => 'gabriel']));
+        $this->assertSame([$b->id], $tasks(['scope' => 'mine', 'status' => 'claimed']));
+        $this->assertSame([$a->id], $tasks(['scope' => 'mine', 'age' => '2-6']));
+        $this->assertSame([$b->id], $tasks(['scope' => 'mine', 'age' => '0-0']));
+        $this->assertSame([$a->id], $tasks(['scope' => 'mine', 'due' => 'overdue']));
+        $this->assertSame([$b->id], $tasks(['scope' => 'mine', 'due' => 'none']));
+        $this->assertCount(2, $tasks(['scope' => 'completed', 'completedFrom' => $local->toDateString()], 'cq'));
+        $this->assertSame([], $tasks(['scope' => 'completed', 'completedTo' => $local->copy()->subDay()->toDateString()], 'cq'));
+
+        $this->assertSame([$a->id, $b->id], $instances(['sort' => 'number', 'dir' => 'asc']));
+        $this->assertSame([$b->id, $a->id], $instances(['sort' => 'age', 'dir' => 'asc']), 'Idade crescente = mais nova primeiro');
+        $this->assertCount(2, $instances(['sort' => 'due', 'dir' => 'desc']));
+        $this->assertSame([$b->id, $a->id], $tasks(['scope' => 'mine', 'sort' => 'number', 'dir' => 'desc']));
+        $this->assertSame([$b->id, $a->id], $tasks(['scope' => 'mine', 'sort' => 'status', 'dir' => 'asc']), 'claimed antes de open');
+        $this->assertCount(2, $tasks(['scope' => 'mine', 'sort' => 'requester', 'dir' => 'asc']));
+        $this->as('gef')->getJson('/api/v1/tasks?sort=senha')->assertStatus(422);
+        $this->as('gef')->getJson('/api/v1/tasks?due=late')->assertStatus(422);
+        $this->as('auditor')->getJson('/api/v1/process-instances?startedFrom=22/10/2026')->assertStatus(422);
+    }
+
     public function test_attachments_validate_type_and_require_authorization_to_download(): void
     {
         $exe = UploadedFile::fake()->createWithContent('virus.exe', 'MZ'.str_repeat("\0", 100));
