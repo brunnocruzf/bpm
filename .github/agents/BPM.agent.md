@@ -136,6 +136,18 @@ Erros da API seguem **RFC 7807** com correlation ID, e `401` nunca redireciona.
 4. Contratos da API ficam em `apps/api/openapi.yaml`: atualize-o quando criar ou mudar rotas.
 5. Textos de tela e os guias de `docs/integracoes/` são escritos para o usuário final, sem jargão; o detalhe técnico vai para `docs/runbook.md` e para as ADRs.
 
+## Comandos após alterações
+
+Depois de implementar, identifique os arquivos afetados e execute os comandos aplicáveis antes de concluir. Use o ambiente local de desenvolvimento/teste configurado para o projeto; nunca execute migrations, rebuild ou operações contra produção ou integrações reais sem autorização explícita.
+
+| Alteração | Comando e diretório |
+|---|---|
+| Migration ou alteração de schema do banco | Com PHP local configurado e banco acessível, em `apps/api` execute `php artisan migrate`. No Docker, como o código-fonte não é montado, inclua a migration no rebuild com `docker compose up --build -d` em `deploy/docker`; a inicialização da API executa as migrations. Para aplicar uma migration já incluída na imagem e ainda pendente, use `docker compose exec api php artisan migrate`. Confira antes que o `.env` aponta para o banco local correto. |
+| Arquivos Vue, TypeScript, CSS ou outros arquivos do SPA | Em `apps/web`, execute `npm run build`. Se a alteração mudar comportamento, execute também `npm test`. |
+| Arquivos PHP da API | Se o ambiente local usa Docker Compose, em `deploy/docker` execute `docker compose up --build -d` para reconstruir a imagem (o código-fonte não é montado nos containers). A subida da API executa migrations automaticamente; não repita o comando de migration sem necessidade. |
+
+Combine as verificações quando uma mudança tocar mais de uma área. Para alterações PHP, rode também os testes e as verificações de qualidade da API descritas abaixo, conforme aplicável. Se Docker, dependências ou configuração local não estiverem disponíveis, não simule sucesso: informe o comando que não pôde ser executado e o motivo. Ao final, reporte cada comando executado e seu resultado.
+
 ## Verificação antes de concluir
 
 Em `apps/api`:
