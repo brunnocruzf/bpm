@@ -324,7 +324,7 @@ class DirectorySyncService
             if ($admin && $run->mode !== 'preview') {
                 $this->settings->recordValidation($this->type(), false, ['step' => 'sync', 'code' => $run->error_code, 'message' => $run->error_message], $admin);
             }
-            $this->notifier->adminAlert('directory:'.$run->id, '[BPM TMSA] Sincronização do diretório: '.$run->error_code, "A sincronização do diretório terminou com '{$run->status}' ({$run->error_code}): {$run->error_message}\n\nVerifique em Configurações → Entra ID — usuários e grupos.");
+            $this->notifier->adminAlert('directory:'.$run->id, '['.config('app.name').'] Sincronização do diretório: '.$run->error_code, "A sincronização do diretório terminou com '{$run->status}' ({$run->error_code}): {$run->error_message}\n\nVerifique em Configurações → Entra ID — usuários e grupos.");
         }
     }
 

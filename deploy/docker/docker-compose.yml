@@ -7,12 +7,18 @@
 #   docker compose up --build -d        # COMPOSE_PROFILES=dev no .env inclui o Mailpit
 #   http://localhost:8080  ·  Mailpit: http://localhost:8025
 #
+# Outra organização = outra instância isolada (banco, engine, anexos, cofre e volumes próprios; ADR-0019):
+#   docker compose -p bpm-ims --env-file .env.ims up -d     # modelo: .env.ims.example · ./orgs.sh
+#
 # Perfis: dev/test → Mailpit (captura e-mails, sem entrega externa) · carbone → Carbone (somente após
 # aprovação da licença; ver ADR-0011). Imagens de terceiros fixadas por tag + digest.
 name: bpm-tmsa
 
 x-api-env: &api-env
-  APP_NAME: BPM TMSA
+  APP_NAME: ${BPM_APP_NAME:-BPM TMSA}
+  # Organização desta instância (uma stack por organização; ver ADR-0019)
+  BPM_ORGANIZATION_KEY: ${BPM_ORGANIZATION_KEY:-tmsa}
+  BPM_ORGANIZATION_NAME: ${BPM_ORGANIZATION_NAME:-TMSA}
   APP_ENV: ${APP_ENV:-local}
   APP_KEY: ${APP_KEY:?defina APP_KEY no .env}
   APP_DEBUG: "false"
@@ -33,7 +39,7 @@ x-api-env: &api-env
   MAIL_MAILER: smtp
   MAIL_HOST: mailpit
   MAIL_PORT: "1025"
-  MAIL_FROM_ADDRESS: bpm@tmsa.local
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-bpm@tmsa.local}
   BPM_MAILPIT_HOST: mailpit
   BPM_MAIL_PRIVATE_RELAY_HOSTS: ${BPM_MAIL_PRIVATE_RELAY_HOSTS:-}
   BPM_AUTH_DRIVER: ${BPM_AUTH_DRIVER:-dev}
@@ -293,7 +299,7 @@ services:
 secrets:
   # Arquivo local (gitignored) gerado por ./secrets/generate.sh. Produção: secret manager / Docker Swarm secrets / Key Vault CSI.
   bpm_secrets_key:
-    file: ./secrets/bpm_secrets_key
+    file: ${BPM_SECRETS_KEY_PATH:-./secrets/bpm_secrets_key}
 
 networks:
   edge: {}

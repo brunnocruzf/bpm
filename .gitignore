@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.*.example
 !apps/web/.env.development
 !apps/web/.env.docker-dev
 !apps/web/.env.production
@@ -31,6 +32,8 @@ Thumbs.db
 deploy/docker/secrets/*
 !deploy/docker/secrets/generate.sh
 !deploy/docker/secrets/README.md
+# Dumps gerados por deploy/docker/orgs.sh backup
+deploy/docker/backups/
 
 # Referências locais do GitHub Copilot (especificações, protótipos, capturas) — não versionadas
 .github/copilot/references/

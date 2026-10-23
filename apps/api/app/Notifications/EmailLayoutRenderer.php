@@ -28,14 +28,16 @@ final class EmailLayoutRenderer
             ? $sample
             : 'task.assigned';
         $base = rtrim((string) config('app.frontend_url', config('app.url')), '/');
+        $org = (string) config('bpm.organization.name');
+        $app = (string) config('app.name');
         $examples = [
-            'task.assigned' => ['subject' => '[TMSA] Aprovar recebimento · IRR-000123/26', 'text' => "Olá, Ana.\n\nA solicitação IRR-000123/26 (Recebimento de materiais) chegou à etapa \"Aprovação do recebimento\" e aguarda sua ação.\nPrazo: 16/10/2026 17:00\n\nAbra a tarefa (login necessário): $base/tasks/preview-task"],
-            'stage.completed' => ['subject' => '[TMSA] IRR-000123/26: etapa concluída', 'text' => "A etapa \"Conferência inicial\" da solicitação IRR-000123/26 (Recebimento de materiais) foi concluída.\n\nAcompanhe (login necessário): $base/instances/preview-instance"],
-            'identity.invitation' => ['subject' => 'Ative sua conta BPM TMSA', 'text' => "Olá, Bruno.\n\nSeu acesso ao BPM TMSA foi preparado. Este convite é válido por 60 minutos e pode ser usado uma única vez.\n\nUse o botão para ativar sua conta: $base/invite/preview-token"],
-            'identity.password_reset' => ['subject' => 'Redefina sua senha BPM TMSA', 'text' => "Recebemos uma solicitação para redefinir sua senha. O link é válido por 60 minutos e pode ser usado uma única vez.\n\nContinue com segurança: $base/password/reset/preview-token"],
-            'instance.ended' => ['subject' => '[TMSA] IRR-000123/26 encerrada', 'text' => "A solicitação IRR-000123/26 (Recebimento de materiais) foi encerrada.\n\nConsulte (login necessário): $base/instances/preview-instance"],
-            'admin.alert' => ['subject' => '[BPM TMSA] Atenção necessária', 'text' => "Uma verificação operacional precisa de atenção da equipe administradora.\n\nConsulte o painel do BPM: $base/settings"],
-            'email.test' => ['subject' => '[TMSA] E-mail de teste', 'text' => "Este é um e-mail de teste enviado pela configuração de notificações.\n\nSe recebeu esta mensagem, o envio está funcionando.\n\nAcesse o BPM: $base"],
+            'task.assigned' => ['subject' => "[$org] Aprovar recebimento · IRR-000123/26", 'text' => "Olá, Ana.\n\nA solicitação IRR-000123/26 (Recebimento de materiais) chegou à etapa \"Aprovação do recebimento\" e aguarda sua ação.\nPrazo: 16/10/2026 17:00\n\nAbra a tarefa (login necessário): $base/tasks/preview-task"],
+            'stage.completed' => ['subject' => "[$org] IRR-000123/26: etapa concluída", 'text' => "A etapa \"Conferência inicial\" da solicitação IRR-000123/26 (Recebimento de materiais) foi concluída.\n\nAcompanhe (login necessário): $base/instances/preview-instance"],
+            'identity.invitation' => ['subject' => "Ative sua conta $app", 'text' => "Olá, Bruno.\n\nSeu acesso ao $app foi preparado. Este convite é válido por 60 minutos e pode ser usado uma única vez.\n\nUse o botão para ativar sua conta: $base/invite/preview-token"],
+            'identity.password_reset' => ['subject' => "Redefina sua senha $app", 'text' => "Recebemos uma solicitação para redefinir sua senha. O link é válido por 60 minutos e pode ser usado uma única vez.\n\nContinue com segurança: $base/password/reset/preview-token"],
+            'instance.ended' => ['subject' => "[$org] IRR-000123/26 encerrada", 'text' => "A solicitação IRR-000123/26 (Recebimento de materiais) foi encerrada.\n\nConsulte (login necessário): $base/instances/preview-instance"],
+            'admin.alert' => ['subject' => "[$app] Atenção necessária", 'text' => "Uma verificação operacional precisa de atenção da equipe administradora.\n\nConsulte o painel do BPM: $base/settings"],
+            'email.test' => ['subject' => "[$org] E-mail de teste", 'text' => "Este é um e-mail de teste enviado pela configuração de notificações.\n\nSe recebeu esta mensagem, o envio está funcionando.\n\nAcesse o BPM: $base"],
         ];
         $example = $examples[$sample];
 
@@ -61,7 +63,7 @@ final class EmailLayoutRenderer
         if ($bodyIntro !== '') {
             $content = $bodyIntro."\n\n".$content;
         }
-        $orgName = $this->plainText((string) ($branding['orgName'] ?? 'TMSA'));
+        $orgName = $this->plainText((string) ($branding['orgName'] ?? config('bpm.organization.name')));
         $data = [
             'preheader' => $this->plainText($subject),
             'headerTitle' => $this->plainText((string) $layout['headerTitle']),
@@ -78,6 +80,7 @@ final class EmailLayoutRenderer
             'footerText' => $this->plainText((string) $layout['footerText']),
             'linkHelpText' => $this->plainText((string) $layout['linkHelpText']),
             'year' => date('Y'),
+            'appName' => $this->plainText((string) config('app.name')),
         ];
         $template = (string) file_get_contents(resource_path('email/notification.html'));
         $carbone = $this->renderWithCarbone($template, $data);

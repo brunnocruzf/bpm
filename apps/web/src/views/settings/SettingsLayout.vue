@@ -4,9 +4,11 @@ import { useRoute } from 'vue-router'
 import { api } from '@/api/http'
 import type { SettingView } from '@/api/types'
 import SettingStatus from '@/components/settings/SettingStatus.vue'
+import { useBranding } from '@/stores/branding'
 import { SETTINGS_SECTIONS } from './sections'
 
 const route = useRoute()
+const brand = useBranding()
 const statuses = ref<Record<string, string>>({})
 
 const sections = SETTINGS_SECTIONS
@@ -26,7 +28,7 @@ onMounted(refresh)
   <div class="tm-crumbs"><RouterLink to="/">Início</RouterLink><span class="sep">/</span><RouterLink :to="{ name: 'settings' }">Configurações</RouterLink></div>
   <div class="settings-grid">
     <nav class="tm-panel settings-nav" aria-label="Seções de configuração">
-      <div class="tm-panel-head"><div><div class="tm-panel-title">Configurações</div><div class="tm-panel-caption">Organização TMSA</div></div></div>
+      <div class="tm-panel-head"><div><div class="tm-panel-title">Configurações</div><div class="tm-panel-caption">Organização {{ brand.branding.orgName }}</div></div></div>
       <RouterLink :to="{ name: 'settings' }" class="nav-item" :class="{ active: route.name === 'settings' }"><i class="pi pi-th-large" aria-hidden="true" /><span>Visão geral</span></RouterLink>
       <RouterLink v-for="s in sections" :key="s.name" :to="{ name: s.name }" class="nav-item" :class="{ active: route.name === s.name }">
         <i class="pi" :class="s.icon" aria-hidden="true" /><span>{{ s.label }}</span>

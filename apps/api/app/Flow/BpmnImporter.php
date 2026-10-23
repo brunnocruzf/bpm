@@ -269,7 +269,7 @@ class BpmnImporter
                     $integration = $xp->query('b:extensionElements/tmsa:integration', $el)->item(0);
                     $op = $integration instanceof DOMElement ? $integration->getAttribute('operation') : '';
                     if ($el->getAttributeNS(BpmnGenerator::NS_FLOWABLE, 'type') !== 'external-worker' || ! array_key_exists($op, StageCatalog::serviceOperations())) {
-                        $this->err($id, "Integração \"$name\": selecione uma operação do catálogo de integrações TMSA.");
+                        $this->err($id, "Integração \"$name\": selecione uma operação do catálogo de integrações.");
                     }
                     $node['config'] = ['operation' => $op ?: null];
                     break;
@@ -344,7 +344,7 @@ class BpmnImporter
             try {
                 $condition = ConditionCompiler::normalize(json_decode(trim($tm->textContent), true, 8, JSON_THROW_ON_ERROR));
             } catch (InvalidArgumentException|\JsonException $e) {
-                $this->err($id, 'Condição TMSA inválida: '.$e->getMessage());
+                $this->err($id, 'Condição inválida: '.$e->getMessage());
             }
         } elseif ($expr && trim($expr->textContent) !== '') {
             $this->err($id, 'Condições em expressão livre não são permitidas. Configure a condição no editor de roteamento.');

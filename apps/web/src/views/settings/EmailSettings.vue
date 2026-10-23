@@ -24,7 +24,7 @@ const DEFAULT_EMAIL_TEXTS: Record<string, EmailTextConfig> = {
 const form = reactive({
   provider: 'disabled', fromAddress: '', fromName: '', replyTo: '', timeout: 15,
   layout: {
-    accentColor: '#f36d32', headerTitle: 'BPM TMSA', footerText: 'Mensagem automática do BPM TMSA. Não responda a este e-mail.',
+    accentColor: '#f36d32', headerTitle: 'BPM', footerText: 'Mensagem automática do BPM. Não responda a este e-mail.',
     linkHelpText: 'Se o botão não abrir, copie este endereço no navegador:',
     texts: Object.fromEntries(Object.entries(DEFAULT_EMAIL_TEXTS).map(([key, value]) => [key, { ...value }])) as Record<string, EmailTextConfig>,
   },
@@ -225,7 +225,7 @@ const STATE_LABEL: Record<string, string> = { queued: 'Na fila', sending: 'Envia
           <div class="tm-note"><i class="pi pi-image" aria-hidden="true" /><span>O cabeçalho usa automaticamente o <strong>Logo principal</strong> publicado em Organização e identidade visual. A imagem é carregada pela rota pública e versionada da própria plataforma.</span></div>
           <div class="tm-field">
             <label for="email-header-title">Identificação do cabeçalho</label>
-            <input id="email-header-title" v-model="form.layout.headerTitle" maxlength="80" placeholder="BPM TMSA" />
+            <input id="email-header-title" v-model="form.layout.headerTitle" maxlength="80" placeholder="BPM" />
           </div>
           <div class="tm-field">
             <label for="email-accent">Cor de destaque</label>
@@ -235,7 +235,7 @@ const STATE_LABEL: Record<string, string> = { queued: 'Na fila', sending: 'Envia
           </div>
           <div class="tm-field">
             <label for="email-footer">Rodapé</label>
-            <textarea id="email-footer" v-model="form.layout.footerText" maxlength="240" rows="3" placeholder="Mensagem automática do BPM TMSA. Não responda a este e-mail." />
+            <textarea id="email-footer" v-model="form.layout.footerText" maxlength="240" rows="3" placeholder="Mensagem automática do BPM. Não responda a este e-mail." />
             <div class="tm-hint">{{ form.layout.footerText.length }}/240 caracteres</div>
           </div>
           <div class="tm-field">

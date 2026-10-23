@@ -93,7 +93,7 @@ async function apply() {
 function reset() {
   confirm.require({
     header: 'Restaurar tema padrão?',
-    message: 'Nome, cores e logos voltam ao padrão do BPM TMSA. A alteração é auditada.',
+    message: 'Nome, cores e logos voltam ao padrão. A alteração é auditada.',
     acceptLabel: 'Restaurar',
     rejectLabel: 'Cancelar',
     accept: async () => {

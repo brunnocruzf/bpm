@@ -195,7 +195,7 @@ final class PdfWriter
         }
         $objects[$pagesId - 1] = '<< /Type /Pages /Kids ['.implode(' ', array_map(fn ($k) => "$k 0 R", $kids)).'] /Count '.count($kids).' >>';
         $objects[$catalogId - 1] = "<< /Type /Catalog /Pages $pagesId 0 R /Lang (pt-BR) >>";
-        $info = $add('<< /Title ('.self::esc(Metrics::encode($this->header['title'])).') /Producer (BPM TMSA) /Creator (BPM TMSA relatorios) /CreationDate (D:'.gmdate('YmdHis').'Z) >>');
+        $info = $add('<< /Title ('.self::esc(Metrics::encode($this->header['title'])).') /Producer (BPM) /Creator (BPM relatorios) /CreationDate (D:'.gmdate('YmdHis').'Z) >>');
 
         $pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
         $offsets = [];

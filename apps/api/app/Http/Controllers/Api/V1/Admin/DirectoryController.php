@@ -166,7 +166,7 @@ class DirectoryController extends ApiController
         $rolesAfter = $out['tmsa_roles'] ?? $current->tmsa_roles ?? [];
         $groupAfter = array_key_exists('tmsa_group_key', $out) ? $out['tmsa_group_key'] : $current?->tmsa_group_key;
         if (! $rolesAfter && ! $groupAfter) {
-            throw ApiProblem::validation(['tmsaRoles' => ['Informe ao menos um papel ou um grupo/raia TMSA.']]);
+            throw ApiProblem::validation(['tmsaRoles' => ['Informe ao menos um papel ou um grupo/raia.']]);
         }
         $privileged = array_values(array_intersect($rolesAfter, (array) config('bpm.privileged_roles')));
         $flag = $out['privileged'] ?? $current->privileged ?? false;

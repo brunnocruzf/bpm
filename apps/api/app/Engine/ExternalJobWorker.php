@@ -38,7 +38,7 @@ class ExternalJobWorker
 
             if (! $instance || ! $operation) {
                 // Consome uma tentativa; após esgotar, o job fica em dead-letter para análise.
-                $this->engine->failJob((string) $job['id'], $workerId, 'Instância ou integração não encontrada no BPM TMSA.', max(0, ((int) ($job['retries'] ?? 1)) - 1), 'PT2M');
+                $this->engine->failJob((string) $job['id'], $workerId, 'Instância ou integração não encontrada no BPM.', max(0, ((int) ($job['retries'] ?? 1)) - 1), 'PT2M');
 
                 continue;
             }

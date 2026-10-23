@@ -5,8 +5,8 @@ import type { Branding } from '@/api/types'
 import { derivedTokens } from '@/composables/contrast'
 
 export const DEFAULT_BRANDING: Branding = {
-  appName: 'BPM TMSA',
-  orgName: 'TMSA',
+  appName: 'BPM',
+  orgName: '',
   tagline: 'Gestão de processos',
   colors: { primary: '#086b77', secondary: '#075762', accent: '#2b6cb0' },
   assets: { main: null, compact: null, favicon: null },

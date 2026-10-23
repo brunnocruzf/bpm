@@ -319,9 +319,9 @@ const allGroupOptions = computed(() => {
   </section>
 
   <section class="tm-panel" style="margin-top:16px">
-    <div class="tm-panel-head"><div><div class="tm-panel-title">Mapeamentos grupo Entra → TMSA</div><div class="tm-panel-caption">Negar por padrão: grupo importado sem regra não concede papel nem raia. Papéis privilegiados exigem confirmação e justificativa.</div></div></div>
+    <div class="tm-panel-head"><div><div class="tm-panel-title">Mapeamentos grupo Entra → BPM</div><div class="tm-panel-caption">Negar por padrão: grupo importado sem regra não concede papel nem raia. Papéis privilegiados exigem confirmação e justificativa.</div></div></div>
     <div style="overflow-x:auto"><table class="tm-table">
-      <thead><tr><th>Grupo Entra</th><th>Raia TMSA</th><th>Papéis</th><th>Privilegiado</th><th>Situação</th><th>Criado por</th><th /></tr></thead>
+      <thead><tr><th>Grupo Entra</th><th>Raia</th><th>Papéis</th><th>Privilegiado</th><th>Situação</th><th>Criado por</th><th /></tr></thead>
       <tbody>
         <tr v-if="!mappings.length"><td colspan="7" class="tm-empty">Nenhum mapeamento: usuários importados não recebem acesso.</td></tr>
         <tr v-for="m in mappings" :key="m.id">
@@ -336,7 +336,7 @@ const allGroupOptions = computed(() => {
     </table></div>
     <div class="tm-panel-body map-form">
       <div class="tm-field"><label for="m-g">Grupo Entra</label><select id="m-g" v-model="mapForm.entraGroupId"><option value="">Selecione...</option><option v-for="g in allGroupOptions" :key="g.id" :value="g.id">{{ g.name }}</option></select></div>
-      <div class="tm-field"><label for="m-t">Raia/grupo TMSA</label><select id="m-t" v-model="mapForm.tmsaGroupKey"><option value="">Nenhuma</option><option v-for="g in tmsaGroups" :key="g.key" :value="g.key">{{ g.name }}</option></select></div>
+      <div class="tm-field"><label for="m-t">Raia/grupo</label><select id="m-t" v-model="mapForm.tmsaGroupKey"><option value="">Nenhuma</option><option v-for="g in tmsaGroups" :key="g.key" :value="g.key">{{ g.name }}</option></select></div>
       <div class="tm-field"><label>Papéis</label><MultiSelect v-model="mapForm.tmsaRoles" :options="roles" placeholder="Nenhum" display="chip" style="width:100%" aria-label="Papéis" /></div>
       <label v-if="needsPrivilegedFlag" class="check"><input v-model="mapForm.privileged" type="checkbox" /> <span>Confirmo que este grupo deve receber papel privilegiado</span></label>
       <div v-if="needsPrivilegedFlag" class="tm-field"><label for="m-j">Justificativa (aprovação)</label><input id="m-j" v-model="mapForm.justification" /></div>

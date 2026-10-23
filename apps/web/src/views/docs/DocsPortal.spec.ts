@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import { defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
@@ -15,7 +16,7 @@ async function openPortal(path: string) {
   await router.push(path)
   await router.isReady()
   const wrapper = mount(defineComponent({ render: () => h(RouterView) }), {
-    global: { plugins: [router, PrimeVue] },
+    global: { plugins: [router, PrimeVue, createPinia()] },
   })
   await flushPromises()
   return wrapper
@@ -25,7 +26,7 @@ describe('Portal de documentação de integrações (público)', () => {
   it('renderiza o menu com a visão geral e os 5 guias, em grupos recolhíveis', async () => {
     const wrapper = await openPortal('/docs/integracoes')
 
-    expect(wrapper.find('header').text()).toContain('BPM TMSA — Documentação de integrações')
+    expect(wrapper.find('header').text()).toContain('BPM — Documentação de integrações')
     const items = wrapper.findAll('.docs-sidebar a').map((a) => a.text())
     expect(items.slice(0, 6)).toEqual([
       'Visão geral',

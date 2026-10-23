@@ -50,5 +50,5 @@ async function bootstrap() {
 }
 
 bootstrap().catch((e) => {
-  document.getElementById('app')!.innerHTML = `<div style="padding:40px;font-family:sans-serif"><h2>Não foi possível iniciar o BPM TMSA</h2><p>${String(e?.message ?? e).replace(/[<>&]/g, '')}</p></div>`
+  document.getElementById('app')!.innerHTML = `<div style="padding:40px;font-family:sans-serif"><h2>Não foi possível iniciar o BPM</h2><p>${String(e?.message ?? e).replace(/[<>&]/g, '')}</p></div>`
 })

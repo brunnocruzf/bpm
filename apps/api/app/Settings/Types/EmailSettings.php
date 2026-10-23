@@ -49,7 +49,7 @@ class EmailSettings extends SettingType
         return [
             'provider' => $local ? 'mailpit' : 'disabled',
             'fromAddress' => (string) config('bpm.notifications.from', 'bpm@tmsa.local'),
-            'fromName' => 'BPM TMSA',
+            'fromName' => (string) config('app.name'),
             'replyTo' => '',
             'timeout' => (int) config('bpm.mail.timeout', 15),
             'layout' => EmailLayout::defaults(),

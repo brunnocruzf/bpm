@@ -58,7 +58,7 @@ describe('AdminGroupsView — membros de grupos/raias', () => {
   it('mostra a origem de cada vínculo e oferece "Remover do grupo" para qualquer origem; o bloqueio chama a API e recarrega', async () => {
     const w = await open(true)
     const dialog = w.find('.dlg')
-    expect(dialog.text()).toContain('Manual — BPM TMSA')
+    expect(dialog.text()).toContain('Manual — BPM')
     expect(dialog.text()).toContain('Entra ID — sincronização')
     expect(dialog.text()).not.toContain('entra_sync')
     expect(calls.find((c) => c.url.includes('/admin/groups/CQ/members'))!.url).toContain('perPage=100')

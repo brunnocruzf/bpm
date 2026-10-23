@@ -30,14 +30,21 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
-        foreach (self::GROUPS as $key => [$name, $description]) {
-            BpmGroup::updateOrCreate(['key' => $key], ['name' => $name, 'description' => $description, 'email' => strtolower($key).'@bpm.tmsa.local']);
+        // Raias, PO 159 e fluxos de demonstração são da TMSA; outra organização começa vazia (ADR-0019).
+        $tmsa = config('bpm.organization.key') === 'tmsa';
+        if ($tmsa) {
+            foreach (self::GROUPS as $key => [$name, $description]) {
+                BpmGroup::updateOrCreate(['key' => $key], ['name' => $name, 'description' => $description, 'email' => strtolower($key).'@bpm.tmsa.local']);
+            }
         }
 
         if (! app()->environment('production')) {
             $this->call(DevUserSeeder::class);
         }
         app(ReportTemplateService::class)->ensureDefaults();
+        if (! $tmsa) {
+            return;
+        }
 
         $owner = User::where('username', 'designer')->first() ?? User::first();
         if (! $owner) {

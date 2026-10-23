@@ -16,7 +16,7 @@ const knowledgeOpen = ref(false)
 const userMenu = ref()
 const search = ref('')
 const newCategoryOpen = ref(false)
-const envLabel = import.meta.env.VITE_ENV_LABEL || 'BPM TMSA'
+const envLabel = computed(() => import.meta.env.VITE_ENV_LABEL || brand.branding.appName)
 const method = auth.method()
 const methodLabel = { entra: 'Login: Microsoft Entra ID', demo: 'Visitante — ambiente de demonstração', superadmin: 'SuperAdmin — acesso de emergência', local: 'Login: conta local' }[method ?? 'entra']
 // sessão SuperAdmin: aviso permanente com a expiração absoluta (o servidor também expira por inatividade)

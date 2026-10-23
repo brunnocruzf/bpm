@@ -12,8 +12,8 @@ final class EmailLayout
     {
         return [
             'accentColor' => '#f36d32',
-            'headerTitle' => 'BPM TMSA',
-            'footerText' => 'Mensagem automática do BPM TMSA. Não responda a este e-mail.',
+            'headerTitle' => (string) config('app.name'),
+            'footerText' => 'Mensagem automática do '.config('app.name').'. Não responda a este e-mail.',
             'linkHelpText' => 'Se o botão não abrir, copie este endereço no navegador:',
             'texts' => self::defaultTexts(),
         ];

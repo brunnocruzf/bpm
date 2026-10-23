@@ -15,7 +15,7 @@ class MailProviderFactory
     public function make(array $cfg): MailProvider
     {
         $from = (string) $cfg['fromAddress'];
-        $fromName = (string) ($cfg['fromName'] ?: 'BPM TMSA');
+        $fromName = (string) ($cfg['fromName'] ?: config('app.name'));
         $replyTo = $cfg['replyTo'] ?: null;
         $timeout = (int) ($cfg['timeout'] ?? 15);
         $m365 = (array) $cfg['m365'];

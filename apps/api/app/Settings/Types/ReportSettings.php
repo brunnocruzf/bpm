@@ -30,7 +30,7 @@ class ReportSettings extends SettingType
     {
         return [
             'renderer' => 'native',
-            'confidentialityLabel' => 'Uso interno — TMSA',
+            'confidentialityLabel' => 'Uso interno — '.config('bpm.organization.name'),
             'carbone' => ['edition' => 'community'],
         ];
     }

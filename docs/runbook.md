@@ -178,6 +178,28 @@ docker compose exec postgres pg_dump -U postgres -Fc flowable > flowable.dump
 
 Faça backup dos dois bancos **e** do volume `storagedata` (e, com Azure, da política de soft delete/versionamento da conta) no mesmo ponto no tempo; guarde a chave do cofre em local separado. Teste a restauração periodicamente. Em produção, use banco gerenciado/HA e política de backup imutável/offsite.
 
+## Multi-organização (uma instância por organização)
+
+Cada organização roda numa stack Compose própria, com as mesmas imagens e banco, engine, anexos, cofre e volumes separados (ADR-0019). A TMSA usa o `.env` (projeto `bpm-tmsa`) e cada organização nova usa o seu `.env.<org>` (projeto `bpm-<org>`).
+
+```bash
+cd deploy/docker
+cp .env.ims.example .env.ims        # senhas e APP_KEY novos; portas diferentes das da TMSA
+sh secrets/generate.sh ims          # chave do cofre em secrets/ims/ (BPM_SECRETS_KEY_PATH)
+./orgs.sh up ims                    # = docker compose -p bpm-ims --env-file .env.ims up -d
+./orgs.sh exec ims api php artisan bpm:superadmin set-password
+```
+
+- **Primeiro acesso:** entre como SuperAdmin em `http://localhost:8089` e cadastre os administradores. Depois configure pela tela:
+  - Entra ID: mesma app registration com o redirect URI da nova URL, ou uma app própria;
+  - e-mail;
+  - identidade visual;
+  - integrações: na API do AX, o DataAreaId da organização vai como parâmetro **constante** do endpoint ou do binding.
+- **Seed:** fora da TMSA (`BPM_ORGANIZATION_KEY` diferente de `tmsa`), o seed não cria raias, PO 159 nem fluxos de demonstração. Os processos de outra organização são importados por BPMN no editor.
+- **Release:** `./orgs.sh pull` ou `./orgs.sh build`, depois `./orgs.sh up`, que roda as migrations de cada organização. Para canário, rode `./orgs.sh up <org>` em uma organização antes das demais.
+- **Backup:** `./orgs.sh backup [org]` gera dumps dos dois bancos em `backups/<org>/<data>/`. Inclua também o volume `bpm-<org>_storagedata` e guarde a chave do cofre da organização separada.
+- **Desligar:** `./orgs.sh down <org>` mantém os volumes. **Nunca** use `down -v` sem backup aprovado.
+
 ## Rollback de versão da aplicação
 
 As migrations novas são aditivas (colunas anuláveis e tabelas novas). Para voltar a imagem anterior: `docker compose up -d` com a tag anterior; as tabelas novas são ignoradas. `php artisan migrate:rollback` remove os triggers de auditoria e as tabelas da fase 2 — use apenas com backup e aprovação (apaga configurações, execuções e relatórios).

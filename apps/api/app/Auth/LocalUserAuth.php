@@ -182,7 +182,7 @@ final class LocalUserAuth
             LocalIdentityToken::create(['user_id' => $user->id, 'purpose' => $purpose, 'token_hash' => hash('sha256', $raw), 'expires_at' => now()->addHour(), 'created_by' => $actor?->id]);
             $url = rtrim((string) config('app.frontend_url', config('app.url')), '/').$path.rawurlencode($raw);
             $event = $purpose === 'invitation' ? 'identity.invitation' : 'identity.password_reset';
-            $subject = $purpose === 'invitation' ? 'Ative sua conta BPM TMSA' : 'Redefina sua senha BPM TMSA';
+            $subject = ($purpose === 'invitation' ? 'Ative sua conta ' : 'Redefina sua senha ').config('app.name');
             $message = $this->notifier->localIdentityLink($user, $event, $subject, $url);
 
             return $message->state === NotificationMessage::QUEUED;

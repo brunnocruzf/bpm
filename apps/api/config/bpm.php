@@ -274,8 +274,8 @@ return [
 
     'branding' => [
         'defaults' => [
-            'appName' => 'BPM TMSA',
-            'orgName' => 'TMSA',
+            'appName' => env('APP_NAME', 'BPM TMSA'),
+            'orgName' => env('BPM_ORGANIZATION_NAME', 'TMSA'),
             'tagline' => 'Gestão de processos',
             'colors' => ['primary' => '#086b77', 'secondary' => '#075762', 'accent' => '#2b6cb0'],
         ],

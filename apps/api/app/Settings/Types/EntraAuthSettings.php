@@ -66,7 +66,7 @@ class EntraAuthSettings extends SettingType
                 $errors['tenantId'][] = 'Informe o Tenant ID (GUID) ou o domínio verificado do tenant.';
             }
             if (in_array($tenant, ['common', 'organizations', 'consumers'], true)) {
-                $errors['tenantId'][] = 'Use o tenant da TMSA; endpoints multi-tenant não são aceitos.';
+                $errors['tenantId'][] = 'Use o tenant da organização; endpoints multi-tenant não são aceitos.';
             }
             $value['tenantId'] = $tenant;
         }
