@@ -155,12 +155,15 @@ Ainda em `deploy/docker`, valide a configuração resolvida do Compose. O comand
 docker compose config --quiet
 ```
 
-Confira quais serviços serão executados e faça o deploy, compilando as imagens necessárias:
+Confira quais serviços serão executados, compile as imagens do projeto e inicie/atualize os serviços:
 
 ```bash
 docker compose config --services
-docker compose up --build -d
+docker compose build api flowable-rest web
+docker compose up -d
 ```
+
+O `build` compila a API Laravel, o Flowable REST e a SPA web. O worker e o scheduler usam a mesma imagem da API; os serviços de infraestrutura usam imagens pré-compiladas. Para fazer tudo em um único comando, use `docker compose up --build -d`.
 
 O Compose inicia PostgreSQL, Flowable, storage, API, servidor web, proxy reverso, worker e scheduler. O perfil `dev` também inicia o Mailpit. A API executa as migrations na inicialização; com `SEED_ON_START=true`, carrega os dados de demonstração e o fluxo PO 159.
 
@@ -218,15 +221,18 @@ Depois, entre em <http://localhost:8080/login/superadmin>. Consulte o guia de lo
 
 ### 8. Atualizar, parar e preservar dados
 
-Para atualizar a cópia clonada, faça backup conforme o runbook, atualize a branch e reconstrua os serviços:
+Para atualizar a cópia clonada, faça backup conforme o runbook, atualize a branch e recompile/recrie os serviços:
 
 ```bash
 # a partir da raiz do repositório
 git pull --ff-only
 cd deploy/docker
-docker compose up --build -d
+docker compose build api flowable-rest web
+docker compose up -d
 docker compose ps
 ```
+
+Após alterar código da API, da SPA ou do Flowable, a partir de `deploy/docker`, use os mesmos comandos `docker compose build api flowable-rest web` e `docker compose up -d`. Para compilar e subir em uma etapa, use `docker compose up --build -d`.
 
 Para parar o ambiente sem apagar os dados persistentes:
 
