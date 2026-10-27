@@ -11,7 +11,8 @@ use RuntimeException;
 
 /**
  * Abstração de segredos das integrações. O domínio guarda apenas uma referência:
- *  - db:<uuid>    valor criptografado (AES-256-GCM) com chave dedicada BPM_SECRETS_KEY(_FILE);
+ *  - db:<uuid>    valor criptografado (AES-256-GCM) com chave dedicada BPM_SECRETS_KEY(_FILE),
+ *                 ou, se ausente, com chave derivada da APP_KEY;
  *  - file:<nome>  arquivo montado em BPM_SECRETS_DIR (Docker secret / secret manager / Key Vault CSI).
  * Valores nunca são devolvidos pela API nem gravados em log/auditoria.
  */
@@ -143,7 +144,15 @@ class SecretStore
             $raw = trim((string) file_get_contents((string) $file));
         }
 
-        return $raw ? $this->decodeKey((string) $raw) : null;
+        return $raw ? $this->decodeKey((string) $raw) : $this->fallbackKey();
+    }
+
+    /** Sem chave dedicada configurada, deriva uma chave da APP_KEY (os segredos continuam criptografados). */
+    private function fallbackKey(): ?string
+    {
+        $appKey = (string) config('app.key');
+
+        return $appKey !== '' ? hash('sha256', 'bpm-secrets-fallback:'.$appKey, true) : null;
     }
 
     /** @return list<string> */
@@ -155,6 +164,10 @@ class SecretStore
         }
         foreach ((array) config('bpm.secrets.previous_keys', []) as $prev) {
             $keys[] = $this->decodeKey((string) $prev);
+        }
+        // Mantém legíveis os segredos gravados com a chave derivada antes de configurar BPM_SECRETS_KEY.
+        if (($fallback = $this->fallbackKey()) && ! in_array($fallback, $keys, true)) {
+            $keys[] = $fallback;
         }
 
         return $keys;
