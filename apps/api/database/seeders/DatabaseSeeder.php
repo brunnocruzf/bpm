@@ -9,6 +9,7 @@ use App\Models\ProcessCatalog;
 use App\Models\User;
 use App\Reports\ReportTemplateService;
 use Database\Seeders\Blueprints\DemoFlows;
+use Database\Seeders\Blueprints\For784;
 use Database\Seeders\Blueprints\Po159;
 use Illuminate\Database\Seeder;
 
@@ -66,5 +67,7 @@ class DatabaseSeeder extends Seeder
         if (! ProcessCatalog::where('key', 'aprovacao_frete_especial')->exists()) {
             FlowBlueprint::create(DemoFlows::freteEspecial(), $owner, false);
         }
+        // Instalação nova: a migration do FOR-784 rodou antes de existir usuário (idempotente).
+        For784::install();
     }
 }

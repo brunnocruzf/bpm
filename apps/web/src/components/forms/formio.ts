@@ -227,13 +227,14 @@ function registerAxLookup(meta: Meta | null) {
       const self = this as any
       const value = String(self.getValue() ?? '').trim()
       if (!value) return
+      const system = sources.find((s) => s.key === self.component.lookupSource)?.system ?? 'AX'
       status.className = 'tm-axlookup-status'
-      status.textContent = 'Consultando AX...'
+      status.textContent = `Consultando ${system}...`
       try {
         const res = await api<{ found: boolean; data: Record<string, any>; transport: string }>(`/lookups/${self.component.lookupSource}`, { query: { value } })
         if (!res.found) {
           status.className += ' warn'
-          status.textContent = `"${value}" não foi encontrado no AX.`
+          status.textContent = `"${value}" não foi encontrado no ${system}.`
           return
         }
         for (const m of self.component.fillMap ?? []) {
@@ -241,7 +242,7 @@ function registerAxLookup(meta: Meta | null) {
           target?.setValue(res.data[m.from] ?? '')
         }
         status.className += ' ok'
-        status.textContent = `Dados do AX carregados (${res.transport}). O servidor confirma a consulta ao salvar.`
+        status.textContent = `Dados do ${system} carregados (${res.transport}). O servidor confirma a consulta ao salvar.`
       } catch (e) {
         status.className += ' err'
         status.textContent = errorMessage(e)
@@ -295,7 +296,7 @@ const FILE_EDIT = [
   },
 ]
 
-const EDITABLE_TYPES = ['textfield', 'textarea', 'number', 'checkbox', 'selectboxes', 'select', 'radio', 'email', 'phoneNumber', 'datetime', 'currency', 'datagrid', 'panel', 'columns', 'fieldset', 'well', 'content', 'htmlelement', 'axlookup']
+const EDITABLE_TYPES = ['textfield', 'textarea', 'number', 'checkbox', 'selectboxes', 'select', 'radio', 'email', 'phoneNumber', 'datetime', 'time', 'currency', 'datagrid', 'panel', 'columns', 'fieldset', 'well', 'content', 'htmlelement', 'axlookup']
 
 const actionPlanGrid = {
   type: 'datagrid', key: 'acoes', label: 'Plano de ação', input: true, addAnother: 'Adicionar ação', validate: { required: true },
@@ -323,7 +324,9 @@ export function builderOptions() {
       },
       advanced: {
         components: {
-          email: true, phoneNumber: true, datetime: true, currency: true, url: false, tags: false, address: false, day: false, time: false, survey: false, signature: false,
+          email: true, phoneNumber: true, datetime: true, currency: true, url: false, tags: false, address: false, day: false,
+          time: { title: 'Hora', key: 'time', icon: 'clock', schema: { type: 'time', label: 'Hora', key: 'hora', input: true, inputType: 'time', format: 'HH:mm', dataFormat: 'HH:mm' } },
+          survey: false, signature: false,
           file: { title: 'Arquivo', key: 'file', icon: 'file-earmark-arrow-up', schema: { type: 'file', label: 'Anexo', key: 'anexo', input: true, storage: 'tmsa', multiple: true, fileMaxSize: '20MB' } },
         },
       },

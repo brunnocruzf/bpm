@@ -16,10 +16,13 @@ final class FormioSchema
     /** Componentes que produzem dado. */
     public const INPUTS = [
         'textfield', 'textarea', 'number', 'currency', 'checkbox', 'selectboxes', 'select', 'radio',
-        'email', 'phoneNumber', 'datetime', 'file', 'datagrid', 'axlookup',
+        'email', 'phoneNumber', 'datetime', 'time', 'file', 'datagrid', 'axlookup',
     ];
 
-    public const SCALAR_INPUTS = ['textfield', 'textarea', 'number', 'currency', 'checkbox', 'select', 'radio', 'email', 'phoneNumber', 'datetime', 'axlookup'];
+    public const SCALAR_INPUTS = ['textfield', 'textarea', 'number', 'currency', 'checkbox', 'select', 'radio', 'email', 'phoneNumber', 'datetime', 'time', 'axlookup'];
+
+    /** Hora (HTML5 input type="time"): HH:MM ou HH:MM:SS, 24 horas. */
+    public const TIME_PATTERN = '/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/';
 
     public const RESERVED_KEYS = ['submit', 'initiator', 'data', 'state', 'metadata', 'id', 'row'];
 

@@ -169,6 +169,13 @@ class FormioSchemaSanitizer
                 $c['webcam'] = false;
                 $c['fileMaxSize'] = $c['fileMaxSize'] ?? '20MB';
                 break;
+            case 'time':
+                // campo nativo do HTML5; o dado é sempre 24 horas (HH:mm ou HH:mm:ss)
+                $c['inputType'] = 'time';
+                $c['format'] = 'HH:mm';
+                $c['dataFormat'] = in_array($c['dataFormat'] ?? null, ['HH:mm', 'HH:mm:ss'], true) ? $c['dataFormat'] : 'HH:mm';
+                unset($c['inputMask']);
+                break;
             case 'content':
                 $c['html'] = HtmlSanitizer::clean((string) ($c['html'] ?? ''));
                 $c['input'] = false;

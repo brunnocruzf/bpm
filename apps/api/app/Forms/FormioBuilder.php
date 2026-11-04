@@ -49,6 +49,12 @@ final class FormioBuilder
         ]);
     }
 
+    /** Hora (HTML5 input type="time"), gravada como HH:MM em 24 horas. */
+    public static function time(string $key, string $label, array $o = []): array
+    {
+        return self::input('time', $key, $label, $o) + ['inputType' => 'time', 'format' => 'HH:mm', 'dataFormat' => 'HH:mm'];
+    }
+
     /** @param array<string,string> $options value => label */
     public static function radio(string $key, string $label, array $options, array $o = []): array
     {
@@ -103,7 +109,12 @@ final class FormioBuilder
         };
         $base['disabled'] = true;
         $base['properties'] = ['tmsaAuto' => $source];
-        $base['description'] = $base['description'] ?? 'Preenchido automaticamente pelo sistema.';
+        // número da solicitação e sequências só existem depois do envio: a abertura mostra o campo vazio
+        $onSubmit = $source === 'instance.number' || str_starts_with($source, 'sequence:');
+        if ($onSubmit) {
+            $base['placeholder'] ??= 'Gerado ao enviar';
+        }
+        $base['description'] ??= $onSubmit ? 'Gerado automaticamente pelo sistema ao enviar.' : 'Preenchido automaticamente pelo sistema.';
 
         return $base;
     }

@@ -2,6 +2,7 @@
 
 namespace App\Forms;
 
+use App\Identity\EmployeeDirectory;
 use App\Integrations\BpmOperations;
 use App\Models\IntegrationEndpoint;
 
@@ -16,6 +17,7 @@ final class FieldCatalog
         'user.name' => 'Usuário logado — nome',
         'user.area' => 'Usuário logado — área',
         'user.email' => 'Usuário logado — e-mail',
+        'user.registration' => 'Usuário logado — matrícula',
         'now.date' => 'Data atual',
         'now.datetime' => 'Data e hora atuais',
         'instance.number' => 'Número da solicitação',
@@ -54,14 +56,31 @@ final class FieldCatalog
     ];
 
     /**
-     * Fontes fixas + endpoints publicados como consulta ("api:<identificador>") + consultas criadas em
-     * Integrações → Mapeamentos ("map:<chave>").
+     * Consultas internas: leem o próprio banco do BPM (sem integração externa nem vínculo em Mapeamentos).
+     *
+     * @return array<string, array{label:string, operation:string, fields:array<string,string>, system:string}>
+     */
+    public static function internalLookupSources(): array
+    {
+        return [
+            EmployeeDirectory::SOURCE => [
+                'label' => 'Matrícula → Colaborador e gestor imediato (usuários do Entra)',
+                'operation' => 'directory.employee',
+                'fields' => EmployeeDirectory::FIELDS,
+                'system' => 'cadastro de usuários',
+            ],
+        ];
+    }
+
+    /**
+     * Fontes fixas + consultas internas + endpoints publicados como consulta ("api:<identificador>") + consultas
+     * criadas em Integrações → Mapeamentos ("map:<chave>").
      *
      * @return array<string, array{label:string, operation:string, fields:array<string,string>, system?:string}>
      */
     public static function lookupSources(): array
     {
-        $sources = self::LOOKUP_SOURCES + BpmOperations::customLookupSources();
+        $sources = self::LOOKUP_SOURCES + self::internalLookupSources() + BpmOperations::customLookupSources();
         try {
             foreach (IntegrationEndpoint::with('connection')->where('enabled', true)->where('method', 'GET')->get() as $e) {
                 $cfg = (array) ($e->lookup ?? []);
@@ -92,7 +111,7 @@ final class FieldCatalog
     {
         $lookups = [];
         foreach (self::lookupSources() as $key => $def) {
-            $lookups[] = ['key' => $key, 'label' => $def['label'], 'fields' => array_map(fn ($k, $v) => ['key' => $k, 'label' => $v], array_keys($def['fields']), $def['fields'])];
+            $lookups[] = ['key' => $key, 'label' => $def['label'], 'system' => $def['system'] ?? 'AX', 'fields' => array_map(fn ($k, $v) => ['key' => $k, 'label' => $v], array_keys($def['fields']), $def['fields'])];
         }
 
         return [

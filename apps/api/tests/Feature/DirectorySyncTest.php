@@ -89,6 +89,35 @@ class DirectorySyncTest extends TestCase
         $this->as('admin')->getJson('/api/v1/admin/entra/sync/runs')->assertOk()->assertJsonPath('overview.cursor.present', true)->assertJsonMissingPath('data.0.plan');
     }
 
+    public function test_extension_attribute1_is_imported_as_registration_number(): void
+    {
+        $ids = $this->seedDirectory();
+        $this->graph->users[$ids['a']]['onPremisesExtensionAttributes'] = ['extensionAttribute1' => ' 004521 ', 'extensionAttribute2' => 'outro'];
+        $this->graph->users[$ids['b']]['onPremisesExtensionAttributes'] = ['extensionAttribute1' => null];
+
+        $run = $this->sync();
+        $this->assertSame(DirectorySyncRun::COMPLETED, $run->status, (string) $run->error_message);
+        $a = User::where('entra_oid', $ids['a'])->firstOrFail();
+        $this->assertSame('004521', $a->registration_number, 'extensionAttribute1 vira a matrícula (sem espaços)');
+        $this->assertNull(User::where('entra_oid', $ids['b'])->firstOrFail()->registration_number);
+        $this->as('admin')->getJson('/api/v1/admin/managed-users?'.http_build_query(['q' => '004521']))
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.registrationNumber', '004521');
+        $this->as('admin')->getJson('/api/v1/admin/managed-users/'.$a->id)
+            ->assertOk()->assertJsonPath('data.organization.registrationNumber', '004521');
+
+        // delta sem o atributo preserva a matrícula; alteração no Entra atualiza; vazio limpa
+        $this->graph->userChanges = [['id' => $ids['a'], 'displayName' => 'Usuário 1 renomeado']];
+        $this->sync();
+        $this->assertSame('004521', $a->fresh()->registration_number);
+        $this->graph->userChanges = [['id' => $ids['a'], 'onPremisesExtensionAttributes' => ['extensionAttribute1' => '009999']]];
+        $run = $this->sync();
+        $this->assertSame(1, $run->totals['updated']);
+        $this->assertSame('009999', $a->fresh()->registration_number);
+        $this->graph->userChanges = [['id' => $ids['a'], 'onPremisesExtensionAttributes' => ['extensionAttribute1' => '']]];
+        $this->sync();
+        $this->assertNull($a->fresh()->registration_number);
+    }
+
     public function test_manager_relationship_is_tracked_and_resolved_when_manager_is_imported_later(): void
     {
         $ids = $this->seedDirectory();
@@ -97,7 +126,7 @@ class DirectorySyncTest extends TestCase
 
         $run = $this->sync();
         $this->assertSame(DirectorySyncRun::COMPLETED, $run->status, (string) $run->error_message);
-        $this->assertTrue($this->graph->calledWith('users/delta?$select=id,displayName,userPrincipalName,mail,department,accountEnabled,userType,manager'));
+        $this->assertTrue($this->graph->calledWith('users/delta?$select=id,displayName,userPrincipalName,mail,department,accountEnabled,userType,onPremisesExtensionAttributes,manager'));
         $report = User::where('entra_oid', $ids['a'])->firstOrFail();
         $this->assertSame($managerOid, $report->manager_entra_oid);
         $this->assertNull($report->manager_user_id, 'a referência fica pendente sem importar usuários fora do escopo');

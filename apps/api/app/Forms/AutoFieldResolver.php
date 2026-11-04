@@ -37,6 +37,7 @@ class AutoFieldResolver
             'user.name' => $ctx->user->name,
             'user.area' => $ctx->user->area,
             'user.email' => $ctx->user->email,
+            'user.registration' => $ctx->user->registration_number,
             'now.date' => $now->startOfDay()->toIso8601String(),
             'now.datetime' => $now->toIso8601String(),
             'instance.number' => $ctx->instanceInfo['number'] ?? null,

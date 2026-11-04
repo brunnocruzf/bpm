@@ -39,7 +39,8 @@ export interface Meta {
   groups: { key: string; name: string; description: string | null }[]
   categories: string[]
   autoSources: Option[]
-  lookupSources: { key: string; label: string; fields: Option[] }[]
+  /** system: onde a consulta é feita ("AX", sistema do catálogo ou "cadastro de usuários") — usado nas mensagens */
+  lookupSources: { key: string; label: string; system?: string; fields: Option[] }[]
   /** active = false: mapeamento personalizado inativo (a etapa falha até ativar em Integrações → Mapeamentos) */
   serviceOperations: { key: string; label: string; inputs: string[]; outputs: string[]; active: boolean }[]
   endResults: Option[]

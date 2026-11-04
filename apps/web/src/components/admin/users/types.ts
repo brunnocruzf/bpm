@@ -10,6 +10,8 @@ export interface UserRow {
   username: string | null
   area: string | null
   department: string | null
+  /** Matrícula (Entra: extensionAttribute1); ausente em APIs anteriores. */
+  registrationNumber?: string | null
   authSource: string | null
   userCategory: string | null
   userType: string | null
@@ -70,7 +72,7 @@ export interface LocalIntegration {
 
 export interface UserDetail {
   identity: { photo: { version: string } | null; id: string; name: string; username: string | null; email: string | null; upn: string | null; authSource: string | null; entraOid: string | null; entraTid: string | null }
-  organization: { area: string | null; department: string | null; userType: string | null; userCategory: string | null; manager: string | null; managerInfo: ManagerRef | null; managerPending: boolean; directReports: number }
+  organization: { area: string | null; department: string | null; registrationNumber?: string | null; userType: string | null; userCategory: string | null; manager: string | null; managerInfo: ManagerRef | null; managerPending: boolean; directReports: number }
   account: { active: boolean; accountEnabled: boolean | null; disabledReason: string | null; disabledAt: string | null; createdAt: string | null; updatedAt: string | null; lastLoginAt: string | null; lastSeenAt: string | null; lockedUntil: string | null; directorySyncedAt: string | null; invitationPending: boolean }
   access: {
     roles: string[]

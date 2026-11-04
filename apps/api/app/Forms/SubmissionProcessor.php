@@ -3,6 +3,7 @@
 namespace App\Forms;
 
 use App\Integrations\IntegrationUnavailable;
+use App\Integrations\LookupAmbiguous;
 use App\Integrations\LookupRunner;
 use App\Support\ApiProblem;
 use DateTimeImmutable;
@@ -77,6 +78,10 @@ class SubmissionProcessor
             $system = (string) ($source['system'] ?? 'AX');
             try {
                 $result = $this->lookups->run($sourceKey, $value, $ctx->instance?->id);
+            } catch (LookupAmbiguous $e) {
+                $errors[$key][] = $e->getMessage();
+
+                continue;
             } catch (IntegrationUnavailable $e) {
                 if ($e->reason === 'not_configured') {
                     throw ApiProblem::unavailable("A consulta de \"{$c['label']}\" não está ativa no momento. Avise o administrador das integrações; seus dados não foram perdidos.");
@@ -239,7 +244,7 @@ class SubmissionProcessor
         $required = ! empty($validate['required']);
         $errors = [];
 
-        if (is_string($value) && in_array($type, ['textfield', 'email', 'phoneNumber', 'axlookup'], true)) {
+        if (is_string($value) && in_array($type, ['textfield', 'email', 'phoneNumber', 'axlookup', 'time'], true)) {
             $value = trim($value);
         }
 
@@ -343,6 +348,13 @@ class SubmissionProcessor
                 }
 
                 return [$normalized, $errors];
+
+            case 'time':
+                if (! is_string($value) || ! preg_match(FormioSchema::TIME_PATTERN, $value)) {
+                    return [null, ["Hora inválida em \"$label\" (use HH:MM)."]];
+                }
+
+                return [$value, []];
 
             case 'datetime':
                 if (! is_string($value)) {
