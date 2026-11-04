@@ -14,7 +14,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (config('bpm.organization.key') !== 'tmsa' || ! User::query()->exists()) {
+        if (! in_array(config('bpm.organization.key'), ['tmsa', 'ims'], true) || ! User::query()->exists()) {
             return;
         }
         For784::install();
