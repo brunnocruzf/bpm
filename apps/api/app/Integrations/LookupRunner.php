@@ -3,6 +3,7 @@
 namespace App\Integrations;
 
 use App\Forms\FieldCatalog;
+use App\Identity\EmployeeDirectory;
 use App\Integrations\Ax\AxGateway;
 use App\Integrations\Rest\RestIntegration;
 use App\Models\IntegrationEndpoint;
@@ -11,15 +12,19 @@ use App\Models\IntegrationEndpoint;
  * Executa a consulta de um campo "axlookup" dos formulários:
  *  - fontes fixas do PO 159 (tpr, item, purchaseOrder, supplier) → AxGateway (vínculo REST ou MOCK);
  *  - fontes "map:<chave>" criadas em Mapeamentos → AxGateway (vínculo REST; inativo falha);
- *  - fontes "api:<identificador>" → endpoint de leitura publicado no catálogo de integrações.
+ *  - fontes "api:<identificador>" → endpoint de leitura publicado no catálogo de integrações;
+ *  - fonte interna "employee" → cadastro de usuários do BPM (matrícula e gestor sincronizados do Entra).
  */
 class LookupRunner
 {
-    public function __construct(private readonly AxGateway $ax, private readonly RestIntegration $rest) {}
+    public function __construct(private readonly AxGateway $ax, private readonly RestIntegration $rest, private readonly EmployeeDirectory $employees) {}
 
     /** @return array<string,mixed>|null */
     public function run(string $source, string $value, ?string $processInstanceId = null): ?array
     {
+        if ($source === EmployeeDirectory::SOURCE) {
+            return $this->employees->lookup($value);
+        }
         if (str_starts_with($source, FieldCatalog::API_PREFIX)) {
             return $this->rest->lookup($this->endpoint($source), $value, $processInstanceId);
         }
@@ -29,6 +34,9 @@ class LookupRunner
 
     public function transportName(string $source): string
     {
+        if ($source === EmployeeDirectory::SOURCE) {
+            return 'BPM:usuarios';
+        }
         if (str_starts_with($source, FieldCatalog::API_PREFIX)) {
             return 'REST:'.$this->endpoint($source)->connection->key;
         }

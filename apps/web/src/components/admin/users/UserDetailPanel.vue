@@ -104,6 +104,7 @@ async function copy(text: string | null) {
           <dt>Conta criada</dt><dd>{{ fmtDateTime(detail.account.createdAt) }}</dd>
           <dt>Área</dt><dd>{{ detail.organization.area || '—' }}</dd>
           <dt>Departamento</dt><dd>{{ detail.organization.department || '—' }}</dd>
+          <dt>Matrícula</dt><dd>{{ detail.organization.registrationNumber || '—' }}</dd>
           <dt>Gestor</dt>
           <dd>
             <button v-if="detail.organization.managerInfo" type="button" class="tm-link-btn" @click="emit('select', detail.organization.managerInfo.id)">{{ detail.organization.managerInfo.name }}</button>

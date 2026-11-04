@@ -51,7 +51,7 @@ class UserManagementController extends ApiController
         $query = User::query()->with('manager:id,name,email,username,auth_source');
         if ($q = trim((string) $request->query('q', ''))) {
             $like = '%'.mb_strtolower($q).'%';
-            $query->where(fn ($w) => $w->whereRaw('LOWER(name) LIKE ?', [$like])->orWhereRaw('LOWER(email) LIKE ?', [$like])->orWhereRaw('LOWER(upn) LIKE ?', [$like])->orWhereRaw('LOWER(username) LIKE ?', [$like]));
+            $query->where(fn ($w) => $w->whereRaw('LOWER(name) LIKE ?', [$like])->orWhereRaw('LOWER(email) LIKE ?', [$like])->orWhereRaw('LOWER(upn) LIKE ?', [$like])->orWhereRaw('LOWER(username) LIKE ?', [$like])->orWhereRaw('LOWER(registration_number) LIKE ?', [$like]));
         }
         if ($source = $request->query('source')) {
             $query->where('auth_source', $source);
@@ -92,7 +92,7 @@ class UserManagementController extends ApiController
 
         return response()->json(['data' => [
             'identity' => ['photo' => ($pv = $this->photos->versions(collect([$user]))[$user->id] ?? null) ? ['version' => $pv] : null, 'id' => $user->id, 'name' => $user->name, 'username' => $user->username, 'email' => $user->email, 'upn' => $user->upn, 'authSource' => $user->auth_source, 'entraOid' => $user->entra_oid, 'entraTid' => $user->entra_tid],
-            'organization' => ['area' => $user->area, 'department' => $user->department, 'userType' => $user->user_type, 'userCategory' => $user->user_category, 'manager' => $user->manager?->name,
+            'organization' => ['area' => $user->area, 'department' => $user->department, 'registrationNumber' => $user->registration_number, 'userType' => $user->user_type, 'userCategory' => $user->user_category, 'manager' => $user->manager?->name,
                 'managerInfo' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'authSource' => $user->manager->auth_source] : null,
                 'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id, 'directReports' => $user->directReports()->count()],
             'account' => ['disabledAt' => $user->disabled_at?->toIso8601String(), 'active' => $user->is_active, 'accountEnabled' => $user->account_enabled, 'disabledReason' => $user->disabled_reason, 'createdAt' => $user->created_at?->toIso8601String(), 'updatedAt' => $user->updated_at?->toIso8601String(), 'lastLoginAt' => $credential?->last_login_at?->toIso8601String(), 'lastSeenAt' => $user->last_seen_at?->toIso8601String(), 'lockedUntil' => $credential?->locked_until?->toIso8601String(), 'directorySyncedAt' => $user->directory_synced_at?->toIso8601String(), 'invitationPending' => $user->auth_source === 'local' && ! $user->is_active && LocalIdentityToken::where('user_id', $user->id)->where('purpose', 'invitation')->whereNull('used_at')->where('expires_at', '>', now())->exists()],
@@ -272,7 +272,7 @@ class UserManagementController extends ApiController
         $photoVersions ??= $this->photos->versions(collect([$user]));
 
         return ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'upn' => $user->upn, 'username' => $user->username, 'area' => $user->area,
-            'department' => $user->department, 'userCategory' => $user->user_category, 'authSource' => $user->auth_source, 'isActive' => $user->is_active, 'roles' => $user->roles ?? [], 'groups' => $user->groups ?? [],
+            'department' => $user->department, 'registrationNumber' => $user->registration_number, 'userCategory' => $user->user_category, 'authSource' => $user->auth_source, 'isActive' => $user->is_active, 'roles' => $user->roles ?? [], 'groups' => $user->groups ?? [],
             'manager' => $user->manager ? ['id' => $user->manager->id, 'name' => $user->manager->name, 'email' => $user->manager->email, 'username' => $user->manager->username, 'authSource' => $user->manager->auth_source] : null,
             'managerPending' => (bool) $user->manager_entra_oid && ! $user->manager_user_id,
             'invitationPending' => $state !== null && ! $user->is_active && $state['status'] === ManagedUserDetails::INVITATION_PENDING,

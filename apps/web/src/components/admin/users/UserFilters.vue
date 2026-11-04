@@ -45,7 +45,7 @@ const active = computed(() => Object.values(props.modelValue).filter(Boolean).le
       </div>
     </div>
     <div class="tm-panel-body filters-body">
-      <div class="tm-field"><label for="uf-q">Buscar</label><InputText id="uf-q" :model-value="modelValue.q" type="search" placeholder="Nome, e-mail ou usuário" aria-label="Buscar usuário por nome, e-mail ou identificador" @update:model-value="set({ q: String($event ?? '') })" /></div>
+      <div class="tm-field"><label for="uf-q">Buscar</label><InputText id="uf-q" :model-value="modelValue.q" type="search" placeholder="Nome, e-mail, usuário ou matrícula" aria-label="Buscar usuário por nome, e-mail, identificador ou matrícula" @update:model-value="set({ q: String($event ?? '') })" /></div>
       <div class="tm-field"><label for="uf-source">Origem</label><Select input-id="uf-source" placeholder="Todas as origens" :model-value="modelValue.source" :options="sourceOptions" option-label="label" option-value="value" @update:model-value="set({ source: $event })" /></div>
       <div class="tm-field"><label for="uf-active">Situação</label><Select input-id="uf-active" placeholder="Todas as situações" :model-value="modelValue.active" :options="activeOptions" option-label="label" option-value="value" @update:model-value="set({ active: $event })" /></div>
       <div class="tm-field"><label for="uf-category">Tipo de usuário</label><Select input-id="uf-category" placeholder="Todos os tipos" :model-value="modelValue.category" :options="categoryOptions" option-label="label" option-value="value" @update:model-value="set({ category: $event })" /></div>

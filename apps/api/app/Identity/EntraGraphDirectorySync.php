@@ -12,7 +12,8 @@ use Closure;
  */
 class EntraGraphDirectorySync
 {
-    public const USER_PROPERTIES = 'id,displayName,userPrincipalName,mail,department,accountEnabled,userType';
+    /** onPremisesExtensionAttributes.extensionAttribute1 = matrícula do colaborador. */
+    public const USER_PROPERTIES = 'id,displayName,userPrincipalName,mail,department,accountEnabled,userType,onPremisesExtensionAttributes';
 
     public const USER_SELECT = self::USER_PROPERTIES.',manager';
 

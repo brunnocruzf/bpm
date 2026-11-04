@@ -668,12 +668,17 @@ class DirectorySyncService
             ]);
         }
         $user->auth_source = User::SOURCE_ENTRA;
-        $before = $user->exists ? $user->only(['name', 'upn', 'email', 'department', 'user_type', 'account_enabled', 'manager_entra_oid']) : null;
+        $tracked = ['name', 'upn', 'email', 'department', 'registration_number', 'user_type', 'account_enabled', 'manager_entra_oid'];
+        $before = $user->exists ? $user->only($tracked) : null;
         $map = ['displayName' => 'name', 'userPrincipalName' => 'upn', 'mail' => 'email', 'department' => 'department', 'userType' => 'user_type', 'accountEnabled' => 'account_enabled'];
         foreach ($map as $src => $col) {
             if (array_key_exists($src, $u)) {
                 $user->{$col} = is_string($u[$src]) ? mb_substr($u[$src], 0, 200) : $u[$src];
             }
+        }
+        [$hasRegistration, $registration] = $this->registrationNumber($u);
+        if ($hasRegistration) {
+            $user->registration_number = $registration;
         }
         [$hasManager, $managerOid] = $this->managerOid($u);
         if ($hasManager) {
@@ -707,7 +712,7 @@ class DirectorySyncService
             $user->disabled_at = null;
             $this->s['totals']['reenabled']++;
         }
-        $after = $user->only(['name', 'upn', 'email', 'department', 'user_type', 'account_enabled', 'manager_entra_oid']);
+        $after = $user->only($tracked);
         if ($before !== $after || $user->isDirty('is_active')) {
             $this->s['totals']['updated']++;
             $this->sample('update', 'user', $user->name, $user->upn);
@@ -716,6 +721,29 @@ class DirectorySyncService
         }
         $user->save();
         $this->resolveManagerRelationship($user, $tenant);
+    }
+
+    /**
+     * Matrícula = onPremisesExtensionAttributes.extensionAttribute1. Só altera quando o Graph trouxe o
+     * atributo (delta pode omitir propriedades não alteradas); valor vazio/nulo limpa a matrícula.
+     *
+     * @return array{bool, ?string}
+     */
+    private function registrationNumber(array $user): array
+    {
+        if (! array_key_exists('onPremisesExtensionAttributes', $user)) {
+            return [false, null];
+        }
+        $ext = $user['onPremisesExtensionAttributes'];
+        if ($ext === null) {
+            return [true, null];
+        }
+        if (! is_array($ext) || ! array_key_exists('extensionAttribute1', $ext)) {
+            return [false, null];
+        }
+        $value = is_scalar($ext['extensionAttribute1']) ? trim((string) $ext['extensionAttribute1']) : '';
+
+        return [true, $value === '' ? null : mb_substr($value, 0, 64)];
     }
 
     /** @return array{bool, ?string} */

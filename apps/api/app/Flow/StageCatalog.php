@@ -24,6 +24,7 @@ final class StageCatalog
     public const END_RESULTS = [
         'concluido' => 'Concluído',
         'nao_procedente' => 'Encerrado — não procedente',
+        'reprovado' => 'Reprovado',
         'cancelado' => 'Cancelado',
         'encerrado_sem_acao' => 'Encerrado sem ação',
         'encerramento_administrativo' => 'Encerramento administrativo',

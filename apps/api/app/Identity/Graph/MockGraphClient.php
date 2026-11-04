@@ -42,6 +42,7 @@ class MockGraphClient implements GraphClient
         $u = fn (string $n, string $name, string $dept, bool $enabled = true, string $type = 'Member') => [
             'id' => "9a5d0000-0000-4000-8000-00000000000$n", 'displayName' => $name, 'userPrincipalName' => "usuario$n@tmsa.example",
             'mail' => "usuario$n@tmsa.example", 'department' => $dept, 'accountEnabled' => $enabled, 'userType' => $type,
+            'onPremisesExtensionAttributes' => ['extensionAttribute1' => $type === 'Guest' ? null : sprintf('9%05d', (int) $n)],
         ];
 
         $users = collect([

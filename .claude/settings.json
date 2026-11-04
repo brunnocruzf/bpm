@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd C:\\\\projetos\\\\bpmn\\\\deploy\\\\docker; docker compose ps --format \"table {{.Name}}\\\\t{{.Status}}\" 2>&1; Select-String -Path .env -Pattern '^\\(DB_HOST|DB_CONNECTION|DB_DATABASE|APP_ENV|COMPOSE_PROFILES\\)=' | ForEach-Object { $_.Line })",
+      "PowerShell(docker compose up --build -d 2>&1)",
+      "PowerShell(docker compose restart api-web reverse-proxy 2>&1 | Select-Object -Last 6; docker compose exec -T api php artisan migrate:status 2>&1 | Select-String -Pattern 'registration_number|for784|Pending'; docker compose ps --format \"table {{.Name}}\\\\t{{.Status}}\"; \\(Invoke-WebRequest -UseBasicParsing http://localhost:8080 -TimeoutSec 20\\).StatusCode)",
+      "PowerShell(php artisan tinker --execute=\"echo App\\\\Models\\\\ProcessCatalog::where\\('key','for784_ocorrencia_ponto'\\)->exists\\(\\) ? 'instalado' : 'nao';\")",
+      "PowerShell(php artisan tinker --execute=\"`$c=App\\\\Models\\\\ProcessCatalog::where\\('key','for784_ocorrencia_ponto'\\)->first\\(\\); if\\(!`$c\\){echo 'nao instalado';return;} foreach\\(`$c->versions\\(\\)->orderBy\\('version_number'\\)->get\\(\\) as `$v\\){echo `$v->id.' v'.`$v->version_number.' '.`$v->status.PHP_EOL;} echo 'instancias: '.App\\\\Models\\\\ProcessInstance::where\\('catalog_id',`$c->id\\)->count\\(\\);\")",
+      "Bash(vendor/bin/pint --test app/Identity/EmployeeDirectory.php app/Integrations app/Forms app/Http/Controllers/Api/V1/LookupController.php database/seeders/Blueprints/For784.php tests/Feature/For784FlowTest.php)",
+      "PowerShell(docker exec bpm-tmsa-api-1 sh -c \"grep -c 'noturno' database/seeders/Blueprints/For784.php; php artisan migrate:status | grep -i 'for784\\\\|registration'\")",
+      "PowerShell(php artisan test --filter=\"For784FlowTest|Po159|Seeder|Blueprint\" 2>&1)",
+      "PowerShell(vendor/bin/pint app/Flow/FlowBlueprint.php database/seeders/Blueprints/For784.php database/migrations/2026_11_04_000300_update_for784_ocorrencia_ponto.php tests/Feature/For784FlowTest.php)",
+      "PowerShell(vendor/bin/phpstan analyse app/Flow/FlowBlueprint.php database/seeders/Blueprints/For784.php --memory-limit=1G --no-progress 2>&1)",
+      "PowerShell(php artisan test 2>&1)",
+      "PowerShell(docker inspect bpm-tmsa-api-1 --format \"{{index .Config.Labels \\\\\"com.docker.compose.project.config_files\\\\\"}} | {{index .Config.Labels \\\\\"com.docker.compose.project.working_dir\\\\\"}} | {{index .Config.Labels \\\\\"com.docker.compose.service\\\\\"}}\")"
+    ]
+  }
+}

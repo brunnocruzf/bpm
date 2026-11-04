@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Forms\FieldCatalog;
 use App\Integrations\IntegrationUnavailable;
+use App\Integrations\LookupAmbiguous;
 use App\Integrations\LookupRunner;
 use App\Support\ApiProblem;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +22,8 @@ class LookupController extends ApiController
         }
         try {
             $result = $lookups->run($source, $value);
+        } catch (LookupAmbiguous $e) {
+            throw ApiProblem::validation(['value' => [$e->getMessage()]]);
         } catch (IntegrationUnavailable $e) {
             if ($e->reason === 'not_configured') {
                 throw ApiProblem::unavailable("A consulta \"{$def['label']}\" não está ativa no momento. Avise o administrador das integrações; seus dados não foram perdidos.");

@@ -50,6 +50,21 @@ class FormioSchemaSanitizerTest extends TestCase
         $this->assertArrayNotHasKey('url', $out[1]);
     }
 
+    public function test_time_field_is_a_native_html5_time_input_in_24h(): void
+    {
+        $out = $this->sanitize([
+            F::time('entrada', 'Entrada'),
+            ['type' => 'time', 'key' => 'saida', 'label' => 'Saída', 'input' => true, 'inputType' => 'text', 'format' => 'hh:mm A', 'dataFormat' => 'x', 'inputMask' => '99:99'],
+        ])['components'];
+
+        foreach ($out as $c) {
+            $this->assertSame('time', $c['inputType']);
+            $this->assertSame('HH:mm', $c['format']);
+            $this->assertSame('HH:mm', $c['dataFormat']);
+            $this->assertArrayNotHasKey('inputMask', $c);
+        }
+    }
+
     public function test_rejects_unsupported_components_external_data_sources_and_bad_keys(): void
     {
         try {

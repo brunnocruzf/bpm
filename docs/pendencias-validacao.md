@@ -17,6 +17,7 @@ Transcrição do §2.2 da especificação e decisões que ficaram como premissa 
 11. Regras de duplicidade de CAN/TPR/NF/OC.
 12. Máscara final do número (IRR-000001/26) e política de virada de ano.
 13. Meta de lead time — não assumida.
+34. **FOR-784 — Ocorrência de Ponto** (migration `2026_11_04_000100`, blueprint `database/seeders/Blueprints/For784.php`): (a) aprovação do gestor e correção vão para os grupos `PONTO_GESTOR` e `PONTO_SOLICITANTE` (qualquer membro executa) — atribuir ao gestor imediato do colaborador e devolver só ao solicitante exige atribuição dinâmica de etapa, ainda não existente; (b) "O solicitante é gestor?" é declarado no formulário; (c) prazo do gestor de 2 dias (timer) com reprovação automática; (d) grade "Ocorrência Ponto" no painel "Dados do colaborador para ajuste do ponto" (motivo — lista do SoftExpert —, data, entrada, saída e noturno): confirmar com o RH se basta 1 par entrada/saída por linha; (e) colaborador e gestor digitados — trocar por consulta quando houver API do RH; (f) contrato do sistema de ponto para o mapeamento `map:integracaoPonto` (saída `statusIntegracao` = `sucesso`), inativo até o vínculo; (g) o cancelamento automático "no mesmo dia" do SoftExpert não foi modelado — o solicitante cancela na correção.
 
 ## Segurança, identidade e dados
 
