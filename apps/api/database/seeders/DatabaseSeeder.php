@@ -33,6 +33,8 @@ class DatabaseSeeder extends Seeder
     {
         // Raias, PO 159 e fluxos de demonstração são da TMSA; outra organização começa vazia (ADR-0019).
         $tmsa = config('bpm.organization.key') === 'tmsa';
+        // FOR-784 (Ocorrência de Ponto) roda na TMSA e no IMS.
+        $for784 = in_array(config('bpm.organization.key'), ['tmsa', 'ims'], true);
         if ($tmsa) {
             foreach (self::GROUPS as $key => [$name, $description]) {
                 BpmGroup::updateOrCreate(['key' => $key], ['name' => $name, 'description' => $description, 'email' => strtolower($key).'@bpm.tmsa.local']);
@@ -43,7 +45,7 @@ class DatabaseSeeder extends Seeder
             $this->call(DevUserSeeder::class);
         }
         app(ReportTemplateService::class)->ensureDefaults();
-        if (! $tmsa) {
+        if (! $tmsa && ! $for784) {
             return;
         }
 
@@ -55,19 +57,23 @@ class DatabaseSeeder extends Seeder
         }
         $publisher = User::where('username', 'publisher')->first() ?? $owner;
 
-        if (! ProcessCatalog::where('key', 'item_reprovado_recebimento')->exists()) {
-            FlowBlueprint::create(Po159::spec(), $owner, false);
-            app(PublishService::class)->publish(ProcessCatalog::where('key', 'item_reprovado_recebimento')->first()->latestVersion(), $publisher);
-            $this->command?->info('PO 159 criado e publicado (deploy agendado no outbox).');
-        }
-        if (! ProcessCatalog::where('key', 'homologacao_fornecedor')->exists()) {
-            FlowBlueprint::create(DemoFlows::homologacaoFornecedor(), $owner, false);
-            app(PublishService::class)->publish(ProcessCatalog::where('key', 'homologacao_fornecedor')->first()->latestVersion(), $publisher);
-        }
-        if (! ProcessCatalog::where('key', 'aprovacao_frete_especial')->exists()) {
-            FlowBlueprint::create(DemoFlows::freteEspecial(), $owner, false);
+        if ($tmsa) {
+            if (! ProcessCatalog::where('key', 'item_reprovado_recebimento')->exists()) {
+                FlowBlueprint::create(Po159::spec(), $owner, false);
+                app(PublishService::class)->publish(ProcessCatalog::where('key', 'item_reprovado_recebimento')->first()->latestVersion(), $publisher);
+                $this->command?->info('PO 159 criado e publicado (deploy agendado no outbox).');
+            }
+            if (! ProcessCatalog::where('key', 'homologacao_fornecedor')->exists()) {
+                FlowBlueprint::create(DemoFlows::homologacaoFornecedor(), $owner, false);
+                app(PublishService::class)->publish(ProcessCatalog::where('key', 'homologacao_fornecedor')->first()->latestVersion(), $publisher);
+            }
+            if (! ProcessCatalog::where('key', 'aprovacao_frete_especial')->exists()) {
+                FlowBlueprint::create(DemoFlows::freteEspecial(), $owner, false);
+            }
         }
         // Instalação nova: a migration do FOR-784 rodou antes de existir usuário (idempotente).
-        For784::install();
+        if ($for784) {
+            For784::install();
+        }
     }
 }
