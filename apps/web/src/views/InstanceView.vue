@@ -97,7 +97,7 @@ onBeforeUnmount(() => window.clearTimeout(poll))
         <tbody>
           <tr v-for="t in openTasks" :key="t.id">
             <td class="tm-strong">{{ t.name }}</td>
-            <td>{{ t.candidateGroupName }}</td>
+            <td>{{ t.candidateGroupName ?? 'Responsável direto' }}</td>
             <td>{{ t.assignee?.name ?? '—' }}</td>
             <td :class="{ 'tm-overdue': t.overdue }">{{ fmtDateTime(t.dueAt) }}</td>
             <td><StatusPill kind="task" :status="t.status" /></td>

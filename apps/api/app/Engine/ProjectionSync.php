@@ -3,6 +3,7 @@
 namespace App\Engine;
 
 use App\Audit\AuditContext;
+use App\Flow\AssignmentRule;
 use App\Models\EngineCommand;
 use App\Models\FormSubmission;
 use App\Models\ProcessInstance;
@@ -10,6 +11,7 @@ use App\Models\ProcessStageVersion;
 use App\Models\ProcessTransitionVersion;
 use App\Models\TaskProjection;
 use App\Notifications\Notifier;
+use App\Runtime\AssignmentResolver;
 use App\Support\AuditLogger;
 use App\Support\Correlation;
 use Carbon\CarbonImmutable;
@@ -26,6 +28,7 @@ class ProjectionSync
         private readonly FlowableRestClient $engine,
         private readonly EngineCommandDispatcher $dispatcher,
         private readonly Notifier $notifier,
+        private readonly AssignmentResolver $assignments,
     ) {}
 
     public function syncInstance(ProcessInstance $instance): void
@@ -48,20 +51,24 @@ class ProjectionSync
                 if (! $stage) {
                     continue;
                 }
+                $assignment = $this->assignments->forTask($stage, $instance);
                 $task = TaskProjection::create([
                     'process_instance_id' => $instance->id,
                     'engine_task_id' => (string) $et['id'],
                     'stage_version_id' => $stage->id,
                     'stage_key' => $stage->stage_key,
                     'name' => $stage->name,
-                    'candidate_group' => $stage->lane,
-                    'status' => TaskProjection::OPEN,
+                    'candidate_group' => $assignment['group'],
+                    'assignee_id' => $assignment['assigneeId'],
+                    'status' => $assignment['assigneeId'] ? TaskProjection::CLAIMED : TaskProjection::OPEN,
+                    'claimed_at' => $assignment['assigneeId'] ? now() : null,
                     'due_at' => ! empty($et['dueDate']) ? CarbonImmutable::parse($et['dueDate']) : null,
                     'engine_created_at' => ! empty($et['createTime']) ? CarbonImmutable::parse($et['createTime']) : now(),
                 ]);
                 $created[] = $task;
                 // Entrada na etapa: o engine já confirmou a tarefa (nunca antes da transição BPMN).
                 $event = AuditContext::as('engine/reconciliador', fn () => AuditLogger::record('task.created', 'task_projection', $task->id, ['group' => $task->candidate_group, 'due' => $task->due_at?->toIso8601String()], $instance->id, context: ['object_name' => $task->name]));
+                $this->recordAssignment($task, $assignment, $instance, $event->id);
                 foreach ($this->decisionsLeadingTo($stage, $stages) as $decision) {
                     AuditContext::as('engine/reconciliador', fn () => AuditLogger::record('instance.branch_taken', 'process_stage_version', $decision['gatewayId'], ['gateway' => $decision['gateway'], 'path' => $decision['path'], 'target' => $stage->name, 'ambiguous' => $decision['ambiguous']], $instance->id, context: ['stage_key' => $stage->stage_key, 'task_id' => $task->id, 'causation_id' => $event->id]));
                 }
@@ -94,6 +101,18 @@ class ProjectionSync
             $this->checkEnded($instance, $stages);
         }
         $instance->forceFill(['synced_at' => now()])->saveQuietly();
+    }
+
+    /** @param array{mode:string, assigneeId:?string, group:?string, field:?string, reason:?string} $assignment */
+    private function recordAssignment(TaskProjection $task, array $assignment, ProcessInstance $instance, string $causationId): void
+    {
+        if ($assignment['mode'] === AssignmentRule::GROUP) {
+            return;
+        }
+        $context = ['object_name' => $task->name, 'causation_id' => $causationId];
+        AuditContext::as('engine/reconciliador', fn () => $assignment['assigneeId']
+            ? AuditLogger::record('task.auto_assigned', 'task_projection', $task->id, ['mode' => $assignment['mode'], 'field' => $assignment['field'], 'to' => $assignment['assigneeId'], 'toName' => $task->assignee?->name], $instance->id, context: $context)
+            : AuditLogger::record('task.assignment_fallback', 'task_projection', $task->id, ['mode' => $assignment['mode'], 'field' => $assignment['field'], 'reason' => $assignment['reason'], 'group' => $assignment['group']], $instance->id, context: $context));
     }
 
     /**
@@ -190,10 +209,12 @@ class ProjectionSync
             return;
         }
         $endStage = $stages[$historic['endActivityId'] ?? ''] ?? null;
-        $result = $historic['deleteReason'] ? 'cancelado' : ($endStage?->configValue('result', 'concluido') ?? 'concluido');
+        // fim com terminate: o engine preenche deleteReason mesmo sendo um encerramento normal do fluxo
+        $terminated = $endStage?->stage_type === ProcessStageVersion::END && $endStage->configValue('terminate');
+        $result = $historic['deleteReason'] && ! $terminated ? 'cancelado' : ($endStage?->configValue('result', 'concluido') ?? 'concluido');
 
         $instance->update([
-            'status' => $historic['deleteReason'] ? ProcessInstance::CANCELLED : ProcessInstance::COMPLETED,
+            'status' => $result === 'cancelado' ? ProcessInstance::CANCELLED : ProcessInstance::COMPLETED,
             'result' => $result,
             'end_stage_key' => $endStage?->stage_key,
             'ended_at' => CarbonImmutable::parse($historic['endTime']),

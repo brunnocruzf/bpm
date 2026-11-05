@@ -26,7 +26,12 @@ class EmployeeDirectory
         'department' => 'Departamento',
         'managerName' => 'Gestor imediato',
         'managerEmail' => 'E-mail do gestor imediato',
+        'userId' => 'ID do colaborador (referência interna)',
+        'managerUserId' => 'ID do gestor imediato (referência interna)',
     ];
+
+    /** Campos que alimentam a atribuição de etapas: ficam no servidor e nunca voltam ao navegador. */
+    public const USER_REFS = ['userId', 'managerUserId'];
 
     /** @return array<string,mixed>|null */
     public function lookup(string $value): ?array
@@ -52,7 +57,20 @@ class EmployeeDirectory
             'department' => $user->department,
             'managerName' => $user->manager?->name,
             'managerEmail' => $user->manager?->email,
+            'userId' => $user->id,
+            'managerUserId' => $user->manager_user_id,
         ] : null;
+    }
+
+    /**
+     * Resultado que pode sair do servidor. Outras fontes passam intactas: lá "userId" é dado do sistema externo.
+     *
+     * @param  array<string,mixed>  $result
+     * @return array<string,mixed>
+     */
+    public static function withoutUserRefs(string $source, array $result): array
+    {
+        return $source === self::SOURCE ? array_diff_key($result, array_flip(self::USER_REFS)) : $result;
     }
 
     public static function company(string $registration): ?string

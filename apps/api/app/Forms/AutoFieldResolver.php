@@ -10,7 +10,8 @@ class AutoFieldResolver
 {
     public function __construct(private readonly SequenceService $sequences) {}
 
-    public function resolve(string $source, string $fieldKey, SubmissionContext $ctx): mixed
+    /** @param array<string,mixed>|null $data valores já calculados da submissão (null na pré-visualização) */
+    public function resolve(string $source, string $fieldKey, SubmissionContext $ctx, ?array $data = null): mixed
     {
         $tz = config('bpm.sequences.timezone');
         $now = CarbonImmutable::now($tz);
@@ -31,6 +32,16 @@ class AutoFieldResolver
 
         if (str_starts_with($source, 'counter:')) {
             return (int) ($ctx->contextData[$fieldKey] ?? 0) + 1;
+        }
+
+        if (str_starts_with($source, FieldCatalog::REQUESTER_MATCHES)) {
+            if ($data === null) {
+                return null;
+            }
+            $reference = substr($source, strlen(FieldCatalog::REQUESTER_MATCHES));
+            $value = $data[$reference] ?? $ctx->contextData[$reference] ?? null;
+
+            return $value !== null && $value === $ctx->instance?->requester_id ? 'sim' : 'nao';
         }
 
         return match ($source) {

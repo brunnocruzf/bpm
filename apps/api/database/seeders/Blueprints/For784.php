@@ -2,8 +2,10 @@
 
 namespace Database\Seeders\Blueprints;
 
+use App\Flow\AssignmentRule;
 use App\Flow\FlowBlueprint as B;
 use App\Flow\PublishService;
+use App\Forms\FieldCatalog;
 use App\Forms\FormioBuilder as F;
 use App\Identity\EmployeeDirectory;
 use App\Models\BpmGroup;
@@ -19,10 +21,12 @@ use Throwable;
  *
  * Instalado pela migration 2026_11_04_000100 (bases existentes) e pelo DatabaseSeeder (instalação nova).
  * Premissas [VALIDAR]:
- *  - o "Gestor" é uma raia (grupo PONTO_GESTOR): qualquer membro aprova; a atribuição ao gestor imediato
- *    do colaborador e a devolução da correção só ao solicitante dependem de atribuição dinâmica (pendente);
+ *  - aprova só a pessoa definida no formulário: o gestor substituto, se houver, ou o gestor imediato (ADR-0020).
+ *    O grupo PONTO_GESTOR é a contingência quando ela não puder receber a tarefa e precisa ter membros;
+ *  - a correção volta ao solicitante, com PONTO_SOLICITANTE como contingência;
  *  - nome e gestor imediato vêm da matrícula no cadastro de usuários (Entra: extensionAttribute1 e manager);
- *  - "O solicitante é gestor?" é declarado no formulário de abertura;
+ *  - o substituto é indicado pelo solicitante pela matrícula e não pode ser ele mesmo nem o colaborador;
+ *  - "O solicitante é gestor?" é calculado no servidor, comparando o solicitante com o gestor imediato;
  *  - o gestor tem 2 dias (timer P2D) para agir; sem decisão, a solicitação é reprovada automaticamente;
  *  - as colunas da grade "Ocorrência Ponto" e o retorno da integração (statusIntegracao = "sucesso")
  *    precisam ser confirmados com o RH e com o contrato do sistema de ponto;
@@ -49,7 +53,7 @@ final class For784
     /** Raias do FOR-784 (as do PO 159 ficam no DatabaseSeeder). */
     public const GROUPS = [
         'PONTO_SOLICITANTE' => ['Iniciador — Ponto', 'FOR-784: registra e corrige ocorrências de ponto'],
-        'PONTO_GESTOR' => ['Gestor — Ponto', 'FOR-784: gestores que aprovam o registro de ponto'],
+        'PONTO_GESTOR' => ['Gestor — Ponto', 'FOR-784: contingência da aprovação quando o gestor definido não puder receber a tarefa'],
         'RH' => ['RH', 'Recursos Humanos: aprovação do ponto e tratamento de erro de integração'],
         'PONTO_INTEGRACAO' => ['Integração — Ponto', 'FOR-784: raia da etapa automática (sem membros)'],
     ];
@@ -120,12 +124,16 @@ final class For784
         // Abertura: campos reaproveitados (somente leitura) nas etapas seguintes.
         // Matrícula consultada no cadastro de usuários (Entra): traz o nome e o gestor imediato vinculado.
         $matricula = F::lookup('matriculaColaborador', 'Matrícula do colaborador', EmployeeDirectory::SOURCE,
-            ['name' => 'nomeColaborador', 'managerName' => 'gestorImediato', 'managerEmail' => 'gestorImediatoEmail'],
+            ['name' => 'nomeColaborador', 'managerName' => 'gestorImediato', 'managerEmail' => 'gestorImediatoEmail', 'userId' => 'colaboradorUserId', 'managerUserId' => 'gestorImediatoId'],
             ['required' => true, 'maxLength' => 20, 'description' => 'Digite a matrícula (ex.: 4085 ou 014085 — 01 TMSA, 02 IMS) e consulte.']);
         $nome = F::text('nomeColaborador', 'Nome do colaborador', ['disabled' => true]);
         $gestor = F::text('gestorImediato', 'Gestor imediato', ['disabled' => true, 'description' => 'Gestor vinculado no Entra. Se vier vazio, marque "Substituir gestor".']);
         $gestorEmail = F::text('gestorImediatoEmail', 'E-mail do gestor imediato', ['disabled' => true]);
         $gestorSubstituto = F::text('gestorSubstituto', 'Gestor substituto', ['maxLength' => 120]);
+        // Quem aprova no lugar do gestor imediato: a consulta garante que a pessoa existe no sistema.
+        $matriculaSubstituto = F::lookup('matriculaSubstituto', 'Matrícula do gestor substituto', EmployeeDirectory::SOURCE,
+            ['userId' => 'gestorSubstitutoId', 'name' => 'gestorSubstituto'],
+            ['required' => true, 'maxLength' => 20, 'when' => ['substituirGestor' => true], 'description' => 'Quem aprova no lugar do gestor imediato (ausência, férias...). Digite a matrícula e consulte.']);
         $hora = fn (string $key, string $label) => F::time($key, $label);
         $avisoNoturno = 'Se a jornada de trabalho inicia em um dia e termina no dia seguinte, deve ser selecionado o campo Noturno.';
         $ocorrencias = F::datagrid('ocorrencias', 'Ocorrência Ponto', [
@@ -180,10 +188,9 @@ final class For784
                         F::panel('Colaborador', [
                             F::columns([[$matricula], [$nome]]),
                             F::columns([[$gestor], [$gestorEmail], [F::checkbox('substituirGestor', 'Substituir gestor')]]),
-                            F::text('gestorSubstituto', 'Gestor substituto', ['required' => true, 'maxLength' => 120, 'when' => ['substituirGestor' => true],
-                                'description' => 'Quem aprova no lugar do gestor imediato (ausência, férias...).']),
-                            F::yesNo('solicitanteGestor', 'Você é o gestor imediato do colaborador?', ['required' => true,
-                                'description' => 'Se sim, a solicitação segue direto para o RH.']),
+                            F::columns([[$matriculaSubstituto], [F::text('gestorSubstituto', 'Gestor substituto', ['disabled' => true, 'maxLength' => 120, 'when' => ['substituirGestor' => true]])]]),
+                            F::auto('solicitanteGestor', 'Solicitante é o gestor imediato?', FieldCatalog::REQUESTER_MATCHES.'gestorImediatoId', [
+                                'description' => 'Calculado pelo sistema ao enviar. Se sim, a solicitação segue direto para o RH.']),
                         ], ['key' => 'panel_colaborador']),
                         F::content('<div class="alert alert-danger"><p><strong>OBS:</strong></p><p><strong>1) Lance somente as datas pendentes.</strong></p><p><strong>2) Após o lançamento, clique em "Abrir solicitação".</strong></p><p><strong>3) Sem decisão do gestor em 2 dias, a solicitação é reprovada automaticamente.</strong></p></div>', 'content_obs_ponto'),
                         $ajuste($ocorrencias),
@@ -195,7 +202,14 @@ final class For784
                 ['key' => 'p_gestor', 'name' => 'Aprovação do gestor com prazo', 'type' => S::PARALLEL_GATEWAY, 'lane' => 'PONTO_GESTOR'],
                 [
                     'key' => 'aprovar_gestor', 'name' => 'Aprovar Registro de Ponto — Gestor', 'type' => S::USER_TASK, 'lane' => 'PONTO_GESTOR',
-                    'config' => ['slaDays' => 1, 'notifyAssignee' => $avisoTarefa],
+                    'config' => ['slaDays' => 1, 'notifyAssignee' => $avisoTarefa, 'assignment' => [
+                        'mode' => AssignmentRule::FIELD,
+                        'fields' => ['gestorSubstitutoId', 'gestorImediatoId'],
+                        'fallbackGroup' => 'PONTO_GESTOR',
+                        'excludeRequester' => true,
+                        'excludeFields' => ['colaboradorUserId'],
+                        'requiredUnless' => ['solicitanteGestor' => 'sim'],
+                    ]],
                     'description' => 'Aprove, devolva para correção ou reprove. Sem decisão em 2 dias, a solicitação é reprovada automaticamente.',
                     'form' => ['title' => 'Aprovar Registro de Ponto — Gestor', 'components' => [
                         $solicitacao,
@@ -231,7 +245,7 @@ final class For784
                 // Correção pelo solicitante
                 [
                     'key' => 'corrigir_marcacoes', 'name' => 'Corrigir Marcações', 'type' => S::USER_TASK, 'lane' => 'PONTO_SOLICITANTE',
-                    'config' => ['slaDays' => 1, 'notifyAssignee' => $avisoTarefa],
+                    'config' => ['slaDays' => 1, 'notifyAssignee' => $avisoTarefa, 'assignment' => ['mode' => AssignmentRule::REQUESTER, 'fallbackGroup' => 'PONTO_SOLICITANTE']],
                     'description' => 'Ajuste as ocorrências conforme a orientação e reenvie, ou cancele a solicitação.',
                     'form' => ['title' => 'Corrigir Marcações', 'components' => [
                         F::copied(F::textarea('motivoCorrecao', 'O que precisa ser corrigido')),

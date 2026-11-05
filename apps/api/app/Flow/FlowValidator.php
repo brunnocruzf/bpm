@@ -11,7 +11,7 @@ use InvalidArgumentException;
 
 /**
  * Validação de rascunho antes da publicação. Produz problemas acionáveis:
- *  - cada tarefa humana tem formulário válido e responsável;
+ *  - cada tarefa humana tem formulário válido e responsável (grupo ou regra de atribuição);
  *  - nenhum formulário órfão; chaves de campo consistentes no fluxo;
  *  - gateways com condições válidas referenciando campos existentes;
  *  - todo elemento tem entrada/saída e caminho até um fim;
@@ -65,6 +65,7 @@ class FlowValidator
             switch ($s->stage_type) {
                 case Stage::USER_TASK:
                     $this->validateHuman($s, $groups);
+                    $this->validateAssignment($s, $g, $groups, $fields);
                     break;
                 case Stage::EXCLUSIVE_GATEWAY:
                     $this->validateExclusive($s, $outs, $fields, $g);
@@ -132,7 +133,7 @@ class FlowValidator
 
     private function validateHuman(Stage $s, array $groups): void
     {
-        if (! $s->lane) {
+        if (! $s->lane && ! AssignmentRule::of($s)) {
             $this->error('assignee_missing', "\"{$s->name}\": defina quem executa (grupo/raia).", $s);
         }
         if (! $s->form) {
@@ -160,6 +161,53 @@ class FlowValidator
         $sla = $s->configValue('slaDays');
         if ($sla !== null && $sla !== '' && (! is_numeric($sla) || (int) $sla < 1 || (int) $sla > 365)) {
             $this->error('sla_invalid', "\"{$s->name}\": prazo (SLA) deve ser entre 1 e 365 dias.", $s);
+        }
+    }
+
+    private function validateAssignment(Stage $s, FlowGraph $g, array $groups, array $fields): void
+    {
+        $raw = $s->configValue('assignment');
+        if (! AssignmentRule::isValidMode($raw)) {
+            $this->error('assignment_mode', "\"{$s->name}\": modo de atribuição inválido.", $s);
+
+            return;
+        }
+        $rule = AssignmentRule::normalize($raw);
+        if ($rule === null) {
+            return;
+        }
+        if ($g->openingStage()?->id === $s->id) {
+            $this->error('assignment_opening', "\"{$s->name}\": a etapa de abertura é preenchida pelo solicitante e só aceita o modo grupo.", $s);
+        }
+        $fallback = $rule['fallbackGroup'] ?? null;
+        if (! $fallback || ! in_array($fallback, $groups, true)) {
+            $this->error('assignment_fallback', "\"{$s->name}\": escolha um grupo de contingência existente.", $s);
+        }
+
+        $refs = $g->userRefFields();
+        if ($rule['mode'] === AssignmentRule::FIELD && empty($rule['fields'])) {
+            $this->error('assignment_fields', "\"{$s->name}\": escolha ao menos um campo que define o responsável.", $s);
+        }
+        foreach ((array) ($rule['fields'] ?? []) as $field) {
+            if (! isset($refs[$field])) {
+                $this->error('assignment_field_type', "\"{$s->name}\": \"$field\" não é uma referência de usuário. Use um campo preenchido por consulta de colaborador, nunca um valor digitado.", $s);
+
+                continue;
+            }
+            $feeders = array_filter(array_map(fn ($key) => $g->byKey($key), $refs[$field]['stages']), fn ($feeder) => $feeder && $feeder->id !== $s->id && $g->reaches($feeder, $s));
+            if ($feeders === []) {
+                $this->error('assignment_field_order', "\"{$s->name}\": \"{$refs[$field]['label']}\" precisa ser preenchido em uma etapa anterior.", $s);
+            }
+        }
+        foreach ((array) ($rule['excludeFields'] ?? []) as $field) {
+            if (! isset($refs[$field])) {
+                $this->error('assignment_exclude_field', "\"{$s->name}\": \"$field\" não é uma referência de usuário.", $s);
+            }
+        }
+        foreach (array_keys((array) ($rule['requiredUnless'] ?? [])) as $field) {
+            if (! isset($fields[$field])) {
+                $this->error('assignment_unless_field', "\"{$s->name}\": o campo \"$field\" não existe em nenhum formulário.", $s);
+            }
         }
     }
 

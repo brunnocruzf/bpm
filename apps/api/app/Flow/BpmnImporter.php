@@ -257,11 +257,13 @@ class BpmnImporter
                     }
                     $due = $el->getAttributeNS(BpmnGenerator::NS_FLOWABLE, 'dueDate');
                     $tm = $xp->query('b:extensionElements/tmsa:stage', $el)->item(0);
+                    $assignment = $xp->query('b:extensionElements/tmsa:assignment', $el)->item(0);
                     $node['config'] = array_filter([
                         'slaDays' => preg_match('/^P(\d{1,3})D$/', $due, $m) ? (int) $m[1] : null,
                         'actionPlan' => $tm instanceof DOMElement && in_array($tm->getAttribute('actionPlan'), ['capture', 'execute'], true) ? ['mode' => $tm->getAttribute('actionPlan'), 'field' => 'acoes'] : null,
                         'notifyOnComplete' => $tm instanceof DOMElement && $tm->getAttribute('notifyOnComplete') !== '' ? explode(',', $tm->getAttribute('notifyOnComplete')) : null,
                         'notifyAssignee' => $tm instanceof DOMElement && $tm->getAttribute('notifyAssignee') === 'true' ? $this->notifyConfig($xp, $tm, $id, $name) : null,
+                        'assignment' => $assignment ? $this->assignmentConfig($assignment->textContent, $id, $name) : null,
                     ], fn ($v) => $v !== null);
                     break;
                 case 'serviceTask':
@@ -392,6 +394,23 @@ class BpmnImporter
     private function err(string $key, string $message): void
     {
         $this->errors[$key][] = $message;
+    }
+
+    /** @return array<string,mixed>|null regra de atribuição da etapa */
+    private function assignmentConfig(string $json, string $id, string $name): ?array
+    {
+        try {
+            $rule = json_decode(trim($json), true, 8, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            $rule = false;
+        }
+        if (! is_array($rule) || ! AssignmentRule::isValidMode($rule)) {
+            $this->err($id, "\"$name\": regra de atribuição inválida.");
+
+            return null;
+        }
+
+        return AssignmentRule::normalize($rule);
     }
 
     /** @return array<string,mixed>|null configuração de notificação da etapa (template validado) */

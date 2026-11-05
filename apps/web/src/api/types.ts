@@ -97,6 +97,11 @@ export interface Stage {
 
 export interface FieldInfo { key: string; label: string; type: string; values: { value: string; label: string }[]; stages: string[] }
 
+export type AssignmentMode = 'group' | 'field' | 'requester' | 'requester_manager'
+
+/** Campo que guarda um usuário do sistema (preenchido por consulta de colaborador). */
+export interface UserFieldInfo { key: string; label: string; stages: string[] }
+
 export interface ValidationProblem { severity: 'error' | 'warning' | 'info'; code: string; message: string; stageKey: string | null }
 
 export interface Version {
@@ -111,6 +116,7 @@ export interface Version {
   catalog: { key: string; name: string; category: string; description: string | null; instancePrefix: string }
   stages: Stage[]
   fields: FieldInfo[]
+  userFields: UserFieldInfo[]
   openingStageKey: string | null
 }
 
@@ -152,6 +158,8 @@ export interface TaskSummary {
   rowVersion: number
   canWork: boolean
   canClaim: boolean
+  canRelease: boolean
+  canReassign: boolean
   instance?: { id: string; number: string; flowKey: string; flowName: string; requesterName: string; requesterArea: string | null; startedAt: string; status: string }
 }
 

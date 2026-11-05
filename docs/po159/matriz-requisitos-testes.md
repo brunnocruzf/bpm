@@ -150,5 +150,13 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | Assinatura, adaptador e prefixo contra o Azurite real | `tests/Integration/AzuriteBlobTest.php` (com `AZURITE_IT_ENDPOINT`) | ✅ |
 | Tela: chave nunca preenchida, "Ativar" depende do teste da versão; SPA não fala com o Azure | `AttachmentStorageSettings.spec.ts` · `boundaries.spec.ts` | ✅ |
 | Teste/ativação com conta real do Azure | Não executado (sem autorização/credencial) | ⏳ |
+| Atribuição dinâmica: substituto vence o gestor; só o responsável vê, conclui e recebe e-mail | `TaskAssignmentTest::test_the_substitute_wins_over_the_manager_and_only_the_assignee_sees_the_task` | ✅ |
+| Referências ficam na instância, fora do payload, do engine e do navegador | `TaskAssignmentTest::test_references_reach_the_instance_but_not_the_payload_the_engine_or_the_browser` | ✅ |
+| Responsável indisponível cai no grupo de contingência, com o motivo na auditoria | `TaskAssignmentTest::test_a_person_who_became_unavailable_falls_back_to_the_stage_group` | ✅ |
+| Tarefa direta não volta a grupo, mas pode ser reatribuída a usuário elegível | `TaskAssignmentTest::test_a_directly_assigned_task_cannot_be_released_but_can_be_reassigned` | ✅ |
+| A regra sobrevive a salvar a etapa, criar nova versão e reimportar o BPMN; campo digitado é recusado | `TaskAssignmentTest::test_the_rule_survives_saving_a_new_version_and_the_bpmn_round_trip` · `test_the_validator_refuses_invalid_rules` | ✅ |
+| FOR-784: abertura recusada sem aprovador elegível; solicitante não pula o gestor; gestor real vai ao RH; correção volta ao solicitante | `For784FlowTest` | ✅ |
+| Fim com terminate mantém o resultado de negócio; só cancelamento real ou fim "cancelado" cancelam | `For784FlowTest::test_the_end_keeps_the_business_result_and_only_a_real_cancellation_cancels` · `For784EndToEndTest` (com `FLOWABLE_IT_URL`) | ✅ |
+| Tela: modos de "Quem executa?", devolver ao grupo e reatribuir | `StageSettings.spec.ts` · `TaskView.spec.ts` · `ReassignDialog.spec.ts` | ✅ |
 
 Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web).

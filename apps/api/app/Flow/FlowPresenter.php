@@ -42,6 +42,7 @@ final class FlowPresenter
         $fields = $g->fieldIndex();
         $labels = array_map(fn ($f) => $f['label'], $fields);
         $valueLabels = array_map(fn ($f) => $f['valueLabels'], $fields);
+        $userFields = $g->userRefFields();
 
         return [
             'id' => $v->id,
@@ -62,6 +63,7 @@ final class FlowPresenter
             ],
             'stages' => array_map(fn (ProcessStageVersion $s) => self::stage($s, $g, $labels, $valueLabels), $g->ordered()),
             'fields' => array_map(fn ($k, $f) => ['key' => $k, 'label' => $f['label'], 'type' => $f['type'], 'values' => array_map(fn ($val) => ['value' => $val, 'label' => $f['valueLabels'][$val] ?? $val], $f['values']), 'stages' => $f['stages']], array_keys($fields), $fields),
+            'userFields' => array_map(fn ($k, $f) => ['key' => $k, 'label' => $f['label'], 'stages' => $f['stages']], array_keys($userFields), $userFields),
             'openingStageKey' => $g->openingStage()?->stage_key,
         ];
     }

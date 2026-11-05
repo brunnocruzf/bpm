@@ -31,6 +31,7 @@ class TaskService
         private readonly AttachmentService $attachments,
         private readonly SupplierActionService $actions,
         private readonly EngineCommandDispatcher $dispatcher,
+        private readonly AssignmentResolver $assignments,
     ) {}
 
     public function claim(User $user, TaskProjection $task): TaskProjection
@@ -60,6 +61,9 @@ class TaskService
             if ($task->status !== TaskProjection::CLAIMED || ($task->assignee_id !== $user->id && ! Permissions::allows($user, Permissions::PROCESSES_MANAGE))) {
                 throw ApiProblem::conflict('Somente quem assumiu a tarefa pode liberá-la.', 'task_not_claimed');
             }
+            if ($task->candidate_group === null) {
+                throw ApiProblem::conflict('Esta tarefa foi atribuída diretamente e não tem grupo para onde voltar. Peça a reatribuição a um administrador de processos.', 'task_directly_assigned');
+            }
             $task->update(['status' => TaskProjection::OPEN, 'assignee_id' => null, 'claimed_at' => null, 'row_version' => $task->row_version + 1]);
             AuditLogger::record('task.released', 'task_projection', $task->id, [], $task->process_instance_id);
 
@@ -76,9 +80,18 @@ class TaskService
         if (mb_strlen($justification) < 10) {
             throw ApiProblem::validation(['justification' => ['Informe uma justificativa (mínimo 10 caracteres).']]);
         }
-        $target = User::where('id', $targetUserId)->where('is_active', true)->first();
-        if (! $target || ! $target->inGroup($task->candidate_group) || ! $target->hasRole('task_worker')) {
-            throw ApiProblem::validation(['userId' => ['O usuário de destino precisa pertencer ao grupo responsável.']]);
+        if ($task->candidate_group === null) {
+            // atribuição direta: sem grupo para conferir, vale a elegibilidade da regra da etapa
+            $reason = $this->assignments->ineligibility($targetUserId, $task->stage, $task->instance);
+            if ($reason !== null) {
+                throw ApiProblem::validation(['userId' => ['Não é possível reatribuir: '.AssignmentResolver::REASONS[$reason]]]);
+            }
+            $target = User::findOrFail($targetUserId);
+        } else {
+            $target = User::where('id', $targetUserId)->where('is_active', true)->first();
+            if (! $target || ! $target->inGroup($task->candidate_group) || ! $target->hasRole('task_worker')) {
+                throw ApiProblem::validation(['userId' => ['O usuário de destino precisa pertencer ao grupo responsável.']]);
+            }
         }
 
         return DB::transaction(function () use ($task, $target, $justification) {
@@ -140,6 +153,7 @@ class TaskService
                 resolveAttachment: $this->attachments->resolver($user, $instance),
             );
             $processed = $this->processor->process($stage->form->schema, $data, $ctx);
+            $this->assignments->assertSubmission($instance->definitionVersion, $processed, $ctx);
 
             $revision = FormSubmission::where('process_instance_id', $instance->id)->where('stage_version_id', $stage->id)->count() + 1;
             $submission = FormSubmission::create([

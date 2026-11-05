@@ -10,7 +10,7 @@ use XMLWriter;
  * Gera BPMN 2.0 executável (Flowable) a partir das etapas/transições da versão.
  * O XML é o artefato versionado e congelado na publicação.
  *
- * Extensões namespaced TMSA (tmsa:stage, tmsa:condition, tmsa:integration, tmsa:end)
+ * Extensões namespaced TMSA (tmsa:stage, tmsa:assignment, tmsa:condition, tmsa:integration, tmsa:end)
  * preservam metadados de formulário, atribuição, condição em DSL e conectores,
  * permitindo importação de volta sem expressões livres.
  */
@@ -185,6 +185,12 @@ class BpmnGenerator
                     $w->writeElement('tmsa:mailBody', (string) ($notify['body'] ?? ''));
                 }
                 $w->endElement();
+                if ($assignment = AssignmentRule::of($s)) {
+                    // regra resolvida pelo Laravel ao criar a tarefa; o engine ignora a extensão
+                    $w->startElement('tmsa:assignment');
+                    $w->writeCdata((string) json_encode($assignment, JSON_UNESCAPED_UNICODE));
+                    $w->endElement();
+                }
                 $w->endElement();
                 $w->endElement();
                 break;

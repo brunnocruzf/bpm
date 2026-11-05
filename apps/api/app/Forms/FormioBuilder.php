@@ -109,8 +109,8 @@ final class FormioBuilder
         };
         $base['disabled'] = true;
         $base['properties'] = ['tmsaAuto' => $source];
-        // número da solicitação e sequências só existem depois do envio: a abertura mostra o campo vazio
-        $onSubmit = $source === 'instance.number' || str_starts_with($source, 'sequence:');
+        // número da solicitação, sequências e comparações só existem depois do envio: a abertura mostra o campo vazio
+        $onSubmit = $source === 'instance.number' || str_starts_with($source, 'sequence:') || str_starts_with($source, FieldCatalog::REQUESTER_MATCHES);
         if ($onSubmit) {
             $base['placeholder'] ??= 'Gerado ao enviar';
         }

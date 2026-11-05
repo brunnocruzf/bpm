@@ -403,6 +403,7 @@ class StageService
                 'actionPlan' => in_array($config['actionPlan']['mode'] ?? null, ['capture', 'execute'], true)
                     ? ['mode' => $config['actionPlan']['mode'], 'field' => preg_match('/^[A-Za-z][A-Za-z0-9_]{0,62}$/', (string) ($config['actionPlan']['field'] ?? '')) ? $config['actionPlan']['field'] : 'acoes']
                     : null,
+                'assignment' => $this->assignmentConfig($config['assignment'] ?? null),
             ], fn ($v) => $v !== null),
             Stage::SERVICE_TASK => ['operation' => array_key_exists((string) ($config['operation'] ?? ''), StageCatalog::serviceOperations()) ? $config['operation'] : null],
             Stage::TIMER => ($config['mode'] ?? 'duration') === 'date'
@@ -415,6 +416,16 @@ class StageService
             ], fn ($v) => $v !== null),
             default => [],
         };
+    }
+
+    /** @return array<string,mixed>|null regra de atribuição; modo group não guarda chave */
+    private function assignmentConfig(mixed $rule): ?array
+    {
+        if (! AssignmentRule::isValidMode($rule)) {
+            throw ApiProblem::validation(['config.assignment.mode' => ['Modo de atribuição inválido.']]);
+        }
+
+        return AssignmentRule::normalize($rule);
     }
 
     /**

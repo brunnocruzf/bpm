@@ -142,7 +142,7 @@ onMounted(async () => {
         <tr v-for="t in tasks" :key="t.id" class="clickable" @click="router.push({ name: 'task', params: { id: t.id } })">
           <td><div class="tm-strong">{{ t.instance?.number }}</div><div class="tm-flow-sub">{{ t.instance?.flowName }}</div></td>
           <td class="tm-strong">{{ t.name }}</td>
-          <td>{{ t.candidateGroupName }}<div class="tm-flow-sub">{{ t.assignee?.name ?? 'Não assumida' }}</div></td>
+          <td>{{ t.candidateGroupName ?? 'Responsável direto' }}<div class="tm-flow-sub">{{ t.assignee?.name ?? 'Não assumida' }}</div></td>
           <td>{{ t.instance?.requesterName }}<div class="tm-flow-sub">{{ t.instance?.requesterArea }}</div></td>
           <td>{{ scope === 'completed' ? fmtDateTime(t.completedAt) : fmtAge(t.ageHours) }}</td>
           <td :class="{ 'tm-overdue': t.overdue }">{{ fmtDateTime(t.dueAt) }}</td>

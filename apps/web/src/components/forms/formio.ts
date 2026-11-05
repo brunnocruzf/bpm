@@ -182,7 +182,7 @@ function registerAxLookup(meta: Meta | null) {
             },
             {
               type: 'datagrid', key: 'fillMap', label: 'Preencher campos com o resultado', weight: 2, input: true, reorder: false,
-              tooltip: 'O campo destino deve existir no formulário (normalmente somente leitura).',
+              tooltip: 'Use a chave de um campo do formulário (normalmente somente leitura). Para os IDs internos da consulta de colaborador, use uma chave nova, sem campo: o valor fica só no servidor e pode definir o responsável de uma etapa.',
               components: [
                 { type: 'select', key: 'from', label: 'Dado do AX', input: true, dataSrc: 'values', data: { values: allFields } },
                 { type: 'textfield', key: 'to', label: 'Chave do campo destino', input: true },

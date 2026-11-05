@@ -28,6 +28,7 @@ class InstanceService
         private readonly SubmissionProcessor $processor,
         private readonly AttachmentService $attachments,
         private readonly EngineCommandDispatcher $dispatcher,
+        private readonly AssignmentResolver $assignments,
     ) {}
 
     /** @param array<string,mixed> $data */
@@ -76,6 +77,7 @@ class InstanceService
                     resolveAttachment: $this->attachments->resolver($user, $instance),
                 );
                 $processed = $this->processor->process($opening->form->schema, $data, $ctx);
+                $this->assignments->assertSubmission($version, $processed, $ctx);
                 FormSubmission::create([
                     'process_instance_id' => $instance->id,
                     'stage_version_id' => $opening->id,

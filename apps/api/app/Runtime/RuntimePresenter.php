@@ -2,6 +2,7 @@
 
 namespace App\Runtime;
 
+use App\Authorization\Permissions;
 use App\Flow\StageCatalog;
 use App\Forms\SubmissionContext;
 use App\Forms\SubmissionProcessor;
@@ -106,6 +107,8 @@ class RuntimePresenter
             'rowVersion' => $t->row_version,
             'canWork' => Access::canWork($user, $t),
             'canClaim' => Access::canClaim($user, $t),
+            'canRelease' => $t->status === TaskProjection::CLAIMED && $t->candidate_group !== null && ($t->assignee_id === $user->id || Permissions::allows($user, Permissions::PROCESSES_MANAGE)),
+            'canReassign' => in_array($t->status, [TaskProjection::OPEN, TaskProjection::CLAIMED], true) && Permissions::allows($user, Permissions::PROCESSES_MANAGE),
         ];
         if ($withInstance) {
             $i = $t->instance;
@@ -168,7 +171,7 @@ class RuntimePresenter
         foreach ($i->tasks()->with('assignee', 'completedByUser')->get() as $t) {
             $events[] = [
                 'at' => ($t->engine_created_at ?? $t->created_at)->toIso8601String(), 'type' => 'task_created', 'taskId' => $t->id,
-                'title' => "Etapa \"{$t->name}\" disponível", 'detail' => 'Grupo: '.($this->groupName($t->candidate_group) ?? '—'),
+                'title' => "Etapa \"{$t->name}\" disponível", 'detail' => $t->candidate_group ? 'Grupo: '.$this->groupName($t->candidate_group) : 'Responsável direto',
             ];
             if ($t->status === TaskProjection::COMPLETED || $t->status === TaskProjection::COMPLETING) {
                 $events[] = [
@@ -181,6 +184,7 @@ class RuntimePresenter
             }
         }
         $labels = [
+            'task.assignment_fallback' => 'Responsável indisponível: tarefa enviada ao grupo de contingência',
             'task.claimed' => 'Tarefa assumida', 'task.released' => 'Tarefa liberada', 'task.reassigned' => 'Tarefa reatribuída',
             'supplier_action.completed' => 'Ação do plano concluída', 'integration.completed' => 'Integração executada', 'integration.failed' => 'Falha de integração (nova tentativa agendada)',
             'engine.command_failed' => 'Falha ao comunicar com o engine',

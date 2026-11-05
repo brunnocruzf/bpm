@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Forms\FieldCatalog;
+use App\Identity\EmployeeDirectory;
 use App\Integrations\IntegrationUnavailable;
 use App\Integrations\LookupAmbiguous;
 use App\Integrations\LookupRunner;
@@ -33,7 +34,7 @@ class LookupController extends ApiController
 
         return response()->json([
             'found' => $result !== null,
-            'data' => $result ?? (object) [],
+            'data' => $result !== null ? EmployeeDirectory::withoutUserRefs($source, $result) : (object) [],
             'source' => $source,
             'transport' => $lookups->transportName($source),
             'at' => now('UTC')->toIso8601String(),

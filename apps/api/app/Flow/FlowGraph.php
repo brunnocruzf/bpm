@@ -2,7 +2,9 @@
 
 namespace App\Flow;
 
+use App\Forms\FieldCatalog;
 use App\Forms\FormioSchema;
+use App\Identity\EmployeeDirectory;
 use App\Models\ProcessDefinitionVersion;
 use App\Models\ProcessStageVersion;
 use App\Models\ProcessTransitionVersion;
@@ -104,6 +106,57 @@ final class FlowGraph
         }
 
         return $index;
+    }
+
+    /**
+     * Campos que guardam um usuário do sistema: alvos de userId/managerUserId nas consultas internas.
+     * Só eles podem definir o responsável de uma etapa (nunca um valor digitado).
+     *
+     * @return array<string, array{label:string, stages:list<string>}>
+     */
+    public function userRefFields(): array
+    {
+        $internal = FieldCatalog::internalLookupSources();
+        $refs = [];
+        foreach ($this->stages as $stage) {
+            if (! $stage->form) {
+                continue;
+            }
+            foreach (FormioSchema::dataComponents((array) ($stage->form->schema['components'] ?? [])) as $c) {
+                $source = $internal[$c['lookupSource'] ?? ''] ?? null;
+                if (($c['type'] ?? '') !== 'axlookup' || ! $source) {
+                    continue;
+                }
+                foreach ((array) ($c['fillMap'] ?? []) as $m) {
+                    if (in_array($m['from'], EmployeeDirectory::USER_REFS, true)) {
+                        $refs[$m['to']] ??= ['label' => ($c['label'] ?? $c['key']).' → '.$source['fields'][$m['from']], 'stages' => []];
+                        $refs[$m['to']]['stages'][] = $stage->stage_key;
+                    }
+                }
+            }
+        }
+
+        return $refs;
+    }
+
+    /** Indica se existe caminho de $from até $to. */
+    public function reaches(ProcessStageVersion $from, ProcessStageVersion $to): bool
+    {
+        $seen = [];
+        $queue = [$from->id];
+        while ($queue) {
+            foreach ($this->out[array_shift($queue)] ?? [] as $t) {
+                if ($t->target_stage_id === $to->id) {
+                    return true;
+                }
+                if (! isset($seen[$t->target_stage_id])) {
+                    $seen[$t->target_stage_id] = true;
+                    $queue[] = $t->target_stage_id;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @return array<string,string> */

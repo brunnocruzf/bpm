@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import MultiSelect from 'primevue/multiselect'
-import type { Condition, FieldInfo, Stage, StageType } from '@/api/types'
+import type { AssignmentMode, Condition, FieldInfo, Stage, StageType, UserFieldInfo } from '@/api/types'
 import { STAGE_TYPE_LABELS } from '@/composables/format'
 import { useSession } from '@/stores/session'
 import RoutingEditor from './RoutingEditor.vue'
 import StageNotification from './StageNotification.vue'
 
-const props = defineProps<{ stage: Stage; stages: Stage[]; fields: FieldInfo[]; editable: boolean; isOpening: boolean; apiBase?: string }>()
+const props = defineProps<{ stage: Stage; stages: Stage[]; fields: FieldInfo[]; userFields?: UserFieldInfo[]; editable: boolean; isOpening: boolean; apiBase?: string }>()
 const emit = defineEmits<{
   update: [attrs: Record<string, unknown>]
   delete: []
@@ -33,6 +33,16 @@ const groups = computed(() => session.meta?.groups ?? [])
 const dateFields = computed(() => props.fields.filter((f) => f.type === 'datetime'))
 const selectedOperation = computed(() => session.meta?.serviceOperations.find((o) => o.key === config.value.operation) ?? null)
 const changeableTypes: StageType[] = ['user_task', 'exclusive_gateway', 'parallel_gateway', 'service_task', 'timer']
+const assignmentModes: { value: AssignmentMode; label: string }[] = [
+  { value: 'group', label: 'Grupo' },
+  { value: 'field', label: 'Campo do formulário' },
+  { value: 'requester', label: 'Solicitante' },
+  { value: 'requester_manager', label: 'Gestor do solicitante' },
+]
+const assignmentMode = computed<AssignmentMode>(() => config.value.assignment?.mode ?? 'group')
+const assignmentFields = computed<string[]>(() => config.value.assignment?.fields ?? [])
+const freeUserFields = computed(() => (props.userFields ?? []).filter((f) => !assignmentFields.value.includes(f.key)))
+const laneIsAssignee = computed(() => props.stage.type === 'user_task' && assignmentMode.value === 'group')
 
 function onName() {
   window.clearTimeout(nameTimer)
@@ -48,6 +58,22 @@ function saveConfig() {
 function setConfig(key: string, value: unknown) {
   config.value = { ...config.value, [key]: value }
   saveConfig()
+}
+// o restante da regra (excludeFields, requiredUnless) não tem controle na tela e é preservado pelo espalhamento
+function setAssignment(patch: Record<string, unknown>) {
+  setConfig('assignment', { ...config.value.assignment, ...patch })
+}
+function setAssignmentMode(mode: AssignmentMode) {
+  if (mode === 'group') setConfig('assignment', null)
+  else setAssignment({ mode, fallbackGroup: config.value.assignment?.fallbackGroup ?? props.stage.lane ?? undefined })
+}
+function moveAssignmentField(index: number, delta: number) {
+  const fields = [...assignmentFields.value]
+  fields.splice(index + delta, 0, ...fields.splice(index, 1))
+  setAssignment({ fields })
+}
+function userFieldLabel(key: string) {
+  return props.userFields?.find((f) => f.key === key)?.label ?? key
 }
 </script>
 
@@ -79,10 +105,52 @@ function setConfig(key: string, value: unknown) {
         </div>
       </div>
 
+      <template v-if="stage.type === 'user_task'">
+        <div class="tm-field">
+          <label for="st-who">Quem executa? <span class="tm-req">*</span></label>
+          <select id="st-who" :value="assignmentMode" :disabled="!editable || isOpening" @change="setAssignmentMode(($event.target as HTMLSelectElement).value as AssignmentMode)">
+            <option v-for="m in assignmentModes" :key="m.value" :value="m.value">{{ m.label }}</option>
+          </select>
+          <div v-if="isOpening" class="tm-hint">A etapa de abertura é preenchida pelo solicitante: o grupo define quem pode abrir.</div>
+          <div v-else-if="assignmentMode !== 'group'" class="tm-hint">A tarefa vai só para esta pessoa, e o grupo da raia não a vê. O sistema define o responsável ao criar a tarefa.</div>
+        </div>
+        <div v-if="assignmentMode === 'field'" class="tm-field">
+          <label for="st-who-field">Campos que definem o responsável <span class="tm-req">*</span></label>
+          <ol v-if="assignmentFields.length" class="who-list">
+            <li v-for="(key, i) in assignmentFields" :key="key">
+              <span>{{ userFieldLabel(key) }}</span>
+              <template v-if="editable">
+                <button class="tm-btn ghost small" type="button" :disabled="i === 0" aria-label="Subir" @click="moveAssignmentField(i, -1)"><i class="pi pi-arrow-up" /></button>
+                <button class="tm-btn ghost small" type="button" :disabled="i === assignmentFields.length - 1" aria-label="Descer" @click="moveAssignmentField(i, 1)"><i class="pi pi-arrow-down" /></button>
+                <button class="tm-btn ghost small" type="button" aria-label="Remover" @click="setAssignment({ fields: assignmentFields.filter((f) => f !== key) })"><i class="pi pi-times" /></button>
+              </template>
+            </li>
+          </ol>
+          <select id="st-who-field" :value="''" :disabled="!editable || !freeUserFields.length" @change="setAssignment({ fields: [...assignmentFields, ($event.target as HTMLSelectElement).value] })">
+            <option value="">{{ (userFields ?? []).length ? 'Adicionar campo...' : 'Nenhum campo disponível' }}</option>
+            <option v-for="f in freeUserFields" :key="f.key" :value="f.key">{{ f.label }}</option>
+          </select>
+          <div class="tm-hint">O primeiro preenchido vence. Só aparecem campos de consulta de colaborador em que o usuário é confirmado pelo servidor, nunca valores digitados.</div>
+          <div v-if="!userFields?.length" class="tm-hint who-empty">Este fluxo ainda não tem campo que identifique um usuário. Em uma etapa anterior, abra a consulta de colaborador e, em "Preencher campos com o resultado", ligue "ID do colaborador" ou "ID do gestor imediato" a uma chave nova, sem criar campo no formulário.</div>
+        </div>
+        <div v-if="assignmentMode !== 'group'" class="tm-field">
+          <label for="st-who-fallback">Grupo de contingência <span class="tm-req">*</span></label>
+          <select id="st-who-fallback" :value="config.assignment?.fallbackGroup ?? ''" :disabled="!editable" @change="setAssignment({ fallbackGroup: ($event.target as HTMLSelectElement).value || undefined })">
+            <option value="">Selecione o grupo...</option>
+            <option v-for="g in groups" :key="g.key" :value="g.key">{{ g.name }}</option>
+          </select>
+          <div class="tm-hint">Recebe a tarefa quando o responsável não puder executá-la (inativo, sem permissão ou impedido pela regra).</div>
+        </div>
+        <label v-if="assignmentMode === 'field' || assignmentMode === 'requester_manager'" class="who-check">
+          <input type="checkbox" :checked="!!config.assignment?.excludeRequester" :disabled="!editable" @change="setAssignment({ excludeRequester: ($event.target as HTMLInputElement).checked })" />
+          <span>Não permitir o solicitante</span>
+        </label>
+      </template>
+
       <div v-if="['user_task', 'service_task', 'start', 'end', 'exclusive_gateway', 'parallel_gateway', 'timer'].includes(stage.type)" class="tm-field">
-        <label for="st-lane">{{ stage.type === 'user_task' ? 'Quem executa? (grupo/raia)' : 'Raia no diagrama' }} <span v-if="stage.type === 'user_task'" class="tm-req">*</span></label>
+        <label for="st-lane">{{ laneIsAssignee ? 'Grupo responsável' : 'Raia no diagrama' }} <span v-if="laneIsAssignee" class="tm-req">*</span></label>
         <select id="st-lane" :value="stage.lane ?? ''" :disabled="!editable" @change="emit('update', { lane: ($event.target as HTMLSelectElement).value || null })">
-          <option value="">{{ stage.type === 'user_task' ? 'Selecione o grupo...' : 'Automática (herda da etapa vizinha)' }}</option>
+          <option value="">{{ laneIsAssignee ? 'Selecione o grupo...' : 'Automática (herda da etapa vizinha)' }}</option>
           <option v-for="g in groups" :key="g.key" :value="g.key">{{ g.name }}</option>
         </select>
       </div>
@@ -110,7 +178,7 @@ function setConfig(key: string, value: unknown) {
           <label>Notificar ao concluir</label>
           <MultiSelect :model-value="config.notifyOnComplete ?? []" :options="groups" option-label="name" option-value="key" placeholder="Nenhum grupo" :disabled="!editable" display="chip" style="width:100%" @update:model-value="(v) => setConfig('notifyOnComplete', v)" />
         </div>
-        <StageNotification v-if="apiBase && !isOpening" :config="config.notifyAssignee" :editable="editable" :preview-base="`${apiBase}/stages/${stage.key}`" :lane="stage.lane" @save="(v) => setConfig('notifyAssignee', v)" />
+        <StageNotification v-if="apiBase && !isOpening" :config="config.notifyAssignee" :editable="editable" :preview-base="`${apiBase}/stages/${stage.key}`" :lane="stage.lane" :assignment="config.assignment" @save="(v) => setConfig('notifyAssignee', v)" />
         <div v-else-if="isOpening" class="tm-hint" style="margin:8px 0">Etapa de abertura: preenchida pelo solicitante, não gera e-mail de nova tarefa.</div>
         <div class="assoc">
           <div class="assoc-title">Formulário associado</div>
@@ -177,6 +245,11 @@ function setConfig(key: string, value: unknown) {
 
 <style scoped>
 .settings { align-self: start; }
+.who-list { list-style: decimal inside; margin: 0 0 6px; padding: 0; display: grid; gap: 4px; }
+.who-list li { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #43586a; }
+.who-list li span { flex: 1; min-width: 0; }
+.who-empty { color: var(--red); }
+.who-check { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 12px; color: #43586a; }
 .assoc { padding: 11px; border: 1px solid var(--brand-line); border-radius: 8px; background: var(--brand-softer); }
 .assoc-title { color: var(--brand-ink); font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: 0.06em; }
 .assoc-form { margin-top: 7px; display: flex; align-items: center; gap: 8px; color: var(--brand-ink); font-size: 12px; font-weight: 700; }

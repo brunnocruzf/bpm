@@ -9,11 +9,13 @@ final class ProcessedSubmission
      * @param  array<string,mixed>  $data  somente campos visíveis, já normalizados
      * @param  list<string>  $hiddenKeys  campos do formulário ocultos por condição (limpos no contexto/engine)
      * @param  array<string,mixed>  $metadata  lookups (origem, timestamp) e campos automáticos
+     * @param  array<string,mixed>  $references  alvos de consulta sem componente: só o contexto os recebe (nunca o payload nem o engine)
      */
     public function __construct(
         public readonly array $data,
         public readonly array $hiddenKeys,
         public readonly array $metadata,
+        public readonly array $references = [],
     ) {}
 
     /**
@@ -23,7 +25,7 @@ final class ProcessedSubmission
      */
     public function contextPatch(): array
     {
-        $patch = $this->data;
+        $patch = array_merge($this->data, $this->references);
         foreach ($this->hiddenKeys as $key) {
             $patch[$key] = null;
         }

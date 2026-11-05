@@ -267,7 +267,7 @@ class InstanceReportBuilder
 
     private function group(?string $key): string
     {
-        return $key ? (BpmGroup::where('key', $key)->value('name') ?? $key) : '—';
+        return $key ? (BpmGroup::where('key', $key)->value('name') ?? $key) : 'Responsável direto';
     }
 
     private function dt(?\DateTimeInterface $d): string
