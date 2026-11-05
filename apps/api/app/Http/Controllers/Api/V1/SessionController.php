@@ -60,7 +60,7 @@ class SessionController extends ApiController
 
     public function meta(SettingsRepository $settings): JsonResponse
     {
-        $categories = new CategoriesSettings();
+        $categories = new CategoriesSettings;
 
         return response()->json([
             'groups' => BpmGroup::orderBy('name')->get(['key', 'name', 'description']),
