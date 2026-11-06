@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Checkpoint opaco do delta query (criptografado em repouso; nunca exposto pela API).
@@ -28,5 +30,25 @@ class DirectorySyncCursor extends Model
     protected function casts(): array
     {
         return ['delta_link' => 'encrypted', 'next_link' => 'encrypted', 'delta_saved_at' => 'datetime', 'full_sync_required' => 'boolean'];
+    }
+
+    /**
+     * delta_link/next_link ficam ilegíveis se APP_KEY mudar (ou o valor for corrompido). Trata como cursor
+     * ausente em vez de derrubar a leitura inteira (tela de usuário, overview, rodada de sync): o código já
+     * sabe recarregar do zero quando delta_link/next_link estão vazios.
+     */
+    public function getAttribute($key)
+    {
+        if (in_array($key, ['delta_link', 'next_link'], true)) {
+            try {
+                return parent::getAttribute($key);
+            } catch (DecryptException $e) {
+                Log::notice('DirectorySyncCursor: valor ilegível (chave divergente ou corrompido); tratado como ausente.', ['resource' => $this->resource, 'field' => $key]);
+
+                return null;
+            }
+        }
+
+        return parent::getAttribute($key);
     }
 }
