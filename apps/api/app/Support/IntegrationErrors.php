@@ -64,6 +64,8 @@ final class IntegrationErrors
         'mock_forbidden' => ['Diretório fictício em produção', 'O transporte fictício (mock) é proibido em produção.', 'Selecione o transporte Microsoft Graph.'],
         // ---------------------------------------------------------------- armazenamento de anexos (Azure Blob)
         'container_not_found' => ['Contêiner não encontrado', 'O contêiner informado não existe na conta de armazenamento (ou o nome está errado).', 'Crie o contêiner privado no portal do Azure (ou confira o nome) e teste de novo.'],
+        'azure_unavailable' => ['Destino Azure indisponível', 'Não há destino Azure ativo em Armazenamento de anexos.', 'Ative o Azure Blob Storage em Armazenamento de anexos antes de enviar backups.'],
+        'list_failed' => ['Listagem incompleta', 'O arquivo de prova foi gravado, mas não apareceu ao listar a pasta.', 'Confira a permissão de listagem da credencial e se a pasta está correta.'],
         'container_public' => ['Contêiner com acesso público', 'O contêiner permite leitura anônima; os anexos exigem contêiner privado.', 'No portal, defina o nível de acesso público do contêiner como "Privado".'],
         'storage_forbidden' => ['Permissão insuficiente no armazenamento', 'A chave é válida, mas a operação foi negada (firewall da conta, rede ou política).', 'Libere a rede do servidor no firewall da conta de armazenamento e confira se a chave pertence à conta informada.'],
         'shared_key_disabled' => ['Chave da conta desabilitada', 'A conta de armazenamento não permite autorização por chave (Shared Key), em geral por Azure Policy.', 'Peça à plataforma para permitir Shared Key nesta conta (ou use outra conta). SAS e Entra ID ficam como evolução.'],

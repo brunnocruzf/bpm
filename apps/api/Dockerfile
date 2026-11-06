@@ -4,7 +4,8 @@ FROM composer:2.8@sha256:5248900ab8b5f7f880c2d62180e40960cd87f60149ec9a1abfd62ac
 
 FROM php:8.4-fpm-alpine@sha256:78cd8de9970a9cd6ff4d98860a94eb5bf37dd2d5776b4785562dbfad01c29d5a AS base
 # gd (PNG/WebP/JPEG): recodificação segura de logos e logo no PDF; zip: XLSX e validação de modelos.
-RUN apk add --no-cache icu-libs libzip libpq postgresql-client fcgi libpng libwebp libjpeg-turbo \
+# age: gera e confere a chave de recuperação dos backups (ADR-0021).
+RUN apk add --no-cache icu-libs libzip libpq postgresql-client fcgi libpng libwebp libjpeg-turbo age \
  && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev libzip-dev postgresql-dev linux-headers libpng-dev libwebp-dev libjpeg-turbo-dev \
  && docker-php-ext-configure gd --with-webp --with-jpeg \
  && docker-php-ext-install -j"$(nproc)" pdo_pgsql intl zip bcmath pcntl opcache gd \
@@ -30,3 +31,12 @@ RUN rm -f .env .env.* \
 USER www-data
 ENTRYPOINT ["/var/www/html/docker/entrypoint.sh"]
 CMD ["php-fpm"]
+
+# Agente de backup (ADR-0021): mesma aplicação, com o cliente do PostgreSQL na versão principal do servidor. O cliente que
+# vem em PATH é mais novo e o PostgreSQL não garante carregar o dump dele em um servidor mais antigo.
+FROM runtime AS backup-agent
+USER root
+RUN apk add --no-cache postgresql17-client zstd tar
+# a imagem base define SIGQUIT (encerramento do php-fpm); sem isto o docker stop esperaria o prazo inteiro e mataria o agente
+STOPSIGNAL SIGTERM
+CMD ["php", "artisan", "bpm:backup-agent"]

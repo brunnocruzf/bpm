@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Auth\AuthMethods;
 use App\Authorization\Permissions;
+use App\Backup\RuntimeState;
 use App\Flow\StageCatalog;
 use App\Forms\FieldCatalog;
 use App\Identity\UserPhotoService;
@@ -31,6 +32,7 @@ class SessionController extends ApiController
             'area' => $user->area,
             'roles' => $user->roles ?? [],
             'groups' => $groups,
+            'safeMode' => app(RuntimeState::class)->mode() === RuntimeState::SAFE,
             'permissions' => [
                 'design' => $user->hasRole('designer', 'admin'),
                 'publish' => $user->hasRole('publisher', 'admin'),

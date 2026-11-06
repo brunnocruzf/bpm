@@ -59,6 +59,13 @@ export const DOC_PAGES: DocPage[] = [
     load: () => import('./content/integracoes/guia-operacao-e-suporte.md?raw').then((m) => m.default),
   },
   {
+    slug: 'backup-e-recuperacao',
+    title: 'Backup e recuperação',
+    group: 'Guias',
+    file: 'guia-backup-e-recuperacao.md',
+    load: () => import('./content/integracoes/guia-backup-e-recuperacao.md?raw').then((m) => m.default),
+  },
+  {
     slug: 'adr-0016-catalogo-de-integracoes-rest',
     title: 'ADR-0016 — Catálogo de integrações REST',
     group: 'Referência',

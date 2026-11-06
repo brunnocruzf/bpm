@@ -12,9 +12,13 @@ use Illuminate\Support\Sleep;
  * Cliente mínimo do Blob REST (Put/Get/Head/Delete Blob e Get Container Properties) sobre o cliente HTTP do
  * Laravel, assinado com Shared Key. Sem redirecionamentos, com timeouts e retry em 500/503. Os anexos têm no máximo
  * 20 MB, então Put Blob é um único PUT e as respostas são lidas inteiras. Erros viram AzureBlobException com código estável.
+ * Arquivos grandes (backups) usam putFile e downloadTo, em blocos: o conteúdo nunca fica inteiro em memória.
  */
 final class AzureBlobClient
 {
+    /** Limite do Azure é 50.000 blocos por blob; a folga cobre o arredondamento do tamanho do bloco. */
+    private const MAX_BLOCKS = 49000;
+
     private readonly SharedKeySigner $signer;
 
     /**
@@ -40,6 +44,67 @@ final class AzureBlobClient
             $headers['If-None-Match'] = '*';
         }
         $this->send('PUT', $this->blobPath($blob), [], $headers, $contents);
+    }
+
+    /** Grava um arquivo em blocos (Put Block + Put Block List). O blob só passa a existir no fim. */
+    public function putFile(string $blob, string $path, int $blockBytes, ?string $contentType = null): void
+    {
+        $size = (int) filesize($path);
+        $blockBytes = max($blockBytes, (int) ceil($size / self::MAX_BLOCKS));
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new AzureBlobException('provider_error', 'Não foi possível ler o arquivo a enviar.');
+        }
+        $ids = [];
+        try {
+            while (($chunk = fread($handle, $blockBytes)) !== false && $chunk !== '') {
+                $id = base64_encode(sprintf('%08d', count($ids)));
+                $this->send('PUT', $this->blobPath($blob), ['comp' => 'block', 'blockid' => $id], [], $chunk);
+                $ids[] = $id;
+            }
+        } finally {
+            fclose($handle);
+        }
+        $xml = '<?xml version="1.0" encoding="utf-8"?><BlockList>'.implode('', array_map(fn ($id) => "<Latest>$id</Latest>", $ids)).'</BlockList>';
+        $this->send('PUT', $this->blobPath($blob), ['comp' => 'blocklist'], ['Content-Type' => 'application/xml', 'x-ms-blob-content-type' => $contentType ?: 'application/octet-stream'], $xml);
+    }
+
+    /** Baixa um blob para um arquivo, por faixas. */
+    public function downloadTo(string $blob, string $path, int $chunkBytes): void
+    {
+        $size = $this->head($blob)['size'] ?? throw new AzureBlobException('not_found', 'Arquivo não encontrado no armazenamento.');
+        $out = fopen($path, 'wb');
+        if ($out === false) {
+            throw new AzureBlobException('provider_error', 'Não foi possível gravar o arquivo baixado.');
+        }
+        try {
+            for ($start = 0; $start < $size; $start += $chunkBytes) {
+                $end = min($start + $chunkBytes, $size) - 1;
+                fwrite($out, $this->send('GET', $this->blobPath($blob), [], ['x-ms-range' => "bytes=$start-$end"])->body());
+            }
+        } finally {
+            fclose($out);
+        }
+    }
+
+    /** @return list<array{name:string, size:int}> blobs sob o prefixo, com todas as páginas */
+    public function list(string $prefix): array
+    {
+        $blobs = [];
+        $marker = '';
+        do {
+            $query = ['restype' => 'container', 'comp' => 'list', 'prefix' => $prefix] + ($marker !== '' ? ['marker' => $marker] : []);
+            $xml = simplexml_load_string($this->send('GET', '/'.rawurlencode($this->container), $query)->body(), options: LIBXML_NONET);
+            if ($xml === false) {
+                throw new AzureBlobException('provider_error', 'A listagem do armazenamento veio em formato inesperado.');
+            }
+            foreach ($xml->Blobs->Blob ?? [] as $blob) {
+                $blobs[] = ['name' => (string) $blob->Name, 'size' => (int) $blob->Properties->{'Content-Length'}];
+            }
+            $marker = (string) ($xml->NextMarker ?? '');
+        } while ($marker !== '');
+
+        return $blobs;
     }
 
     public function get(string $blob): string

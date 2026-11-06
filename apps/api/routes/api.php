@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Admin\AuditController;
+use App\Http\Controllers\Api\V1\Admin\BackupController;
 use App\Http\Controllers\Api\V1\Admin\DirectoryController;
 use App\Http\Controllers\Api\V1\Admin\GroupMembershipController;
 use App\Http\Controllers\Api\V1\Admin\IntegrationCatalogController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Api\V1\FlowController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\InstanceController;
 use App\Http\Controllers\Api\V1\LookupController;
+use App\Http\Controllers\Api\V1\MaintenanceController;
 use App\Http\Controllers\Api\V1\PublicController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\ResultsController;
@@ -24,6 +26,7 @@ use App\Http\Controllers\Api\V1\SessionController;
 use App\Http\Controllers\Api\V1\StageNotificationController;
 use App\Http\Controllers\Api\V1\TaskController;
 use App\Http\Controllers\Api\V1\UserPhotoController;
+use App\Http\Middleware\SafeModeGate;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -33,6 +36,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     Route::get('health', [HealthController::class, 'live']);
     Route::get('ready', [HealthController::class, 'ready']);
+    // Progresso da restauração: sem login, sem limite (o limitador usa o banco) e sem tocar no banco
+    Route::get('maintenance', [MaintenanceController::class, 'show']);
     Route::get('dev/users', [SessionController::class, 'devUsers'])->middleware('throttle:30,1');
     Route::get('openapi.yaml', fn () => response()->file(base_path('openapi.yaml'), ['Content-Type' => 'application/yaml; charset=UTF-8']));
 
@@ -54,7 +59,7 @@ Route::prefix('v1')->group(function () {
     // Download por URL assinada de curta duração (sem bearer).
     Route::get('files/{attachment}', [AttachmentController::class, 'download'])->middleware('signed')->name('attachments.download');
 
-    Route::middleware(['auth:api', 'throttle:api'])->group(function () {
+    Route::middleware(['auth:api', 'throttle:api', SafeModeGate::class])->group(function () {
         Route::get('me', [SessionController::class, 'me']);
         Route::get('me/photo', [UserPhotoController::class, 'me']);
         Route::post('auth/logout', [AuthController::class, 'logout']);
@@ -177,7 +182,7 @@ Route::prefix('v1')->group(function () {
 
         // Configurações (settings.manage). Segredos são somente escrita.
         Route::prefix('admin/settings')->group(function () {
-            $slug = 'branding|entra/auth|entra/directory-sync|email|audit-retention|reports|attachments-storage|categories';
+            $slug = 'branding|entra/auth|entra/directory-sync|email|audit-retention|reports|attachments-storage|categories|backups';
             Route::get('/', [SettingsController::class, 'index']);
             Route::post('branding/assets', [SettingsController::class, 'uploadAsset'])->middleware('throttle:20,1');
             Route::get('branding/assets/{id}', [SettingsController::class, 'previewAsset'])->whereUuid('id');
@@ -195,11 +200,32 @@ Route::prefix('v1')->group(function () {
             Route::post('attachments-storage/activate', [SettingsController::class, 'activateAttachmentStorage']);
             Route::post('attachments-storage/deactivate', [SettingsController::class, 'deactivateAttachmentStorage']);
             Route::get('attachments-storage/usage', [SettingsController::class, 'attachmentStorageUsage']);
+            Route::post('backups/test', [SettingsController::class, 'testBackupDestination'])->middleware('throttle:10,1');
             Route::post('reports/carbone-health', [SettingsController::class, 'carboneHealth'])->middleware('throttle:10,1');
             // log das integrações: testes, configuração, entregas de e-mail, importação e acessos Entra
-            Route::get('logs/{area}', [IntegrationLogController::class, 'index'])->where('area', 'email|entra|storage')->middleware('throttle:60,1');
+            Route::get('logs/{area}', [IntegrationLogController::class, 'index'])->where('area', 'email|entra|storage|backup')->middleware('throttle:60,1');
             Route::get('{slug}', [SettingsController::class, 'get'])->where('slug', $slug);
             Route::put('{slug}', [SettingsController::class, 'update'])->where('slug', $slug)->middleware('throttle:30,1');
+        });
+
+        // Backup e recuperação (settings.manage). O servidor executa pelo agente; aqui só entram pedidos de tipo fixo.
+        Route::prefix('admin/backups')->group(function () {
+            $backup = '\d{8}T\d{6}Z-[a-z0-9]{8}';
+            Route::get('/', [BackupController::class, 'index']);
+            Route::post('/', [BackupController::class, 'store'])->middleware('throttle:10,1');
+            Route::get('status', [BackupController::class, 'status']);
+            Route::get('jobs', [BackupController::class, 'jobs']);
+            Route::get('jobs/{id}', [BackupController::class, 'job'])->whereUuid('id');
+            Route::post('catalog/sync', [BackupController::class, 'syncCatalog'])->middleware('throttle:10,1');
+            Route::post('recovery-key', [BackupController::class, 'generateKey'])->middleware('throttle:10,1');
+            Route::post('recovery-key/confirm', [BackupController::class, 'confirmKey'])->middleware('throttle:10,1');
+            Route::get('safe-mode', [BackupController::class, 'safeMode']);
+            Route::post('safe-mode/release', [BackupController::class, 'release'])->middleware('throttle:10,1');
+            Route::post('safe-mode/undo', [BackupController::class, 'undo'])->middleware('throttle:10,1');
+            Route::post('{id}/restore', [BackupController::class, 'restore'])->where('id', $backup)->middleware('throttle:10,1');
+            Route::post('{id}/restore-test', [BackupController::class, 'restoreTest'])->where('id', $backup)->middleware('throttle:10,1');
+            Route::post('{id}/copy-to-azure', [BackupController::class, 'copyToAzure'])->where('id', $backup)->middleware('throttle:10,1');
+            Route::delete('{id}', [BackupController::class, 'destroy'])->where('id', $backup)->middleware('throttle:10,1');
         });
 
         // Sincronização do diretório Entra (execução no worker, nunca no browser)

@@ -167,6 +167,30 @@ return [
         'emulator' => ['endpoint' => env('BPM_AZURITE_BLOB_ENDPOINT')],
     ],
 
+    // Backup e recuperação (ADR-0021). O estado fica fora do banco, num volume que o agente escreve e os demais leem.
+    'backup' => [
+        'state_dir' => env('BPM_BACKUP_STATE_DIR', storage_path('app/backup-state')),
+        'dir' => env('BPM_BACKUP_DIR', storage_path('app/backups')),
+        // chave de recuperação em uso durante uma restauração: memória (tmpfs) no agente
+        'key_dir' => env('BPM_BACKUP_KEY_DIR', sys_get_temp_dir()),
+        'stack' => env('BPM_BACKUP_STACK', 'bpm-tmsa'),
+        'docker_url' => env('BPM_BACKUP_DOCKER_URL', 'http://docker-gate:2375'),
+        'env_file' => env('BPM_BACKUP_ENV_FILE', '/host/env'),
+        'deploy_dir' => env('BPM_BACKUP_DEPLOY_DIR', '/host/deploy'),
+        // PostgreSQL 17: mesma versão principal do servidor. A imagem traz o cliente mais novo em PATH (só para o pg_isready).
+        'pg_bin' => env('BPM_BACKUP_PG_BIN', '/usr/libexec/postgresql17'),
+        'engine_database' => env('BPM_BACKUP_ENGINE_DATABASE', 'flowable'),
+        'azure_block_bytes' => 8 * 1024 * 1024,
+        'heartbeat_stale_seconds' => 60,
+        'pre_restore_days' => 30,
+        'restore_test_warning_days' => 90,
+        'full_backup_warning_days' => 40,
+        // serviços parados durante a troca dos bancos; a API segue respondendo 503 com o progresso
+        'stop_services' => ['queue-worker', 'scheduler', 'flowable-rest'],
+        // serviços cujas imagens entram no nível Aplicação inteira (os ausentes da stack são ignorados)
+        'image_services' => ['postgres', 'flowable-rest', 'storage', 'api', 'api-web', 'queue-worker', 'scheduler', 'web', 'reverse-proxy', 'backup-agent', 'docker-gate', 'carbone', 'mailpit', 'azurite'],
+    ],
+
     'reports' => [
         'disk' => env('BPM_REPORTS_DISK', env('BPM_ATTACHMENTS_DISK', 'attachments_local')),
         'max_rows' => (int) env('BPM_REPORTS_MAX_ROWS', 20000),

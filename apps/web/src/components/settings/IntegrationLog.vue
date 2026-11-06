@@ -20,7 +20,7 @@ export interface LogEntry {
 interface Stats { since: string; testsOk: number; testsFailed: number; deliveries?: Record<string, number>; runs?: Record<string, number>; logins?: number; rejectedTokens?: number }
 
 const props = withDefaults(defineProps<{
-  area: 'email' | 'entra' | 'storage'
+  area: 'email' | 'entra' | 'storage' | 'backup'
   title: string
   caption?: string
   kindLabels: Record<string, string>

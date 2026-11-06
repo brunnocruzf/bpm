@@ -159,13 +159,18 @@ docker compose exec api php artisan bpm:secrets-rotate
 
 Sem a chave, os segredos do cofre ficam ilegíveis: inclua o arquivo da chave no backup **separado** do banco.
 
-## Backup e restauração (dev)
+## Backup e recuperação
 
-```bash
-docker compose exec postgres pg_dump -U postgres -Fc bpm_app  > bpm_app.dump
-docker compose exec postgres pg_dump -U postgres -Fc flowable > flowable.dump
-# restaurar: pg_restore -U postgres -d <db> --clean <arquivo>
-```
+Decisões em ADR-0021; uso pela tela em `docs/integracoes/guia-backup-e-recuperacao.md`.
+
+- **Serviços:** `backup-agent` executa os pedidos de `backup_job`, um por vez. `docker-gate` é o único com o socket do Docker e libera só o que está em `nginx/docker-gate.conf.template`. Mudou esse arquivo, rode `deploy/docker/tests/docker-gate-test.sh`.
+- **Onde ficam:** `BPM_BACKUP_PATH` no `.env` (de preferência outro disco; vazio usa o volume `backupdata`) e, com o envio ligado, a pasta configurada no contêiner do destino ativo de anexos. O layout é o mesmo: `<org>/AAAA/MM/<id>/` e `<org>/images/`.
+- **Antes de usar:** gere a chave de recuperação, ligue o soft delete da conta Azure e faça um backup de Aplicação inteira. Sem esse nível não há recuperação em servidor novo.
+- **Estado:** `docker compose exec backup-agent cat /state/runtime.json` mostra o modo (`normal`, `pause`, `maintenance`, `safe`), a etapa e o diário da restauração. Agente fora do ar: `docker compose logs backup-agent`.
+- **Restauração presa em manutenção:** o agente retoma pelo diário ao reiniciar (`docker compose restart backup-agent`): antes da troca ele limpa, depois da troca ele volta aos bancos antigos. Para forçar: `docker compose exec backup-agent php artisan bpm:backup-recover`. Se `failed` aparecer no estado, confira os bancos com `\l` no `psql`: os antigos ficam como `bpm_app_pre_<id>` e `flowable_pre_<id>`. Só edite `runtime.json` à mão depois de confirmar qual banco está em uso.
+- **Recuperação de desastre:** `deploy/docker/LEIA-ME-RECUPERACAO.md`, com cópia na pasta de backups do Azure. O roteiro é `dr-restore.sh`.
+- **Ensaio:** `node deploy/docker/tests/backup-e2e.mjs` sobe uma stack descartável (`bpm-drtest`), restaura, desfaz, apaga volumes e recupera do zero. Nunca aponte para homologação ou produção.
+- **Sem a tela:** `./orgs.sh backup [org]` continua gerando dumps abertos em `backups/<org>/<data>/`, para uso manual. Eles não entram no catálogo e não são criptografados.
 
 ## Armazenamento de anexos (Azure Blob)
 
@@ -176,7 +181,7 @@ docker compose exec postgres pg_dump -U postgres -Fc flowable > flowable.dump
 5. **Rollback:** "Voltar ao padrão" faz os novos anexos voltarem ao disco do ambiente; os anexos no Azure continuam legíveis enquanto a chave existir. **Não apague** a chave/conta enquanto houver anexos nela. Arquivos **não são migrados** automaticamente.
 6. **Desenvolvimento:** `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d azurite`, `BPM_AZURITE_BLOB_ENDPOINT=http://azurite:10000/devstoreaccount1` na API, endpoint "Emulador" na tela (chave pública documentada do Azurite) e `php artisan bpm:storage-azure-init` para criar o contêiner. Teste de integração: `AZURITE_IT_ENDPOINT=http://127.0.0.1:10000/devstoreaccount1 php artisan test --testsuite=Integration --filter=AzuriteBlobTest`.
 
-Faça backup dos dois bancos **e** do volume `storagedata` (e, com Azure, da política de soft delete/versionamento da conta) no mesmo ponto no tempo; guarde a chave do cofre em local separado. Teste a restauração periodicamente. Em produção, use banco gerenciado/HA e política de backup imutável/offsite.
+Os anexos no Azure não entram nos backups: dependem do soft delete/versionamento da conta. Em produção, avalie banco gerenciado/HA e política de backup imutável/offsite.
 
 ## Multi-organização (uma instância por organização)
 
@@ -197,7 +202,7 @@ sh secrets/generate.sh ims          # chave do cofre em secrets/ims/ (BPM_SECRET
   - integrações: na API do AX, o DataAreaId da organização vai como parâmetro **constante** do endpoint ou do binding.
 - **Seed:** fora da TMSA (`BPM_ORGANIZATION_KEY` diferente de `tmsa`), o seed não cria raias, PO 159 nem fluxos de demonstração. Os processos de outra organização são importados por BPMN no editor.
 - **Release:** `./orgs.sh pull` ou `./orgs.sh build`, depois `./orgs.sh up`, que roda as migrations de cada organização. Para canário, rode `./orgs.sh up <org>` em uma organização antes das demais.
-- **Backup:** `./orgs.sh backup [org]` gera dumps dos dois bancos em `backups/<org>/<data>/`. Inclua também o volume `bpm-<org>_storagedata` e guarde a chave do cofre da organização separada.
+- **Backup:** cada organização tem o próprio `backup-agent` e `docker-gate`, e a lista do filtro só cita os containers dela. Defina `BPM_BACKUP_PATH` e `BPM_ENV_FILE` no `.env.<org>`. Veja "Backup e recuperação".
 - **Desligar:** `./orgs.sh down <org>` mantém os volumes. **Nunca** use `down -v` sem backup aprovado.
 
 ## Rollback de versão da aplicação
@@ -206,4 +211,4 @@ As migrations novas são aditivas (colunas anuláveis e tabelas novas). Para vol
 
 ## Limitações
 
-Compose em servidor único não oferece alta disponibilidade, failover nem DR; serve para desenvolvimento e piloto restrito (§11.4).
+Compose em servidor único não oferece alta disponibilidade nem failover; serve para desenvolvimento e piloto restrito (§11.4). A recuperação de desastre é manual (ADR-0021) e perde o que foi registrado depois do último backup.

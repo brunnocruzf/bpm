@@ -76,6 +76,11 @@ watch(() => route.fullPath, () => { sidebarOpen.value = false })
     <span><strong>Sessão SuperAdmin (acesso de emergência).</strong> Use somente para restabelecer o acesso corporativo; todas as ações são auditadas. Expira às {{ superAdminUntil }} ou após inatividade.</span>
   </div>
 
+  <div v-if="session.me?.safeMode" class="tm-superadmin-bar" role="status">
+    <i class="pi pi-shield" aria-hidden="true" />
+    <span><strong>Modo seguro.</strong> Os dados foram restaurados e só administradores entram. E-mails e integrações estão pausados até a liberação. <RouterLink :to="{ name: 'settings-backups-review' }">Revisar restauração</RouterLink></span>
+  </div>
+
   <div class="tm-layout">
     <aside class="tm-sidebar" :class="{ open: sidebarOpen }">
       <nav>

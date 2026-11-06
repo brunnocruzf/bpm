@@ -21,6 +21,7 @@ const SOURCES = [
       'guia-consumir-formulario.md',
       'guia-etapa-integracao.md',
       'guia-operacao-e-suporte.md',
+      'guia-backup-e-recuperacao.md',
     ],
   ],
   ['adr', 'adr', ['0016-catalogo-de-integracoes-rest.md', '0006-integracao-ax-2012-r3.md']],

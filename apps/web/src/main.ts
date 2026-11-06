@@ -11,7 +11,7 @@ import App from './App.vue'
 import { router } from './router'
 import { TmsaPreset } from './theme'
 import { auth } from './auth'
-import { setUnauthorizedHandler } from './api/http'
+import { setMaintenanceHandler, setUnauthorizedHandler } from './api/http'
 import { useBranding } from './stores/branding'
 
 async function bootstrap() {
@@ -36,6 +36,9 @@ async function bootstrap() {
   app.use(ConfirmationService)
   app.directive('tooltip', Tooltip)
 
+  setMaintenanceHandler(() => {
+    if (router.currentRoute.value.name !== 'maintenance') router.replace({ name: 'maintenance' })
+  })
   setUnauthorizedHandler(() => {
     // sessão de visitante/SuperAdmin expirada ou revogada no servidor
     auth.expireLocal()

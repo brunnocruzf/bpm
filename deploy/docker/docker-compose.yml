@@ -75,6 +75,8 @@ x-api-env: &api-env
   BPM_CARBONE_TOKEN_FILE: ${BPM_CARBONE_TOKEN_FILE:-}
   # Desenvolvimento: token service-to-service direto do .env local (não versionado). Produção: arquivo montado (BPM_CARBONE_TOKEN_FILE).
   BPM_CARBONE_TOKEN: ${BPM_CARBONE_TOKEN:-}
+  # Estado do backup (ADR-0021): o agente escreve, os demais só leem. A API segue respondendo enquanto os bancos são trocados.
+  BPM_BACKUP_STATE_DIR: /state
 
 x-api-secrets: &api-secrets
   - bpm_secrets_key
@@ -204,13 +206,17 @@ services:
     restart: unless-stopped
 
   api:
-    build: ../../apps/api
+    build:
+      context: ../../apps/api
+      target: runtime
     image: bpm-tmsa/api:dev
     environment:
       <<: *api-env
       RUN_MIGRATIONS: "true"
       SEED_ON_START: ${SEED_ON_START:-true}
     secrets: *api-secrets
+    volumes:
+      - backupstate:/state:ro
     depends_on:
       postgres: { condition: service_healthy }
       flowable-rest: { condition: service_healthy }
@@ -247,6 +253,8 @@ services:
     environment:
       <<: *api-env
     secrets: *api-secrets
+    volumes:
+      - backupstate:/state:ro
     depends_on:
       api: { condition: service_healthy }
     deploy:
@@ -261,12 +269,75 @@ services:
     environment:
       <<: *api-env
     secrets: *api-secrets
+    volumes:
+      - backupstate:/state:ro
     depends_on:
       api: { condition: service_healthy }
     deploy:
       resources:
         limits: { memory: 384m }
     networks: [backend, edge]
+    restart: unless-stopped
+
+  backup-agent:
+    # Executa backups e restaurações (ADR-0021). Nenhuma porta aberta: lê pedidos de tipo fixo em backup_job. É o único
+    # serviço com a senha de superusuário do banco e com o .env. Só fala com o Docker pelo docker-gate.
+    build:
+      context: ../../apps/api
+      target: backup-agent
+    image: bpm-tmsa/backup-agent:dev
+    user: "0:0"
+    environment:
+      <<: *api-env
+      BPM_BACKUP_DIR: /backups
+      BPM_BACKUP_KEY_DIR: /run/backup-keys
+      BPM_BACKUP_STACK: ${COMPOSE_PROJECT_NAME}
+      BPM_BACKUP_DOCKER_URL: http://docker-gate:2375
+      BPM_BACKUP_PG_HOST: postgres
+      BPM_BACKUP_PG_USER: postgres
+      BPM_BACKUP_PG_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+    secrets: *api-secrets
+    volumes:
+      - backupstate:/state
+      # BPM_BACKUP_PATH: caminho no host para guardar os backups em outro disco; vazio usa um volume
+      - ${BPM_BACKUP_PATH:-backupdata}:/backups
+      # só o .env desta organização, nunca a pasta inteira: nela estão os das outras
+      - ${BPM_ENV_FILE:-./.env}:/host/env:ro
+      - ./docker-compose.yml:/host/deploy/docker-compose.yml:ro
+      - ./docker-compose.dev.yml:/host/deploy/docker-compose.dev.yml:ro
+      - ./orgs.sh:/host/deploy/orgs.sh:ro
+      - ./dr-restore.sh:/host/deploy/dr-restore.sh:ro
+      - ./LEIA-ME-RECUPERACAO.md:/host/deploy/LEIA-ME-RECUPERACAO.md:ro
+      - ./nginx:/host/deploy/nginx:ro
+      - ./postgres:/host/deploy/postgres:ro
+    # a chave de recuperação fica aqui só durante uma restauração, em memória
+    tmpfs:
+      - /run/backup-keys:mode=0700
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      api: { condition: service_healthy }
+      docker-gate: { condition: service_started }
+    stop_grace_period: 2m
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    networks: [backend, edge, dockergate]
+    restart: unless-stopped
+
+  docker-gate:
+    # Único ponto com o socket do Docker: libera parar e iniciar os serviços desta stack, consultá-los e exportar imagens.
+    # Todo o resto é 403 (criar, exec, apagar, carregar imagem, outra organização). Rede própria, só com o agente.
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    environment:
+      BPM_STACK: ${COMPOSE_PROJECT_NAME}
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./nginx/docker-gate.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    deploy:
+      resources:
+        limits: { memory: 32m }
+    networks: [dockergate]
     restart: unless-stopped
 
   web:
@@ -308,8 +379,13 @@ networks:
     internal: true
   # Apenas para publicar a UI do Mailpit em 127.0.0.1 (perfil dev).
   mailui: {}
+  # Agente de backup e filtro do Docker: mais ninguém alcança o docker-gate.
+  dockergate:
+    internal: true
 
 volumes:
   pgdata: {}
   storagedata: {}
   azuritedata: {}
+  backupstate: {}
+  backupdata: {}

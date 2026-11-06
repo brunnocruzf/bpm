@@ -1,0 +1,47 @@
+# Filtro do socket do Docker (ADR-0021). O backup-agent só chega ao Docker por aqui, e o que não está nesta lista é 403.
+# ${BPM_STACK} é o nome do projeto Compose: outra organização, no mesmo host, fica fora da lista.
+# Testado por deploy/docker/tests/docker-gate-test.sh. Liberar outra rota aqui é uma decisão de segurança: revise a ADR.
+user root;
+worker_processes 1;
+error_log /dev/stderr warn;
+pid /tmp/nginx.pid;
+
+events {
+  worker_connections 64;
+}
+
+http {
+  access_log off;
+  server_tokens off;
+  proxy_http_version 1.1;
+  # exportação de imagem: vários GB em fluxo, sem guardar em disco nem em memória
+  proxy_buffering off;
+  proxy_request_buffering off;
+  proxy_read_timeout 3600s;
+
+  server {
+    listen 2375;
+
+    # parar e iniciar: só o que a restauração precisa
+    location ~ ^(/v[0-9.]+)?/containers/${BPM_STACK}-(queue-worker|scheduler|flowable-rest)-1/(stop|start)$ {
+      limit_except POST { deny all; }
+      proxy_pass http://unix:/var/run/docker.sock:$uri$is_args$args;
+    }
+
+    # consultar a imagem de cada serviço desta stack
+    location ~ ^(/v[0-9.]+)?/containers/${BPM_STACK}-[a-z-]+-1/json$ {
+      limit_except GET { deny all; }
+      proxy_pass http://unix:/var/run/docker.sock:$uri$is_args$args;
+    }
+
+    # exportar imagem por ID: somente leitura
+    location ~ "^(/v[0-9.]+)?/images/sha256:[0-9a-f]{64}/get$" {
+      limit_except GET { deny all; }
+      proxy_pass http://unix:/var/run/docker.sock:$uri$is_args$args;
+    }
+
+    location / {
+      return 403;
+    }
+  }
+}

@@ -7,6 +7,9 @@ storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
 storage/app/private/*
+# backup rodando fora do Docker (ADR-0021): dumps não podem entrar na imagem
+storage/app/backups
+storage/app/backup-state
 bootstrap/cache/*.php
 database/*.sqlite
 tests

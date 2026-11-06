@@ -25,7 +25,8 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | §13 PO 159: abertura, 06 Sim→07/08→09→11, 24/26/27/28 com Comitê e revisão do RACF (histórico imutável), 29 paralelismo, 30 com múltiplas ações, validação negativa e reenvio, 30.1 bloqueio até concluir ações + evidência, 30.2 eficaz, 33 devolução, 45/46 sem NF espelho, integração AX (service task), 40, 41 FOB com timer, 44, sincronização e fim | `Po159EndToEndTest` contra Flowable 7.2 real (94 asserções) | ✅ |
 | §13 Demais ramos 33–47 (garantia TMSA tipo 01/03/09, garantia fornecedor → 39, NF espelho Sim → 47, CIF) | Roteamento coberto pelo validador e pelo BPMN; cenário E2E dedicado pendente | 🟡 |
 | §13 30.3 loop com limite (6 ciclos) e timer P30D | Modelado; teste com duração reduzida pendente | 🟡 |
-| §13 Virada de ano, backup/restore, anexo infectado (ClamAV real), logs sem PII | Sequência por ano implementada; demais em homologação | ⏳ |
+| §13 Virada de ano, anexo infectado (ClamAV real), logs sem PII | Sequência por ano implementada; demais em homologação | ⏳ |
+| §13 Backup e restauração | `BackupTest` · `deploy/docker/tests/backup-e2e.mjs` (ver a seção Backup e recuperação) | ✅ |
 | §7 Contratos AX reais (AIF/WCF ou façade REST) | Transportes não configurados de propósito | ⏳ |
 | §6.2 Autenticação do fornecedor externo | Decisão pendente | ⏳ |
 
@@ -159,4 +160,22 @@ Legenda: ✅ coberto por teste automatizado · 🟡 coberto parcialmente/manual 
 | Fim com terminate mantém o resultado de negócio; só cancelamento real ou fim "cancelado" cancelam | `For784FlowTest::test_the_end_keeps_the_business_result_and_only_a_real_cancellation_cancels` · `For784EndToEndTest` (com `FLOWABLE_IT_URL`) | ✅ |
 | Tela: modos de "Quem executa?", devolver ao grupo e reatribuir | `StageSettings.spec.ts` · `TaskView.spec.ts` · `ReassignDialog.spec.ts` | ✅ |
 
-Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web).
+## Backup e recuperação (ADR-0021)
+
+| Requisito | Evidência | Situação |
+|---|---|---|
+| Chave de recuperação: mostrada uma vez, só a pública fica guardada, não entra por PUT, sem rastro em auditoria | `BackupTest::test_the_recovery_key_is_returned_once_and_only_its_public_part_is_stored` · `test_the_public_key_cannot_be_set_through_the_settings_endpoint` | ✅ |
+| Agendamentos diário, semanal e mensal no fuso configurado, uma execução por horário, alerta de atraso | `BackupTest::test_slots_follow_the_configured_timezone_and_clamp_to_the_month` · `test_the_tick_creates_each_slot_once_and_waits_for_the_recovery_key` · `test_an_overdue_schedule_alerts_the_admins_once_a_day` | ✅ |
+| Partes criptografadas, manifesto por último, bpm_app antes de flowable, falha não deixa backup pela metade | `BackupTest::test_a_backup_encrypts_every_part_and_writes_the_manifest_last` · `test_a_failed_dump_leaves_no_backup_and_releases_the_pause` | ✅ |
+| Azure: blocos, faixas e listagem; falha mantém o backup no servidor; catálogo refeito do Azure | `BackupTest::test_azure_upload_failure_keeps_the_backup_on_the_server_and_can_be_retried` · `test_the_catalog_is_rebuilt_from_azure_when_the_database_forgot_it` · `AzuriteBlobTest` (com `AZURITE_IT_ENDPOINT`) | ✅ |
+| Retenção: limite por agendamento, nunca o mais recente nem a única cópia; imagem uma vez por digest | `BackupTest::test_retention_keeps_the_limit_and_never_the_only_copy_or_the_latest` · `test_full_scope_saves_config_and_images_once_per_digest` | ✅ |
+| Restauração recusada sem confirmação, com chave errada, com parte corrompida, manifesto trocado, versão mais nova ou outra organização | `BackupTest::test_restore_is_refused_without_confirmation_or_with_the_wrong_key` · `test_a_corrupted_part_is_refused_before_anything_changes` · `test_a_changed_manifest_is_refused` · `test_a_backup_from_a_newer_version_or_another_organization_is_refused` | ✅ |
+| Falha na carga não toca nos dados em uso; falha depois da troca volta aos bancos antigos; queda do agente retoma pelo diário | `BackupTest::test_a_load_failure_keeps_the_data_in_use_and_never_enters_maintenance` · `test_a_failure_after_the_swap_rolls_back_and_restarts_everything` · `test_recover_after_a_crash_past_the_swap_goes_back_to_the_old_databases` | ✅ |
+| Comandos pendentes reconciliam antes de reenviar; auditoria posterior arquivada; desfazer e liberar | `BackupTest::test_restore_swaps_both_databases_and_lands_in_safe_mode` · `test_undo_returns_to_the_previous_databases` · `test_release_decides_the_pending_emails_and_drops_the_old_databases` | ✅ |
+| Manutenção sem banco; modo seguro só para administradores; integrações e e-mails pausados | `BackupTest::test_maintenance_answers_without_the_database_and_blocks_everything_else` · `test_safe_mode_lets_only_settings_managers_in` · `test_the_pause_holds_engine_traffic_and_safe_mode_holds_external_effects` | ✅ |
+| Filtro do Docker: libera só a lista e nega o resto, inclusive outra organização | `deploy/docker/tests/docker-gate-test.sh` | ✅ |
+| Ponta a ponta com PostgreSQL, Flowable e Azurite reais, com ensaio de desastre do zero | `deploy/docker/tests/backup-e2e.mjs` | ✅ |
+| Telas: confirmação da restauração, chave, avisos, manutenção | `RestoreDialog.spec.ts` · `RecoveryKeyDialog.spec.ts` · `BackupSettings.spec.ts` · `MaintenanceView.spec.ts` | ✅ |
+| Backup e restauração com conta real do Azure | Não executado (sem autorização) | ⏳ |
+
+Comandos: `php artisan test` (API) · `FLOWABLE_IT_URL=... php artisan test --testsuite=Integration` · `npm test` (web) · `node deploy/docker/tests/backup-e2e.mjs` · `deploy/docker/tests/docker-gate-test.sh`.

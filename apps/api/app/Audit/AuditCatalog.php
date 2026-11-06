@@ -18,6 +18,7 @@ final class AuditCatalog
         'identity' => 'Identidade e acesso',
         'settings' => 'Configurações',
         'report' => 'Relatórios',
+        'backup' => 'Backup e recuperação',
         'audit' => 'Auditoria',
     ];
 
@@ -130,6 +131,17 @@ final class AuditCatalog
         'branding.updated' => ['settings', 'Identidade visual aplicada'],
         'branding.reset' => ['settings', 'Identidade visual restaurada ao padrão'],
         // Relatórios
+        'backup.requested' => ['backup', 'Backup solicitado'],
+        'backup.completed' => ['backup', 'Backup concluído'],
+        'backup.failed' => ['backup', 'Operação de backup falhou'],
+        'backup.deleted' => ['backup', 'Backup apagado'],
+        'backup.key_generated' => ['backup', 'Chave de recuperação confirmada'],
+        'backup.restore_requested' => ['backup', 'Restauração solicitada'],
+        'backup.restored' => ['backup', 'Backup restaurado'],
+        'backup.restore_failed' => ['backup', 'Restauração falhou'],
+        'backup.restore_undone' => ['backup', 'Restauração desfeita'],
+        'backup.restore_tested' => ['backup', 'Teste de restauração concluído'],
+        'backup.safe_mode_released' => ['backup', 'Sistema liberado após restauração'],
         'report.requested' => ['report', 'Relatório solicitado'],
         'report.generated' => ['report', 'Relatório gerado'],
         'report.failed' => ['report', 'Geração de relatório falhou'],

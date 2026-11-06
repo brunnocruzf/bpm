@@ -180,6 +180,30 @@ class FlowableRestClient
     }
 
     /**
+     * Service tasks à espera do worker, sem adquirir nada; vazio quando o engine não responde.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function externalJobs(string $topic): array
+    {
+        try {
+            return array_values((array) $this->http()->get('external-job-api/jobs', ['topic' => $topic, 'size' => 200])->json('data', []));
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /** Versão do engine para o manifesto dos backups; null quando ele não responde. */
+    public function version(): ?string
+    {
+        try {
+            return $this->http()->timeout(3)->get('service/management/engine')->json('version');
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * @param  array<string,mixed>  $variables
      * @return list<array<string,mixed>>
      */

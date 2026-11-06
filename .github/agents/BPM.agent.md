@@ -58,6 +58,7 @@ Dev/POC: `rustfs/rustfs:1.0.1`, `axllent/mailpit:v1.27`, `mcr.microsoft.com/azur
 - **Dependências:** verifique a licença antes de adicionar ou atualizar (ADR-0008). Proibidos: PrimeVue 5.x sem licença, Form.io Server e n8n. O PrimeVue fica fixado na 4.x (MIT). O Carbone foi liberado pelo responsável do projeto sem revisão jurídica da licença (ADR-0011): não remova essa nota das ADRs.
 - **Contratos externos:** nunca invente campos. O **AX 2012** vem do OpenAPI do `apidax` importado no catálogo (só OpenAPI 3 JSON; Swagger 2.0 é recusado). No **AX 2012 R3** a escrita só vai por AIF/WCF ou façade REST aprovada, o SQL é só leitura autorizada (`SQL_READONLY_VIEW` é bloqueado para escrita), e vale o transporte MOCK até haver contrato. Escritas externas são idempotentes e não se repetem em resultado incerto (`unknown` → `reconciliation_required`).
 - **Anti-SSRF:** todo destino externo configurável passa por `TargetPolicy` (REST e storage) ou `HostPolicy` (e-mail): HTTPS, sem loopback/link-local/rede privada/metadata, sem `user:pass` na URL, sem seguir redirecionamentos, com allowlist em `BPM_INTEGRATION_ALLOWED_HOSTS` ou `BPM_MAIL_PRIVATE_RELAY_HOSTS`.
+- **Backup (ADR-0021):** o Docker só é alcançado pelo `docker-gate`; liberar rota nova é decisão de segurança. O agente lê pedidos de tipo fixo em `backup_job`, nunca da fila do Laravel. Dump sempre com `bpm_app` antes de `flowable`. Restauração só em stack descartável (`deploy/docker/tests/backup-e2e.mjs`): nunca rode contra homologação ou produção sem autorização explícita.
 - **Anexos:** download sempre por **URL assinada de 5 minutos** emitida pelo Laravel, com `Content-Security-Policy: sandbox`. O navegador nunca fala direto com o bucket nem com o Azure. Sem fallback silencioso entre destinos: falha ao gravar devolve `503 storage_unavailable`.
 
 ## Integrações reais: nunca sem autorização
@@ -85,6 +86,7 @@ No mock do AX, valores iniciados por `NAOEXISTE` simulam "não encontrado" e `IN
 | E-mail e notificações | `apps/api/app/Mail`, `apps/api/app/Notifications` | provedores + `HostPolicy`, `Notifier`, `NotificationSender`, template fechado |
 | Relatórios | `apps/api/app/Reports` | `InstanceReportBuilder`, `OperationalReports`, `ReportDocument`, `ReportRenderer`, `NativeReportRenderer`, `CarboneReportRenderer`, `PdfWriter`, `ReportService` |
 | Destino dos anexos | `apps/api/app/Storage` | `AttachmentStorage`, `StorageTargetService`, `StorageProbe`, `Azure/{SharedKeySigner,AzureBlobClient,AzureBlobAdapter}` (driver `bpm-azure-blob`) |
+| Backup e recuperação | `apps/api/app/Backup`, `deploy/docker/dr-restore.sh` | `BackupAgent` (serviço `backup-agent`), `BackupRunner`, `RestoreRunner` (carga ao lado e troca por renomeação), `BackupCatalog`, `BackupTools` (pg_dump, zstd, age), `RuntimeState` (estado em arquivo), `DockerGate` (filtro `docker-gate`) |
 | Identidade visual | `apps/api/app/Branding` | upload seguro (PNG/WebP, recodificação por GD), `Contrast` (WCAG 4.5:1), `IcoCodec` |
 | Permissões | `apps/api/app/Authorization`, `apps/api/app/Policies` | Gates por papel, policies de auditoria e relatório |
 | Seed do PO 159 | `apps/api/database/seeders/Blueprints/Po159.php` | fluxo publicado para demonstração |
@@ -113,9 +115,9 @@ Variáveis do SPA (nenhuma é segredo): `VITE_API_BASE_URL`, `VITE_AUTH_MODE`, `
 
 Filas do `queue-worker`: `engine`, `notifications`, `directory`, `reports`, `default`.
 
-Agendador: `bpm:outbox` (10 s) · `bpm:external-jobs` (15 s) · `bpm:reconcile` (30 s) · `bpm:notifications` (30 s) · `bpm:directory-sync` (5 min) · `bpm:directory-photos` (1 h) · `bpm:reports-expire` (15 min) · `bpm:cleanup-orphans` (1 h) · `bpm:audit-retention` (03:30) · `bpm:openapi-check` (06:10 UTC).
+Agendador: `bpm:outbox` (10 s) · `bpm:external-jobs` (15 s) · `bpm:reconcile` (30 s) · `bpm:notifications` (30 s) · `bpm:directory-sync` (5 min) · `bpm:directory-photos` (1 h) · `bpm:reports-expire` (15 min) · `bpm:cleanup-orphans` (1 h) · `bpm:audit-retention` (03:30) · `bpm:openapi-check` (06:10 UTC) · `bpm:backup-tick` (1 min).
 
-Outros comandos: `bpm:superadmin {set-password|status|unlock|revoke-sessions|disable}`, `bpm:secrets-rotate`, `bpm:storage-init`, `bpm:storage-azure-init`.
+Outros comandos: `bpm:superadmin {set-password|status|unlock|revoke-sessions|disable}`, `bpm:secrets-rotate`, `bpm:storage-init`, `bpm:storage-azure-init`, `bpm:backup-agent` (serviço), `bpm:backup-recover`, `bpm:backup-import` (recuperação de desastre).
 
 Saúde: `GET /api/v1/health` (liveness) e `GET /api/v1/ready` (banco e engine; 503 se degradado).
 

@@ -311,7 +311,7 @@ docker run --rm --network bpm-tmsa_backend --entrypoint php -v "$PWD/apps/api:/a
 - `docs/po159/modelo-po159.md` — mapeamento das atividades do PO 159 e premissas **[VALIDAR]**
 - `docs/po159/matriz-requisitos-testes.md` — rastreabilidade requisito → teste
 - `docs/pendencias-validacao.md` — o que precisa de decisão antes do aceite
-- `docs/runbook.md` — operação, reconciliação, sincronização do diretório, e-mail, relatórios, retenção, rotação de segredos, backup e rollback
+- `docs/runbook.md` — operação, reconciliação, sincronização do diretório, e-mail, relatórios, retenção, rotação de segredos, backup, recuperação de desastre e rollback
 
 ## Limites desta entrega
 

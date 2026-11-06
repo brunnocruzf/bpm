@@ -1,6 +1,11 @@
 <?php
 
 use App\Audit\AuditRetentionService;
+use App\Backup\BackupAgent;
+use App\Backup\BackupFailure;
+use App\Backup\BackupScheduler;
+use App\Backup\RestoreRunner;
+use App\Backup\RuntimeState;
 use App\Engine\EngineCommandProcessor;
 use App\Engine\ExternalJobWorker;
 use App\Engine\ProjectionSync;
@@ -37,7 +42,10 @@ Artisan::command('bpm:outbox', function (EngineCommandProcessor $processor) {
     }
 })->purpose('Processa comandos pendentes/reconciliáveis do outbox do engine');
 
-Artisan::command('bpm:reconcile {--all}', function (ProjectionSync $sync) {
+Artisan::command('bpm:reconcile {--all}', function (ProjectionSync $sync, RuntimeState $state) {
+    if ($state->holdsEngine()) {
+        return;
+    }
     // Instâncias em execução sem sincronização recente (timers, integrações, divergências).
     $query = ProcessInstance::where('status', ProcessInstance::RUNNING)->whereNotNull('engine_process_instance_id');
     if (! $this->option('all')) {
@@ -199,6 +207,33 @@ Artisan::command('bpm:storage-init', function () {
     }
 })->purpose('Cria o bucket privado de anexos no storage S3-compatível');
 
+Artisan::command('bpm:backup-agent', function (BackupAgent $agent) {
+    $agent->run();
+})->purpose('Serviço backup-agent: executa os pedidos de backup e restauração (ADR-0021)');
+
+Artisan::command('bpm:backup-tick', function (BackupScheduler $scheduler) {
+    $n = $scheduler->tick();
+    if ($n) {
+        $this->info("Backups agendados: $n");
+    }
+})->purpose('Cria os pedidos dos agendamentos de backup vencidos');
+
+Artisan::command('bpm:backup-import {--dir= : Pasta com o manifest.json e as partes do backup} {--key-file= : Arquivo com a chave de recuperação}', function (RestoreRunner $restores) {
+    try {
+        $restores->import((string) $this->option('dir'), (string) $this->option('key-file'), fn (string $stage, int $percent) => $this->line("$percent% $stage"));
+        $this->info('Backup importado. A aplicação sobe em modo seguro.');
+    } catch (BackupFailure $e) {
+        $this->error($e->getMessage());
+
+        return 1;
+    }
+})->purpose('Recuperação de desastre: importa um backup em uma stack nova');
+
+Artisan::command('bpm:backup-recover', function (RestoreRunner $restores) {
+    $restores->recover();
+    $this->info('Estado atual: '.app(RuntimeState::class)->mode());
+})->purpose('Retoma pelo diário uma restauração interrompida');
+
 Schedule::command('bpm:outbox')->everyTenSeconds()->withoutOverlapping()->onOneServer();
 Schedule::command('bpm:external-jobs')->everyFifteenSeconds()->withoutOverlapping()->onOneServer();
 Schedule::command('bpm:reconcile')->everyThirtySeconds()->withoutOverlapping()->onOneServer();
@@ -209,3 +244,4 @@ Schedule::command('bpm:directory-sync')->everyFiveMinutes()->withoutOverlapping(
 Schedule::command('bpm:reports-expire')->everyFifteenMinutes()->onOneServer();
 Schedule::command('bpm:audit-retention')->dailyAt('03:30')->withoutOverlapping()->onOneServer();
 Schedule::command('bpm:openapi-check')->dailyAt('06:10')->withoutOverlapping()->onOneServer();
+Schedule::command('bpm:backup-tick')->everyMinute()->withoutOverlapping()->onOneServer();

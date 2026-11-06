@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AssignCorrelationId;
+use App\Http\Middleware\HoldDuringRestore;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\VerifyLocalCookieCsrf;
 use App\Support\ApiProblem;
@@ -38,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(HoldDuringRestore::class);
         $middleware->prepend(AssignCorrelationId::class);
         $middleware->api(prepend: [VerifyLocalCookieCsrf::class], append: [SecurityHeaders::class]);
         $middleware->trustProxies(at: '*');

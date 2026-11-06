@@ -473,6 +473,62 @@ paths:
     post: { summary: "Volta ao armazenamento da plataforma para novos anexos (os destinos aposentados continuam legíveis)", responses: { '200': { description: Setting } } }
   /admin/settings/attachments-storage/usage:
     get: { summary: "Arquivos e tamanho por destino", responses: { '200': { description: OK } } }
+  /admin/settings/backups/test:
+    post: { summary: "Teste real da pasta de backups: gravação em blocos, listagem, leitura por faixas e exclusão", responses: { '200': { description: OK } } }
+  /maintenance:
+    get:
+      summary: "Progresso da restauração. Público e sem acesso ao banco: só modo, etapa e percentual"
+      security: []
+      responses: { '200': { description: OK } }
+  /admin/backups:
+    get: { summary: "Backups conhecidos (cache dos manifestos)", responses: { '200': { description: OK } } }
+    post:
+      summary: "Pede um backup ao agente"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [scope], properties: { scope: { type: string, enum: [database, data, full] }, azure: { type: boolean }, verify: { type: boolean } } } } } }
+      responses: { '202': { description: Pedido registrado }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/backups/status:
+    get: { summary: "Agente, último backup, próxima execução, chave, avisos e operação em andamento", responses: { '200': { description: OK } } }
+  /admin/backups/jobs:
+    get: { summary: "Operações recentes", responses: { '200': { description: OK } } }
+  /admin/backups/jobs/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get: { summary: "Situação de uma operação", responses: { '200': { description: OK } } }
+  /admin/backups/catalog/sync:
+    post: { summary: "Refaz o catálogo a partir do disco e do Azure", responses: { '202': { description: Pedido registrado } } }
+  /admin/backups/recovery-key:
+    post: { summary: "Gera a chave de recuperação. A chave privada só existe nesta resposta", responses: { '200': { description: OK } } }
+  /admin/backups/recovery-key/confirm:
+    post:
+      summary: "Confirma que a chave foi guardada: o servidor salva só a parte pública"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [recoveryKey], properties: { recoveryKey: { type: string } } } } } }
+      responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/backups/{backupId}/restore:
+    parameters: [{ name: backupId, in: path, required: true, schema: { type: string } }]
+    post:
+      summary: "Restaura bancos e arquivos. Termina em modo seguro"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [confirmation, justification, recoveryKey], properties: { confirmation: { type: string, description: "Nome da organização" }, justification: { type: string, minLength: 10 }, recoveryKey: { type: string, description: "Nunca gravada aberta" } } } } } }
+      responses: { '202': { description: Pedido registrado }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/backups/{backupId}/restore-test:
+    parameters: [{ name: backupId, in: path, required: true, schema: { type: string } }]
+    post:
+      summary: "Carrega o backup em bancos temporários, sem tocar nos dados em uso"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [recoveryKey], properties: { recoveryKey: { type: string } } } } } }
+      responses: { '202': { description: Pedido registrado }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/backups/{backupId}/copy-to-azure:
+    parameters: [{ name: backupId, in: path, required: true, schema: { type: string } }]
+    post: { summary: "Reenvia ao Azure um backup que ficou só no servidor", responses: { '202': { description: Pedido registrado } } }
+  /admin/backups/{backupId}:
+    parameters: [{ name: backupId, in: path, required: true, schema: { type: string } }]
+    delete: { summary: "Apaga um backup do servidor e do Azure. O mais recente não pode ser apagado", responses: { '202': { description: Pedido registrado }, '409': { $ref: '#/components/responses/Problem' } } }
+  /admin/backups/safe-mode:
+    get: { summary: "Revisão depois de restaurar: comandos, e-mails e integrações pendentes", responses: { '200': { description: OK } } }
+  /admin/backups/safe-mode/release:
+    post:
+      summary: "Encerra o modo seguro. Depois disso não é possível desfazer"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [notifications], properties: { notifications: { type: string, enum: [send, discard] } } } } } }
+      responses: { '202': { description: Pedido registrado }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /admin/backups/safe-mode/undo:
+    post: { summary: "Desfaz a restauração, voltando aos bancos anteriores", responses: { '202': { description: Pedido registrado }, '409': { $ref: '#/components/responses/Problem' } } }
   /admin/integrations:
     get: { summary: "Saúde do engine/AX, outbox e notificações (sem segredos)", responses: { '200': { description: OK } } }
   /admin/engine-commands:
@@ -524,7 +580,7 @@ paths:
         in: path
         required: true
         description: Seção de configuração (aceita barras)
-        schema: { type: string, enum: [branding, entra/auth, entra/directory-sync, email, audit-retention, reports, attachments-storage] }
+        schema: { type: string, enum: [backups, branding, entra/auth, entra/directory-sync, email, audit-retention, reports, attachments-storage] }
     get: { summary: "Lê a configuração (segredos substituídos por metadados)", responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Setting' } } } } } }
     put:
       summary: Grava nova versão (validação server-side; segredos somente escrita; auditoria com diff redigido)

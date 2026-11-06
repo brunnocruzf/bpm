@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Audit\AuditDiff;
 use App\Authorization\Permissions;
+use App\Backup\BackupDestinationProbe;
 use App\Branding\BrandingAssetService;
 use App\Http\Controllers\Api\V1\ApiController;
 use App\Identity\DirectorySyncService;
@@ -21,6 +22,7 @@ use App\Settings\SettingsRepository;
 use App\Settings\SettingType;
 use App\Settings\Types\AttachmentStorageSettings;
 use App\Settings\Types\AuditRetentionSettings;
+use App\Settings\Types\BackupSettings;
 use App\Settings\Types\BrandingSettings;
 use App\Settings\Types\CategoriesSettings;
 use App\Settings\Types\DirectorySyncSettings;
@@ -53,6 +55,7 @@ class SettingsController extends ApiController
         'reports' => ReportSettings::class,
         'attachments-storage' => AttachmentStorageSettings::class,
         'categories' => CategoriesSettings::class,
+        'backups' => BackupSettings::class,
     ];
 
     public function __construct(private readonly SettingsRepository $settings) {}
@@ -258,6 +261,19 @@ class SettingsController extends ApiController
         $this->authorizeSettings();
 
         return response()->json(['data' => $targets->usage()]);
+    }
+
+    // ------------------------------------------------------------------ backup
+
+    public function testBackupDestination(BackupDestinationProbe $probe): JsonResponse
+    {
+        $this->authorizeSettings();
+        $type = app(BackupSettings::class);
+        $setting = $this->settings->get($type->key());
+        $result = $probe->run();
+        $this->settings->recordValidation($type, (bool) $result['ok'], $result, $this->user(), $setting->version);
+
+        return $this->show($type);
     }
 
     // ------------------------------------------------------------------ e-mail

@@ -27,6 +27,8 @@ export interface Me {
     reportsInstance: boolean; reportsOperational: boolean; reportsTemplates: boolean; dataSensitive: boolean
   }
   counters: { openTasks: number }
+  /** dados restaurados aguardando a revisão de um administrador */
+  safeMode?: boolean
   /** foto importada do Entra ID (só a versão; os bytes vêm de /me/photo) */
   photo?: { version: string } | null
   /** método do login atual; SuperAdmin traz a expiração absoluta da sessão */
@@ -208,6 +210,92 @@ export interface Paged<T> { data: T[]; meta: { page: number; total: number; last
 export type SettingStatus = 'configured' | 'incomplete' | 'test_pending' | 'error' | 'disabled'
 
 export interface ValidationCheck { name: string; ok: boolean; code?: string | null; message?: string | null; detail?: string | null; warning?: boolean }
+
+export type BackupScope = 'database' | 'data' | 'full'
+
+export interface BackupEntry {
+  id: string
+  scope: BackupScope
+  origin: 'manual' | 'schedule' | 'pre_restore'
+  scheduleId: string | null
+  bytes: number
+  inLocal: boolean
+  inAzure: boolean
+  keyFingerprint: string
+  backupAt: string
+  verifiedAt: string | null
+  verification: { ok?: boolean } | null
+  keepUntil: string | null
+}
+
+export interface BackupJobView {
+  id: string
+  kind: string
+  status: 'pending' | 'running' | 'succeeded' | 'failed'
+  backupId: string | null
+  stage: string | null
+  percent: number
+  scope: BackupScope | null
+  errorCode: string | null
+  errorDetail: string | null
+  requestedBy: string | null
+  createdAt: string | null
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface BackupStatus {
+  mode: 'normal' | 'pause' | 'maintenance' | 'safe'
+  organization: string
+  agent: { online: boolean; lastBeatAt: string | null }
+  lastBackup: BackupEntry | null
+  nextRunAt: string | null
+  recoveryKey: { fingerprint: string; confirmedAt: string; confirmedBy: string } | null
+  lastRestoreTest: { at: string | null; backupId: string; ok: boolean } | null
+  warnings: string[]
+  activeJob: BackupJobView | null
+}
+
+export interface BackupScheduleConfig {
+  id?: string
+  enabled: boolean
+  frequency: 'daily' | 'weekly' | 'monthly'
+  time: string
+  weekday: number | null
+  monthDay: number | 'last' | null
+  scope: BackupScope
+  azure: boolean
+  keep: number
+  verify: boolean
+  createdAt?: string
+}
+
+export interface BackupSettingsValue {
+  timezone: string
+  localCopies: number
+  azure: { enabled: boolean; folder: string }
+  schedules: BackupScheduleConfig[]
+  recoveryKey: { publicKey: string; fingerprint: string; confirmedAt: string; confirmedBy: string } | null
+  azureTarget: { accountName: string | null; container: string | null; pathPrefix: string; emulator: boolean } | null
+}
+
+export interface SafeModeView {
+  active: boolean
+  restoredTo: string | null
+  backupId: string | null
+  canUndo: boolean
+  auditEvents: number
+  pendingCommands: number
+  pendingEmails: number
+  integrations: { instance: string | null; stage: string | null }[]
+}
+
+export interface MaintenanceView {
+  mode: 'normal' | 'pause' | 'maintenance' | 'safe'
+  stage: string | null
+  percent: number | null
+  failed: string | null
+}
 
 export interface SettingView<T = Record<string, any>> {
   key: string

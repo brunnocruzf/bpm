@@ -2,6 +2,7 @@
 
 namespace App\Engine;
 
+use App\Backup\RuntimeState;
 use App\Flow\StageCatalog;
 use App\Integrations\Ax\AxGateway;
 use App\Integrations\IntegrationUnavailable;
@@ -24,10 +25,15 @@ class ExternalJobWorker
     public function __construct(
         private readonly FlowableRestClient $engine,
         private readonly AxGateway $ax,
+        private readonly RuntimeState $state,
     ) {}
 
     public function run(int $max = 10): int
     {
+        // depois de uma restauração, um job pode estar de volta mesmo já tendo escrito no sistema externo
+        if ($this->state->holdsIntegrations()) {
+            return 0;
+        }
         $workerId = 'laravel-'.gethostname();
         $jobs = $this->engine->acquireJobs((string) config('bpm.engine.external_worker_topic'), $max, (string) config('bpm.engine.external_worker_lock'), $workerId);
 

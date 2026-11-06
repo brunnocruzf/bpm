@@ -65,6 +65,53 @@ class AzuriteBlobTest extends TestCase
         }
     }
 
+    public function test_a_file_bigger_than_the_memory_limit_goes_through_blocks_and_ranges(): void
+    {
+        $block = 8 * 1024 * 1024;
+        $source = (string) tempnam(sys_get_temp_dir(), 'bpm');
+        $copy = (string) tempnam(sys_get_temp_dir(), 'bpm');
+        $handle = fopen($source, 'wb');
+        for ($i = 0; $i < 37; $i++) {
+            fwrite($handle, random_bytes($block));
+        }
+        fwrite($handle, 'fim');
+        fclose($handle);
+        $size = (int) filesize($source);
+        $this->assertGreaterThan(256 * 1024 * 1024, $size, 'maior que o memory_limit das imagens');
+        $before = memory_get_usage(true);
+
+        $this->client->putFile('backups/tmsa/grande.bin', $source, $block);
+        $this->client->downloadTo('backups/tmsa/grande.bin', $copy, $block);
+
+        $this->assertLessThan(96 * 1024 * 1024, memory_get_peak_usage(true) - $before, 'o arquivo nunca fica inteiro em memória');
+        $this->assertSame($size, $this->client->head('backups/tmsa/grande.bin')['size']);
+        $this->assertSame(hash_file('sha256', $source), hash_file('sha256', $copy));
+        unlink($source);
+        unlink($copy);
+    }
+
+    public function test_listing_returns_only_the_prefix_with_sizes(): void
+    {
+        $this->client->put('backups/tmsa/2026/11/a/manifest.json', '{}');
+        $this->client->put('backups/tmsa/2026/11/b/manifest.json', '{"x":1}');
+        $this->client->put('attachments/2026/11/anexo.pdf', 'pdf');
+
+        $blobs = $this->client->list('backups/');
+
+        $this->assertSame(['backups/tmsa/2026/11/a/manifest.json', 'backups/tmsa/2026/11/b/manifest.json'], array_column($blobs, 'name'));
+        $this->assertSame([2, 7], array_column($blobs, 'size'));
+        $this->assertSame([], $this->client->list('nada/'));
+    }
+
+    public function test_an_empty_file_is_a_valid_blob(): void
+    {
+        $source = (string) tempnam(sys_get_temp_dir(), 'bpm');
+        $this->client->putFile('vazio.bin', $source, 1024);
+
+        $this->assertSame(0, $this->client->head('vazio.bin')['size']);
+        unlink($source);
+    }
+
     public function test_the_flysystem_adapter_applies_the_prefix_and_works_through_laravel_storage_api(): void
     {
         $adapter = new AzureBlobAdapter($this->client, 'bpm');

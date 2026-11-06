@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { ApiError } from './api/http'
 import { auth } from './auth'
 import { useSession } from './stores/session'
 import { docsRoutes } from './docs/catalog'
@@ -6,6 +7,8 @@ import { docsRoutes } from './docs/catalog'
 const routes: RouteRecordRaw[] = [
   // portal de documentação de integrações: pública, antes do layout autenticado
   docsRoutes,
+  // restauração em andamento: pública, a API responde sem banco
+  { path: '/manutencao', name: 'maintenance', component: () => import('./views/MaintenanceView.vue'), meta: { public: true } },
   // login: Microsoft Entra ID (principal), visitante (ambiente de demonstração) e SuperAdmin (emergência)
   { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'entra' } },
   { path: '/login/visitante', name: 'login-demo', component: () => import('./views/LoginView.vue'), meta: { public: true }, props: { mode: 'demo' } },
@@ -41,6 +44,8 @@ const routes: RouteRecordRaw[] = [
           { path: 'email', name: 'settings-email', component: () => import('./views/settings/EmailSettings.vue') },
           { path: 'audit-retention', name: 'settings-audit', component: () => import('./views/settings/AuditRetentionSettings.vue') },
           { path: 'reports', name: 'settings-reports', component: () => import('./views/settings/ReportSettings.vue') },
+          { path: 'backups', name: 'settings-backups', component: () => import('./views/settings/BackupSettings.vue') },
+          { path: 'backups/review', name: 'settings-backups-review', component: () => import('./views/settings/BackupReview.vue') },
           { path: 'attachments-storage', name: 'settings-attachments-storage', component: () => import('./views/settings/AttachmentStorageSettings.vue') },
         ],
       },
@@ -64,7 +69,8 @@ router.beforeEach(async (to) => {
   if (!session.me) {
     try {
       await session.load()
-    } catch {
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 503) return { name: 'maintenance' }
       return { name: 'login', query: { redirect: to.fullPath } }
     }
   }

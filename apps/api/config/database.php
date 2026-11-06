@@ -99,6 +99,21 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        // Agente de backup: cria, renomeia e apaga bancos. Só o serviço backup-agent recebe esta credencial.
+        'backup_admin' => [
+            'driver' => 'pgsql',
+            'host' => env('BPM_BACKUP_PG_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('BPM_BACKUP_PG_PORT', env('DB_PORT', '5432')),
+            'database' => 'postgres',
+            'username' => env('BPM_BACKUP_PG_USER', 'postgres'),
+            'password' => env('BPM_BACKUP_PG_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

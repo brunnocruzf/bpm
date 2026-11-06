@@ -14,6 +14,7 @@ final class Masker
         'private_key', 'privatekey', 'assertion', 'credential', 'license', 'deltalink', 'delta_link', 'nextlink', 'next_link',
         'email', 'telefone', 'phone', 'cpf', 'cnpj',
         'accountkey', 'account_key', 'sastoken', 'sas_token', 'connectionstring', 'connection_string', 'sharedaccesssignature',
+        'recoverykey', 'recovery_key',
     ];
 
     /**
@@ -62,6 +63,7 @@ final class Masker
         $value = preg_replace('/\bBearer\s+[A-Za-z0-9._~+\/=\-:]+/i', 'Bearer ***', $value) ?? $value;
         $value = preg_replace('#(https?://)[^/@\s:]+:[^/@\s]+@#i', '$1***@', $value) ?? $value;
         $value = preg_replace('/\b(AccountKey|SharedAccessSignature)=[^;\s"]+/i', '$1=***', $value) ?? $value;
+        $value = preg_replace('/\bAGE-SECRET-KEY-1[0-9A-Z]+/', '[chave de recuperação redigida]', $value) ?? $value;
         $value = preg_replace('/([?&](\$?deltatoken|\$?skiptoken|code|client_secret|sig|signature)=)[^&\s"]+/i', '$1***', $value) ?? $value;
 
         return $value;

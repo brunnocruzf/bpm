@@ -47,5 +47,6 @@ Transcrição do §2.2 da especificação e decisões que ficaram como premissa 
 ## Plataforma
 
 22. Alvo de produção (Kubernetes/OpenShift/plataforma corporativa), banco gerenciado/HA, storage redundante, secrets manager, backup/restore testado, observabilidade (OpenTelemetry/Prometheus/Grafana).
+22a. **Backup e recuperação (ADR-0021):** definir quem guarda a chave de recuperação e onde; confirmar soft delete na conta do Azure, que é a principal proteção da pasta de backups; dimensionar o disco de `BPM_BACKUP_PATH` pelo volume real de anexos; aprovar a política de retenção; ensaiar a recuperação com a conta real do Azure.
 22b. **Armazenamento de anexos em Azure Blob (ADR-0018):** provisionar conta/contêiner privado, confirmar com segurança o uso de Shared Key (Azure Policy pode desligá-lo), egress/firewall e declaração do host, retenção/soft delete/versionamento, residência dos dados e se os arquivos já gravados no RustFS/disco devem ser migrados.
 23. Estratégia para alteração de processo com instâncias em andamento (migração entre versões — fora do MVP).

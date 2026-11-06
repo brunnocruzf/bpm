@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Audit\AuditContext;
+use App\Backup\RuntimeState;
 use App\Jobs\SendNotification;
 use App\Mail\MailException;
 use App\Mail\MailProviderFactory;
@@ -30,10 +31,15 @@ class NotificationSender
         private readonly SettingsRepository $settings,
         private readonly MailProviderFactory $factory,
         private readonly EmailLayoutRenderer $emailLayout,
+        private readonly RuntimeState $state,
     ) {}
 
     public function send(string $id): void
     {
+        // depois de uma restauração o administrador decide o que fazer com os e-mails pendentes
+        if ($this->state->holdsNotifications()) {
+            return;
+        }
         $message = $this->claim($id);
         if (! $message) {
             return;
@@ -137,6 +143,9 @@ class NotificationSender
     /** Varredura do agendador: mensagens vencidas cujo job se perdeu. */
     public function dispatchDue(int $limit = 50): int
     {
+        if ($this->state->holdsNotifications()) {
+            return 0;
+        }
         $due = NotificationMessage::where(fn ($q) => $q->whereIn('state', [NotificationMessage::QUEUED, NotificationMessage::RETRYING])->where(fn ($q2) => $q2->whereNull('available_at')->orWhere('available_at', '<=', now())))
             ->orWhere(fn ($q) => $q->where('state', NotificationMessage::SENDING)->where('locked_until', '<', now()))
             ->orderBy('created_at')->limit($limit)->pluck('id');

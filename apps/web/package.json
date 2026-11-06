@@ -32,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
+    "@vitejs/devtools": "^0.7.6",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.5.1",
     "@vue/tsconfig": "^0.9.1",
@@ -40,6 +41,7 @@
     "sass": "^1.105.1",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
+    "vite-plugin-vue-devtools": "9.0.0-rc.3",
     "vitest": "^5.0.4",
     "vue-tsc": "^3.3.11"
   }

@@ -1,11 +1,13 @@
 import { fileURLToPath, URL } from 'node:url'
 import { resolve } from 'node:path'
 import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
 import { defineConfig } from 'vitest/config'
 
 // O SPA fala apenas com a API Laravel. Em desenvolvimento, /api é encaminhado ao `php artisan serve`.
 export default defineConfig({
-  plugins: [vue()],
+  devtools: { apply: 'serve' },
+  plugins: [vueDevTools(), vue()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },

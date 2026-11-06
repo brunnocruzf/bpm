@@ -3,6 +3,7 @@
 namespace App\Engine;
 
 use App\Audit\AuditContext;
+use App\Backup\RuntimeState;
 use App\Models\EngineCommand;
 use App\Models\FormSubmission;
 use App\Models\ProcessDefinitionVersion;
@@ -29,10 +30,15 @@ class EngineCommandProcessor
         private readonly ProjectionSync $sync,
         private readonly EngineCommandDispatcher $dispatcher,
         private readonly Notifier $notifier,
+        private readonly RuntimeState $state,
     ) {}
 
     public function process(string $commandId): void
     {
+        // durante os snapshots do backup o comando fica pendente: a varredura do bpm:outbox o retoma
+        if ($this->state->holdsEngine()) {
+            return;
+        }
         $command = $this->claim($commandId);
         if (! $command) {
             return;
@@ -253,6 +259,9 @@ class EngineCommandProcessor
     /** @return int quantidade de comandos despachados */
     public function dispatchDue(): int
     {
+        if ($this->state->holdsEngine()) {
+            return 0;
+        }
         $n = 0;
         $due = EngineCommand::whereIn('state', [EngineCommand::PENDING, EngineCommand::RECONCILIATION_REQUIRED])
             ->where(fn ($q) => $q->whereNull('available_at')->orWhere('available_at', '<=', now()))

@@ -41,8 +41,10 @@ class AuthorizationAndAuditTest extends TestCase
             $this->as($user)->putJson('/api/v1/admin/settings/branding', ['appName' => 'X'])->assertForbidden();
             $this->as($user)->postJson('/api/v1/admin/entra/sync/preview')->assertForbidden();
             $this->as($user)->getJson('/api/v1/admin/settings/email')->assertForbidden();
+            $this->as($user)->getJson('/api/v1/admin/backups')->assertForbidden();
+            $this->as($user)->postJson('/api/v1/admin/backups', ['scope' => 'database'])->assertForbidden();
         }
-        $this->as('admin')->getJson('/api/v1/admin/settings')->assertOk()->assertJsonCount(8, 'data');
+        $this->as('admin')->getJson('/api/v1/admin/settings')->assertOk()->assertJsonCount(9, 'data');
         $this->as('admin')->getJson('/api/v1/me')->assertJsonPath('permissions.settingsManage', true);
         $this->as('cq')->getJson('/api/v1/me')->assertJsonPath('permissions.settingsManage', false)->assertJsonPath('permissions.reportsInstance', true);
     }

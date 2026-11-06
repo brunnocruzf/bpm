@@ -27,6 +27,10 @@ export interface RequestOptions {
 let onUnauthorized: (() => void) | null = null
 export function setUnauthorizedHandler(fn: () => void) { onUnauthorized = fn }
 
+let onMaintenance: (() => void) | null = null
+/** Restauração em andamento (503 maintenance) ou aguardando revisão (503 safe_mode). */
+export function setMaintenanceHandler(fn: () => void) { onMaintenance = fn }
+
 export function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
@@ -70,6 +74,7 @@ export async function api<T = any>(path: string, opts: RequestOptions = {}): Pro
       problem = { title: 'Erro', status: response.status, detail: response.statusText }
     }
     problem.status ??= response.status
+    if (response.status === 503 && (problem.code === 'maintenance' || problem.code === 'safe_mode')) onMaintenance?.()
     throw new ApiError(problem)
   }
   if (response.status === 204) return null as T

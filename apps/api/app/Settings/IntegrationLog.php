@@ -24,16 +24,17 @@ use InvalidArgumentException;
  */
 final class IntegrationLog
 {
-    public const AREAS = ['email', 'entra', 'storage'];
+    public const AREAS = ['email', 'entra', 'storage', 'backup'];
 
     /** kinds por área */
     public const KINDS = [
         'email' => ['test', 'delivery', 'config'],
         'entra' => ['test', 'sync', 'access', 'config', 'mapping', 'user'],
         'storage' => ['test', 'config'],
+        'backup' => ['test', 'config'],
     ];
 
-    private const SETTINGS = ['email' => ['email'], 'entra' => ['entra.auth', 'entra.directory'], 'storage' => ['attachments.storage']];
+    private const SETTINGS = ['email' => ['email'], 'entra' => ['entra.auth', 'entra.directory'], 'storage' => ['attachments.storage'], 'backup' => ['backups']];
 
     private const CONFIG_ACTIONS = ['settings.updated', 'settings.secret_updated', 'settings.activated', 'settings.disabled'];
 

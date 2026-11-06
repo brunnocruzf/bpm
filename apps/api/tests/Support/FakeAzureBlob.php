@@ -20,6 +20,11 @@ class FakeAzureBlob
     /** @var array<string,string> "contêiner/blob" => conteúdo */
     public array $blobs = [];
 
+    /** @var array<string, array<string,string>> blocos ainda sem commit */
+    public array $blocks = [];
+
+    public int $pageSize = 5000;
+
     /** @var array<string,true> */
     public array $containers = ['anexos' => true];
 
@@ -76,14 +81,25 @@ class FakeAzureBlob
             if ($request->method() === 'PUT') {
                 return Http::response('', 201);
             }
+            if (($query['comp'] ?? '') === 'list') {
+                return $this->listing($container, (string) ($query['prefix'] ?? ''), (string) ($query['marker'] ?? ''));
+            }
 
             return Http::response('', 200, array_filter(['x-ms-blob-public-access' => $this->publicAccess, 'Date' => $date]));
         }
         $key = "$container/$blob";
+        if ($request->method() === 'PUT' && ($query['comp'] ?? '') === 'block') {
+            $this->blocks[$key][(string) $query['blockid']] = $request->body();
+
+            return Http::response('', 201);
+        }
+        if ($request->method() === 'PUT' && ($query['comp'] ?? '') === 'blocklist') {
+            return $this->commit($request, $key);
+        }
 
         return match ($request->method()) {
             'PUT' => $this->put($request, $key),
-            'GET' => isset($this->blobs[$key]) ? Http::response($this->corruptReads ? strrev($this->blobs[$key]) : $this->blobs[$key], 200) : $this->notFound(),
+            'GET' => isset($this->blobs[$key]) ? $this->read($request, $key) : $this->notFound(),
             'HEAD' => isset($this->blobs[$key]) ? Http::response('', 200, ['Content-Length' => (string) strlen($this->blobs[$key]), 'Content-Type' => 'application/octet-stream']) : Http::response('', 404, ['x-ms-error-code' => 'BlobNotFound']),
             'DELETE' => isset($this->blobs[$key]) ? $this->deleted($key) : $this->notFound(),
             default => Http::response('', 405),
@@ -98,6 +114,48 @@ class FakeAzureBlob
         $this->blobs[$key] = $request->body();
 
         return Http::response('', 201);
+    }
+
+    private function read(Request $request, string $key)
+    {
+        $content = $this->corruptReads ? strrev($this->blobs[$key]) : $this->blobs[$key];
+        $range = (string) ($request->header('x-ms-range')[0] ?? '');
+        if (preg_match('/^bytes=(\d+)-(\d+)$/', $range, $m)) {
+            return Http::response(substr($content, (int) $m[1], (int) $m[2] - (int) $m[1] + 1), 206);
+        }
+
+        return Http::response($content, 200);
+    }
+
+    /** Monta o blob na ordem da lista: bloco ausente é erro, como no Azure. */
+    private function commit(Request $request, string $key)
+    {
+        preg_match_all('~<Latest>([^<]+)</Latest>~', $request->body(), $m);
+        $content = '';
+        foreach ($m[1] as $id) {
+            if (! isset($this->blocks[$key][$id])) {
+                return Http::response('<Error><Code>InvalidBlockList</Code></Error>', 400, ['x-ms-error-code' => 'InvalidBlockList']);
+            }
+            $content .= $this->blocks[$key][$id];
+        }
+        $this->blobs[$key] = $content;
+        unset($this->blocks[$key]);
+
+        return Http::response('', 201);
+    }
+
+    private function listing(string $container, string $prefix, string $marker)
+    {
+        $names = array_values(array_filter(array_keys($this->blobs), fn ($k) => str_starts_with($k, "$container/$prefix")));
+        sort($names);
+        $offset = (int) $marker;
+        $items = '';
+        foreach (array_slice($names, $offset, $this->pageSize) as $name) {
+            $items .= '<Blob><Name>'.htmlspecialchars(substr($name, strlen($container) + 1)).'</Name><Properties><Content-Length>'.strlen($this->blobs[$name]).'</Content-Length></Properties></Blob>';
+        }
+        $next = $offset + $this->pageSize < count($names) ? (string) ($offset + $this->pageSize) : '';
+
+        return Http::response("<?xml version=\"1.0\" encoding=\"utf-8\"?><EnumerationResults><Blobs>$items</Blobs><NextMarker>$next</NextMarker></EnumerationResults>", 200);
     }
 
     private function deleted(string $key)
