@@ -11,6 +11,7 @@ import FormRenderer from '@/components/forms/FormRenderer.vue'
 import ActionPlanPanel from '@/components/runtime/ActionPlanPanel.vue'
 import TimelineList from '@/components/runtime/TimelineList.vue'
 import AttachmentList from '@/components/runtime/AttachmentList.vue'
+import ReassignDialog from '@/components/runtime/ReassignDialog.vue'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -23,13 +24,13 @@ const serverErrors = ref<Record<string, string[]>>({})
 const sending = ref(false)
 const processing = ref(false)
 const draftSavedAt = ref<string | null>(null)
+const reassigning = ref(false)
 // Mantém na tela o que foi enviado enquanto o engine confirma (evita parecer perda de dados).
 const submittedData = ref<Record<string, any> | null>(null)
 let idempotencyKey = newId()
 let poll: number | undefined
 
 const readOnly = computed(() => !task.value?.canWork)
-const isMine = computed(() => task.value?.assignee?.id === session.me?.id)
 const formData = computed(() => submittedData.value ?? task.value?.draft ?? task.value?.data ?? {})
 
 async function load() {
@@ -145,14 +146,17 @@ onBeforeUnmount(() => window.clearInterval(poll))
           <StatusPill kind="task" :status="task.status" />
           <span v-if="task.overdue" class="tm-pill red">Prazo vencido</span>
         </div>
-        <p class="tm-subtitle">{{ task.instance?.flowName }} · <b>{{ task.instance?.number }}</b> · grupo {{ task.candidateGroupName }}<template v-if="task.dueAt"> · prazo {{ fmtDateTime(task.dueAt) }}</template></p>
+        <p class="tm-subtitle">{{ task.instance?.flowName }} · <b>{{ task.instance?.number }}</b> · {{ task.candidateGroupName ? `grupo ${task.candidateGroupName}` : 'responsável direto' }}<template v-if="task.dueAt"> · prazo {{ fmtDateTime(task.dueAt) }}</template></p>
       </div>
       <div class="tm-actions">
         <button v-if="task.canClaim" class="tm-btn" @click="claim"><i class="pi pi-user-plus" /> Assumir</button>
-        <button v-if="isMine && task.status === 'claimed'" class="tm-btn ghost" @click="release">Devolver ao grupo</button>
+        <button v-if="task.canRelease" class="tm-btn ghost" @click="release">Devolver ao grupo</button>
+        <button v-if="task.canReassign" class="tm-btn ghost" @click="reassigning = true"><i class="pi pi-arrow-right-arrow-left" /> Reatribuir</button>
         <span v-if="task.assignee" class="tm-pill neutral"><i class="pi pi-user" /> {{ task.assignee.name }}</span>
       </div>
     </div>
+
+    <ReassignDialog v-if="task.canReassign" v-model:visible="reassigning" :task="task" @done="load" />
 
     <div v-if="processing" class="tm-note warn"><span class="tm-spinner" /><span><strong>Processando.</strong> Sua resposta foi registrada; o engine está avançando o processo. A tela será atualizada automaticamente.</span></div>
     <div v-else-if="!task.canWork && task.status !== 'completed'" class="tm-note"><i class="pi pi-info-circle" /><span>Somente leitura: {{ task.canClaim ? 'assuma a tarefa para preenchê-la.' : 'esta tarefa está com outra pessoa ou pertence a outro grupo.' }}</span></div>

@@ -349,6 +349,7 @@ onBeforeUnmount(() => window.clearInterval(deployPoll))
         :stage="stage"
         :stages="version.stages"
         :fields="version.fields"
+        :user-fields="version.userFields"
         :editable="editable"
         :is-opening="version.openingStageKey === stage.key"
         :api-base="base"

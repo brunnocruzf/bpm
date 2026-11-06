@@ -322,7 +322,7 @@ class OperationalReports
 
     private function groupName(?string $key): string
     {
-        return $key ? (BpmGroup::where('key', $key)->value('name') ?? $key) : '—';
+        return $key ? (BpmGroup::where('key', $key)->value('name') ?? $key) : 'Responsável direto';
     }
 
     private function filterSummary(array $f): string

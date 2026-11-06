@@ -2,6 +2,7 @@
 
 namespace App\Forms;
 
+use App\Identity\EmployeeDirectory;
 use App\Integrations\IntegrationUnavailable;
 use App\Integrations\LookupAmbiguous;
 use App\Integrations\LookupRunner;
@@ -19,6 +20,9 @@ use Throwable;
  *  4. campos automáticos (usuário, área, data, sequência) são calculados no servidor;
  *  5. visibilidade condicional é avaliada; campos ocultos são descartados e não exigidos;
  *  6. tipos, obrigatoriedade, opções, tamanhos e anexos são validados.
+ *
+ * Alvos de consulta sem componente no formulário são referências do servidor: começam nulos, só recebem
+ * valor se a consulta rodar (o navegador não consegue informá-los) e vão apenas para o contexto da instância.
  */
 class SubmissionProcessor
 {
@@ -37,11 +41,16 @@ class SubmissionProcessor
         $errors = [];
         $meta = ['lookups' => [], 'auto' => []];
 
+        $fieldKeys = array_flip(array_column($fields, 'key'));
         $lookupTargets = [];
+        $references = [];
         foreach ($fields as $c) {
             if (($c['type'] ?? '') === 'axlookup') {
                 foreach ((array) ($c['fillMap'] ?? []) as $m) {
                     $lookupTargets[$m['to']] = true;
+                    if (! isset($fieldKeys[$m['to']])) {
+                        $references[$m['to']] = $c['key'];
+                    }
                 }
             }
         }
@@ -99,7 +108,7 @@ class SubmissionProcessor
             $meta['lookups'][$key] = [
                 'source' => $c['lookupSource'],
                 'value' => $value,
-                'result' => $result,
+                'result' => EmployeeDirectory::withoutUserRefs($sourceKey, $result),
                 'transport' => $this->lookups->transportName($sourceKey),
                 'at' => now('UTC')->toIso8601String(),
             ];
@@ -108,7 +117,7 @@ class SubmissionProcessor
         // 4. campos automáticos
         foreach ($fields as $c) {
             if (isset($c['properties']['tmsaAuto'])) {
-                $data[$c['key']] = $this->auto->resolve((string) $c['properties']['tmsaAuto'], $c['key'], $ctx);
+                $data[$c['key']] = $this->auto->resolve((string) $c['properties']['tmsaAuto'], $c['key'], $ctx, $data);
                 $meta['auto'][$c['key']] = $c['properties']['tmsaAuto'];
             }
         }
@@ -129,7 +138,16 @@ class SubmissionProcessor
             throw ApiProblem::validation($errors);
         }
 
-        return new ProcessedSubmission($out, array_values(array_unique($hidden)), $meta);
+        // consulta oculta limpa a referência, mesmo que tenha rodado antes de a visibilidade ser recalculada
+        $values = [];
+        foreach ($references as $to => $lookupKey) {
+            $values[$to] = in_array($lookupKey, $hidden, true) ? null : ($data[$to] ?? null);
+        }
+        if ($references !== []) {
+            $meta['references'] = $references;
+        }
+
+        return new ProcessedSubmission($out, array_values(array_unique($hidden)), $meta, $values);
     }
 
     /**

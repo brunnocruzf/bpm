@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Authorization\Permissions;
+use App\Flow\AssignmentRule;
 use App\Models\BpmGroup;
 use App\Models\ProcessStageVersion;
 use App\Models\TaskProjection;
@@ -34,9 +35,12 @@ class StageNotificationController extends ApiController
         $vars = $this->sampleVars($stage, $settings);
         $admin = Permissions::allows($this->user(), Permissions::SETTINGS_MANAGE) || Permissions::allows($this->user(), Permissions::PROCESSES_MANAGE);
 
+        // com regra de atribuição o responsável só existe na execução: a lista mostra a contingência
+        $rule = AssignmentRule::of($stage);
+        $group = $rule ? ($rule['fallbackGroup'] ?? null) : $stage->lane;
         $recipients = null;
         if ($admin) {
-            $probe = new TaskProjection(['candidate_group' => $stage->lane, 'name' => $stage->name]);
+            $probe = new TaskProjection(['candidate_group' => $group, 'name' => $stage->name]);
             $recipients = array_map(fn ($r) => ['name' => $r['name'], 'hint' => Masker::emailHint($r['address']), 'kind' => str_starts_with($r['key'], 'group:') ? 'caixa do grupo' : 'membro'],
                 $resolver->forTask($probe, (string) ($request->query('groupPolicy') ?: ($cfg['groupPolicy'] ?? 'members'))));
         }
@@ -48,6 +52,7 @@ class StageNotificationController extends ApiController
             'placeholders' => collect(NotificationTemplate::PLACEHOLDERS)->map(fn ($label, $k) => ['key' => $k, 'label' => $label])->values(),
             'defaults' => ['subject' => NotificationTemplate::DEFAULT_SUBJECT, 'body' => NotificationTemplate::DEFAULT_BODY],
             'recipients' => $recipients,
+            'assignment' => $rule ? ['mode' => $rule['mode'], 'fallbackGroup' => $group, 'fallbackGroupName' => $group ? (BpmGroup::where('key', $group)->value('name') ?? $group) : null] : null,
             'canTest' => Permissions::allows($this->user(), Permissions::SETTINGS_MANAGE),
         ]);
     }
@@ -87,7 +92,7 @@ class StageNotificationController extends ApiController
             'fluxo' => $catalog->name,
             'protocolo' => $catalog->instance_prefix.'-000123/'.now()->format('y').' (exemplo)',
             'etapa' => $stage->name,
-            'grupo' => $stage->lane ? (BpmGroup::where('key', $stage->lane)->value('name') ?? $stage->lane) : '—',
+            'grupo' => AssignmentRule::of($stage) ? 'Responsável direto' : ($stage->lane ? (BpmGroup::where('key', $stage->lane)->value('name') ?? $stage->lane) : '—'),
             'responsavel' => 'Nome do responsável',
             'prazo' => $stage->configValue('slaDays') ? now()->addDays((int) $stage->configValue('slaDays'))->format('d/m/Y') : 'não definido',
             'link' => rtrim((string) config('app.frontend_url', config('app.url')), '/').'/tasks/(id-da-tarefa)',

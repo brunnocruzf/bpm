@@ -93,7 +93,7 @@ class FakeFlowable
             $id = substr($path, strlen('service/history/historic-process-instances/'));
             $i = $this->instances[$id] ?? null;
 
-            return $i ? Http::response(['id' => $id, 'endTime' => $i['ended'] ? now()->toIso8601String() : null, 'endActivityId' => $i['ended'] ? 'fim' : null, 'deleteReason' => null]) : Http::response([], 404);
+            return $i ? Http::response(['id' => $id, 'endTime' => $i['ended'] ? now()->toIso8601String() : null, 'endActivityId' => $i['ended'] ? ($i['endActivityId'] ?? 'fim') : null, 'deleteReason' => $i['deleteReason'] ?? null]) : Http::response([], 404);
         }
         if ($method === 'GET' && $path === 'service/runtime/tasks') {
             $list = array_values(array_filter($this->tasks, fn ($t) => $t['processInstanceId'] === ($query['processInstanceId'] ?? '')));
@@ -136,6 +136,13 @@ class FakeFlowable
         }
 
         return Http::response(['message' => "Fake não implementa $method $path"], 501);
+    }
+
+    /** Encerra a instância como o Flowable real: fim com terminate e cancelamento preenchem deleteReason. */
+    public function endProcess(string $processInstanceId, ?string $endActivityId, ?string $deleteReason = null): void
+    {
+        $this->tasks = array_filter($this->tasks, fn ($t) => $t['processInstanceId'] !== $processInstanceId);
+        $this->instances[$processInstanceId] = ['ended' => true, 'endActivityId' => $endActivityId, 'deleteReason' => $deleteReason] + $this->instances[$processInstanceId];
     }
 
     public function createTask(string $processInstanceId, string $key): string

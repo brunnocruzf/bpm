@@ -8,9 +8,9 @@ import { useNotify } from '@/composables/notify'
  * de DESTINO. O envio só ocorre depois que o engine confirma a criação da tarefa (outbox).
  */
 interface NotifyConfig { enabled: boolean; groupPolicy: 'members' | 'group_mailbox'; onReassign: boolean; subject?: string; body?: string }
-interface Preview { enabled: boolean; subject: string; body: string; placeholders: { key: string; label: string }[]; defaults: { subject: string; body: string }; recipients: { name: string; hint: string; kind: string }[] | null; canTest: boolean }
+interface Preview { enabled: boolean; subject: string; body: string; placeholders: { key: string; label: string }[]; defaults: { subject: string; body: string }; recipients: { name: string; hint: string; kind: string }[] | null; assignment: { mode: string; fallbackGroup: string | null; fallbackGroupName: string | null } | null; canTest: boolean }
 
-const props = defineProps<{ config: NotifyConfig | undefined; editable: boolean; previewBase: string; lane: string | null }>()
+const props = defineProps<{ config: NotifyConfig | undefined; editable: boolean; previewBase: string; lane: string | null; assignment?: Record<string, unknown> | null }>()
 const emit = defineEmits<{ save: [cfg: NotifyConfig] }>()
 const notify = useNotify()
 
@@ -54,6 +54,7 @@ async function sendTest() {
   }
 }
 watch(() => local.value.enabled, (on) => { if (on && !preview.value) loadPreview() }, { immediate: true })
+watch(() => props.assignment, () => { if (preview.value) loadPreview() })
 // chaves duplas montadas em script: o compilador de template trataria "}}" como fim de interpolação
 const LINK = '{' + '{link}' + '}'
 const tag = (key: string) => '{' + '{' + key + '}' + '}'
@@ -73,7 +74,7 @@ const hasLink = computed(() => !local.value.body || local.value.body.includes(LI
             <option value="members">Membros ativos do grupo responsável</option>
             <option value="group_mailbox">Caixa de e-mail do grupo (Administração → Grupos)</option>
           </select>
-          <div class="tm-hint">Tarefa já atribuída: somente o responsável. Nunca endereços digitados em formulários.</div>
+          <div class="tm-hint">{{ assignment ? 'Vale só na contingência: com responsável definido, o e-mail vai apenas para ele.' : 'Tarefa já atribuída: somente o responsável.' }} Nunca endereços digitados em formulários.</div>
         </div>
         <label class="check" style="align-self:center"><input type="checkbox" :checked="local.onReassign" :disabled="!editable" @change="persist({ onReassign: ($event.target as HTMLInputElement).checked })" /> <span>Avisar o novo responsável em reatribuições (sem duplicar)</span></label>
       </div>
@@ -87,7 +88,8 @@ const hasLink = computed(() => !local.value.body || local.value.body.includes(LI
       <div v-if="preview" class="preview">
         <div class="tm-strong" style="font-size:12px">{{ preview.subject }}</div>
         <pre>{{ preview.body }}</pre>
-        <div v-if="preview.recipients" class="tm-hint">Destinatários atuais ({{ lane ?? 'sem grupo' }}): <template v-if="preview.recipients.length"><span v-for="r in preview.recipients" :key="r.hint" class="tm-pill neutral" style="margin:1px">{{ r.name }} · {{ r.hint }}</span></template><template v-else>nenhum elegível (a tarefa continua visível na inbox).</template></div>
+        <div v-if="preview.assignment" class="tm-hint">Responsável definido na execução. Contingência: {{ preview.assignment.fallbackGroupName ?? 'não definida' }}.</div>
+        <div v-if="preview.recipients" class="tm-hint">{{ preview.assignment ? 'Destinatários da contingência' : `Destinatários atuais (${lane ?? 'sem grupo'})` }}: <template v-if="preview.recipients.length"><span v-for="r in preview.recipients" :key="r.hint" class="tm-pill neutral" style="margin:1px">{{ r.name }} · {{ r.hint }}</span></template><template v-else>nenhum elegível (a tarefa continua visível na inbox).</template></div>
         <div v-else class="tm-hint">A lista de destinatários é visível apenas para administradores.</div>
         <div v-if="preview.canTest" class="test"><input v-model="testTo" type="email" placeholder="enviar teste para..." aria-label="E-mail para teste" /><button class="tm-btn small" :disabled="!testTo" @click="sendTest">Enviar teste</button></div>
       </div>

@@ -29,6 +29,9 @@ final class FieldCatalog
     /** sequence:RACF → número anual "RACF-000001/26"; counter:X → contador por instância. */
     public const AUTO_PATTERN = '/^(sequence|counter):[A-Z][A-Z0-9_]{1,19}$/';
 
+    /** requester.matches:<referência> → "sim" quando o solicitante é o usuário da referência (calculado no envio). */
+    public const REQUESTER_MATCHES = 'requester.matches:';
+
     /** Prefixo das consultas publicadas no catálogo de integrações (endpoint GET exposto aos formulários). */
     public const API_PREFIX = 'api:';
 
@@ -103,6 +106,10 @@ final class FieldCatalog
 
     public static function isValidAuto(string $value): bool
     {
+        if (str_starts_with($value, self::REQUESTER_MATCHES)) {
+            return preg_match(FormioSchema::KEY_PATTERN, substr($value, strlen(self::REQUESTER_MATCHES))) === 1;
+        }
+
         return array_key_exists($value, self::AUTO_SOURCES) || preg_match(self::AUTO_PATTERN, $value) === 1;
     }
 
@@ -116,7 +123,7 @@ final class FieldCatalog
 
         return [
             'autoSources' => array_map(fn ($k, $v) => ['key' => $k, 'label' => $v], array_keys(self::AUTO_SOURCES), self::AUTO_SOURCES),
-            'autoPatterns' => ['sequence:<CHAVE>', 'counter:<CHAVE>'],
+            'autoPatterns' => ['sequence:<CHAVE>', 'counter:<CHAVE>', self::REQUESTER_MATCHES.'<referência>'],
             'lookupSources' => $lookups,
             'componentTypes' => FormioSchema::allowedTypes(),
         ];

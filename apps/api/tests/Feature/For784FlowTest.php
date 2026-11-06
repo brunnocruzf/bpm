@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Engine\ProjectionSync;
 use App\Flow\FlowGraph;
 use App\Flow\FlowValidator;
 use App\Models\BpmGroup;
@@ -15,6 +16,7 @@ use App\Models\User;
 use Database\Seeders\Blueprints\For784;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\FakeFlowable;
 use Tests\TestCase;
 
@@ -56,12 +58,35 @@ class For784FlowTest extends TestCase
             'name' => $name, 'email' => Str::slug($name).'@tmsa.example', 'registration_number' => $registration, 'manager_user_id' => $manager?->id,
             'is_active' => $active, 'auth_source' => User::SOURCE_ENTRA, 'roles' => [], 'groups' => [],
         ]);
+        // o gestor precisa do papel de executor: sem ele a abertura é recusada
         $lenoir = $person('Lenoir Jaques Schneider', '010017');
+        $lenoir->update(['username' => 'lenoir', 'roles' => ['Bpm.Initiator', 'Bpm.TaskWorker'], 'auth_source' => User::SOURCE_DEMO]);
         $person('Colaborador TMSA', '014085', $lenoir);
         $person('Colaborador antigo', '0104086', null, false);
         $person('Colaborador recontratado', '014086', $lenoir);
         $person('Ana TMSA', '017777', $lenoir);
         $person('Bia IMS', '027777');
+        $person('Sem Gestor', '015000');
+        $ausente = $person('Gestor Desligado', '015001', null, false);
+        $person('Equipe do Desligado', '015002', $ausente);
+        $sonia = $person('Sônia Substituta', '015003');
+        $sonia->update(['username' => 'sonia', 'roles' => ['Bpm.Initiator', 'Bpm.TaskWorker'], 'auth_source' => User::SOURCE_DEMO]);
+        $person('Sem Papel', '015004');
+    }
+
+    private function start(string $as, array $data)
+    {
+        return $this->as($as)->withHeader('Idempotency-Key', 'k-'.Str::random(12))
+            ->postJson('/api/v1/process-instances', ['flowKey' => For784::KEY, 'data' => $data]);
+    }
+
+    private function ready(): void
+    {
+        $this->install();
+        $this->directory();
+        $this->worker('solicitante', ['PONTO_SOLICITANTE']);
+        $this->engine->nextTasksOnStart = ['registrar_marcacoes'];
+        $this->engine->nextTasksOnComplete = ['aprovar_gestor'];
     }
 
     private function opening(array $overrides = []): array
@@ -71,7 +96,6 @@ class For784FlowTest extends TestCase
             'nomeColaborador' => 'digitado no navegador (ignorado)',
             'gestorImediato' => 'digitado no navegador (ignorado)',
             'substituirGestor' => false,
-            'solicitanteGestor' => 'nao',
             'ocorrencias' => [['motivo' => 'esquecimento_registro', 'dataOcorrencia' => '2026-11-03T00:00:00-03:00', 'entrada' => '22:00', 'saida' => '06:00', 'noturno' => true]],
         ];
     }
@@ -115,6 +139,7 @@ class For784FlowTest extends TestCase
         $this->assertStringContainsString('<timeDuration>P2D</timeDuration>', $xml);
         $this->assertStringContainsString('flowable:candidateGroups="PONTO_GESTOR"', $xml);
         $this->assertStringContainsString('flowable:candidateGroups="RH"', $xml);
+        $this->assertSame(2, substr_count($xml, '<tmsa:assignment>'), 'aprovação do gestor e correção');
         $this->assertSame(3, substr_count($xml, '<terminateEventDefinition'), 'Cancelado, Reprovado e Fim encerram também o timer do gestor');
     }
 
@@ -146,21 +171,16 @@ class For784FlowTest extends TestCase
 
     public function test_opening_reaches_the_manager_and_correction_requires_a_reason(): void
     {
-        $this->install();
-        $this->directory();
-        $this->worker('solicitante', ['PONTO_SOLICITANTE']);
+        $this->ready();
         $this->worker('gestorponto', ['PONTO_GESTOR']);
-        $this->engine->nextTasksOnStart = ['registrar_marcacoes'];
-        $this->engine->nextTasksOnComplete = ['aprovar_gestor'];
 
-        $start = fn (array $data) => $this->as('solicitante')->withHeader('Idempotency-Key', 'k-'.Str::random(12))
-            ->postJson('/api/v1/process-instances', ['flowKey' => For784::KEY, 'data' => $data]);
+        $start = fn (array $data) => $this->start('solicitante', $data);
         $start($this->opening(['ocorrencias' => []]))->assertStatus(422);
         $start($this->opening(['ocorrencias' => [['motivo' => 'outro', 'dataOcorrencia' => '2026-11-03T00:00:00-03:00']]]))
             ->assertStatus(422)->assertJsonValidationErrors(['ocorrencias[0].motivo'], 'errors');
         $start($this->opening(['ocorrencias' => [['motivo' => 'problema_relogio', 'dataOcorrencia' => '2026-11-03T00:00:00-03:00', 'entrada' => '25:00', 'saida' => '8h']]]))
             ->assertStatus(422)->assertJsonValidationErrors(['ocorrencias[0].entrada', 'ocorrencias[0].saida'], 'errors');
-        $start($this->opening(['substituirGestor' => true]))->assertStatus(422)->assertJsonValidationErrors(['gestorSubstituto'], 'errors');
+        $start($this->opening(['substituirGestor' => true]))->assertStatus(422)->assertJsonValidationErrors(['matriculaSubstituto'], 'errors');
         $start($this->opening(['matriculaColaborador' => '9999']))->assertStatus(422)->assertJsonValidationErrors(['matriculaColaborador'], 'errors');
         $start($this->opening(['matriculaColaborador' => '7777']))->assertStatus(422)->assertJsonValidationErrors(['matriculaColaborador'], 'errors');
         $start($this->opening())->assertStatus(202);
@@ -175,12 +195,106 @@ class For784FlowTest extends TestCase
         $this->assertSame('lenoir-jaques-schneider@tmsa.example', $instance->data['gestorImediatoEmail']);
 
         $task = TaskProjection::where('stage_key', 'aprovar_gestor')->sole();
-        $this->assertSame('PONTO_GESTOR', $task->candidate_group);
+        $this->assertSame(User::where('username', 'lenoir')->value('id'), $task->assignee_id);
+        $this->assertNull($task->candidate_group);
         $this->as('solicitante')->postJson("/api/v1/tasks/{$task->id}/complete", ['data' => ['decisaoGestor' => 'aprovado']])->assertForbidden();
-        $this->as('gestorponto')->postJson("/api/v1/tasks/{$task->id}/complete", ['data' => ['decisaoGestor' => 'correcao']])
+        $this->as('gestorponto')->getJson('/api/v1/tasks?scope=groups')->assertOk()->assertJsonCount(0, 'data');
+        $this->as('gestorponto')->postJson("/api/v1/tasks/{$task->id}/complete", ['data' => ['decisaoGestor' => 'aprovado']])->assertNotFound();
+        $this->as('lenoir')->postJson("/api/v1/tasks/{$task->id}/complete", ['data' => ['decisaoGestor' => 'correcao']])
             ->assertStatus(422)->assertJsonValidationErrors(['motivoCorrecao'], 'errors');
-        $this->as('gestorponto')->postJson("/api/v1/tasks/{$task->id}/complete", ['data' => ['decisaoGestor' => 'correcao', 'motivoCorrecao' => 'Faltou a 2ª saída']])
+        $this->engine->nextTasksOnComplete = ['corrigir_marcacoes'];
+        $this->as('lenoir')->postJson("/api/v1/tasks/{$task->id}/complete", ['data' => ['decisaoGestor' => 'correcao', 'motivoCorrecao' => 'Faltou a 2ª saída']])
             ->assertStatus(202);
+        $this->drainOutbox();
+
+        $correction = TaskProjection::where('stage_key', 'corrigir_marcacoes')->sole();
+        $this->assertSame(User::where('username', 'solicitante')->value('id'), $correction->assignee_id, 'a correção volta só ao solicitante');
+        $this->assertNull($correction->candidate_group);
+    }
+
+    public function test_the_substitute_replaces_an_unavailable_manager(): void
+    {
+        $this->ready();
+
+        $this->start('solicitante', $this->opening(['matriculaColaborador' => '5002', 'substituirGestor' => true, 'matriculaSubstituto' => '5003']))->assertStatus(202);
+        $this->drainOutbox();
+
+        $instance = ProcessInstance::sole();
+        $this->assertSame('Sônia Substituta', $instance->data['gestorSubstituto']);
+        $this->assertSame(User::where('username', 'sonia')->value('id'), TaskProjection::where('stage_key', 'aprovar_gestor')->sole()->assignee_id);
+    }
+
+    public function test_the_requester_does_not_skip_the_manager_by_declaring_to_be_one(): void
+    {
+        $this->ready();
+
+        $this->start('solicitante', $this->opening(['solicitanteGestor' => 'sim']))->assertStatus(202);
+        $this->drainOutbox();
+
+        $this->assertSame('nao', ProcessInstance::sole()->data['solicitanteGestor']);
+        $this->assertSame('nao', EngineCommand::where('command', EngineCommand::START)->sole()->payload['variables']['solicitanteGestor']);
+    }
+
+    public function test_the_actual_manager_goes_straight_to_hr(): void
+    {
+        $this->ready();
+        $this->engine->nextTasksOnComplete = ['aprovar_rh'];
+
+        // o gestor imediato solicita: nem o aprovador nem o substituto são exigidos neste caminho
+        $this->start('lenoir', $this->opening())->assertStatus(202);
+        $this->drainOutbox();
+
+        $this->assertSame('sim', ProcessInstance::sole()->data['solicitanteGestor']);
+        $this->assertSame('sim', EngineCommand::where('command', EngineCommand::START)->sole()->payload['variables']['solicitanteGestor']);
+        $this->assertSame('RH', TaskProjection::where('stage_key', 'aprovar_rh')->sole()->candidate_group);
+    }
+
+    public function test_opening_is_refused_when_nobody_can_approve(): void
+    {
+        $this->ready();
+        $refused = fn (array $data, string $field) => $this->start('solicitante', $this->opening($data))->assertStatus(422)->assertJsonValidationErrors([$field], 'errors');
+
+        $refused(['matriculaColaborador' => '5000'], 'matriculaColaborador'); // sem gestor
+        $refused(['matriculaColaborador' => '5002'], 'matriculaColaborador'); // gestor inativo
+        $refused(['substituirGestor' => true, 'matriculaSubstituto' => '9999'], 'matriculaSubstituto'); // inexistente
+        $refused(['substituirGestor' => true, 'matriculaSubstituto' => '5001'], 'matriculaSubstituto'); // inativo
+        $refused(['substituirGestor' => true, 'matriculaSubstituto' => '5004'], 'matriculaSubstituto'); // sem papel de executor
+        $refused(['substituirGestor' => true, 'matriculaSubstituto' => '4085'], 'matriculaSubstituto'); // o próprio colaborador
+
+        User::where('username', 'solicitante')->update(['registration_number' => '016000']);
+        $refused(['substituirGestor' => true, 'matriculaSubstituto' => '6000'], 'matriculaSubstituto'); // o próprio solicitante
+
+        $this->assertSame(0, ProcessInstance::count());
+    }
+
+    /** @return array<string, array{0: ?string, 1: ?string, 2: string, 3: string}> */
+    public static function endings(): array
+    {
+        return [
+            'reprovação com terminate' => ['fim_reprovado', 'terminate end event (fim_reprovado)', ProcessInstance::COMPLETED, 'reprovado'],
+            'conclusão com terminate' => ['fim_concluido', 'terminate end event (fim_concluido)', ProcessInstance::COMPLETED, 'concluido'],
+            'desistência do solicitante' => ['fim_cancelado', 'terminate end event (fim_cancelado)', ProcessInstance::CANCELLED, 'cancelado'],
+            'fim sem terminate' => ['fim_prazo_gestor', null, ProcessInstance::COMPLETED, 'concluido'],
+            'cancelada no engine, parada em uma tarefa' => ['aprovar_gestor', 'Cancelada pelo suporte', ProcessInstance::CANCELLED, 'cancelado'],
+            'cancelada no engine, sem atividade final' => [null, 'Cancelada pelo suporte', ProcessInstance::CANCELLED, 'cancelado'],
+        ];
+    }
+
+    #[DataProvider('endings')]
+    public function test_the_end_keeps_the_business_result_and_only_a_real_cancellation_cancels(?string $end, ?string $deleteReason, string $status, string $result): void
+    {
+        $this->ready();
+        $this->start('solicitante', $this->opening())->assertStatus(202);
+        $this->drainOutbox();
+
+        $instance = ProcessInstance::sole();
+        $this->engine->endProcess((string) $instance->engine_process_instance_id, $end, $deleteReason);
+        app(ProjectionSync::class)->syncInstance($instance);
+
+        $instance->refresh();
+        $this->assertSame($status, $instance->status);
+        $this->assertSame($result, $instance->result);
+        $this->assertSame(TaskProjection::CANCELLED, TaskProjection::where('stage_key', 'aprovar_gestor')->sole()->status, 'tarefa aberta não sobrevive ao fim');
     }
 
     public function test_employee_lookup_ignores_the_company_code_of_the_registration_number(): void

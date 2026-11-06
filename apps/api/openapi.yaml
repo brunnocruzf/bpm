@@ -130,6 +130,17 @@ components:
               field: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,62}$' }
               operator: { type: string, enum: [eq, neq, empty, not_empty, contains, gt, gte, lt, lte] }
               value: { type: [string, number, boolean, 'null'] }
+    AssignmentRule:
+      type: object
+      description: Regra de atribuição da etapa, resolvida ao criar a tarefa (ADR-0020). Sem a chave vale o modo group
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [group, field, requester, requester_manager] }
+        fields: { type: array, items: { type: string }, description: Referências de usuário em ordem; o primeiro preenchido vence }
+        fallbackGroup: { type: string, description: Grupo que recebe a tarefa quando o responsável não pode executá-la }
+        excludeRequester: { type: boolean }
+        excludeFields: { type: array, items: { type: string } }
+        requiredUnless: { type: object, additionalProperties: true, description: Campo e valor em que o envio não exige responsável }
     Stage:
       type: object
       properties:
@@ -137,8 +148,11 @@ components:
         elementId: { type: string }
         name: { type: string }
         type: { type: string, enum: [start, user_task, exclusive_gateway, parallel_gateway, service_task, timer, end] }
-        lane: { type: [string, 'null'], description: Chave do grupo/raia (bpm_groups) }
-        config: { type: object }
+        lane: { type: [string, 'null'], description: Chave do grupo/raia (bpm_groups). Fora do modo group é só visual }
+        config:
+          type: object
+          properties:
+            assignment: { $ref: '#/components/schemas/AssignmentRule' }
         form: { type: [object, 'null'], properties: { formKey: { type: string }, title: { type: string }, fieldCount: { type: integer } } }
         outgoing:
           type: array
@@ -158,6 +172,15 @@ components:
         hash: { type: [string, 'null'] }
         engineDeployed: { type: boolean }
         stages: { type: array, items: { $ref: '#/components/schemas/Stage' } }
+        userFields:
+          type: array
+          description: Referências de usuário disponíveis para a regra de atribuição
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+              stages: { type: array, items: { type: string } }
         openingStageKey: { type: [string, 'null'] }
     InstanceSummary:
       type: object
@@ -177,11 +200,13 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         status: { type: string, enum: [open, claimed, completing, completed, cancelled] }
-        candidateGroup: { type: [string, 'null'] }
+        candidateGroup: { type: [string, 'null'], description: Nulo em tarefa atribuída diretamente a uma pessoa }
         dueAt: { type: [string, 'null'], format: date-time }
         rowVersion: { type: integer, description: ETag para concorrência otimista }
         canWork: { type: boolean }
         canClaim: { type: boolean }
+        canRelease: { type: boolean, description: Falso em tarefa sem grupo }
+        canReassign: { type: boolean, description: Exige processes.manage }
 paths:
   /health:
     get: { summary: "Liveness, security: []", responses: { '200': { description: OK } } }
@@ -343,10 +368,10 @@ paths:
     post: { summary: "Assume a tarefa", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
   /tasks/{id}/release:
     parameters: [{ $ref: '#/components/parameters/Id' }]
-    post: { summary: "Devolve ao grupo", responses: { '200': { description: OK } } }
+    post: { summary: "Devolve ao grupo (409 task_directly_assigned em tarefa sem grupo)", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
   /tasks/{id}/reassign:
     parameters: [{ $ref: '#/components/parameters/Id' }]
-    post: { summary: "Reatribui (Bpm.Admin) com justificativa auditada", responses: { '200': { description: OK } } }
+    post: { summary: "Reatribui (processes.manage) com justificativa auditada. Com grupo, o destino precisa pertencer a ele; sem grupo, precisa ser elegível pela regra da etapa", responses: { '200': { description: OK }, '422': { $ref: '#/components/responses/Problem' } } }
   /tasks/{id}/draft:
     parameters: [{ $ref: '#/components/parameters/Id' }]
     put: { summary: "Salva rascunho (não validado)", responses: { '200': { description: OK } } }
@@ -654,7 +679,7 @@ paths:
     post: { summary: "Reprocessa mensagem com falha (dead-letter)", responses: { '200': { description: OK }, '409': { $ref: '#/components/responses/Problem' } } }
   /definitions/{key}/versions/{version}/stages/{stageKey}/notification-preview:
     parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/StageKey' }]
-    get: { summary: "Pré-visualiza o e-mail da etapa com dados de exemplo (destinatários só para administradores)", responses: { '200': { description: OK } } }
+    get: { summary: "Pré-visualiza o e-mail da etapa com dados de exemplo (destinatários só para administradores). Com regra de atribuição, assignment traz modo e contingência, e os destinatários são os da contingência", responses: { '200': { description: OK } } }
   /definitions/{key}/versions/{version}/stages/{stageKey}/notification-test:
     parameters: [{ $ref: '#/components/parameters/FlowKey' }, { $ref: '#/components/parameters/Version' }, { $ref: '#/components/parameters/StageKey' }]
     post: { summary: "E-mail de teste da etapa (settings.manage)", responses: { '202': { description: Enfileirado } } }

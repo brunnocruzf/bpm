@@ -82,7 +82,7 @@ class Notifier
             ], $causationId)];
         }
 
-        $group = BpmGroup::where('key', $task->candidate_group)->value('name') ?? $task->candidate_group ?? '—';
+        $group = $task->candidate_group ? (BpmGroup::where('key', $task->candidate_group)->value('name') ?? $task->candidate_group) : 'Responsável direto';
         $vars = [
             'organizacao' => $this->brand()['orgName'],
             'fluxo' => $instance->catalog->name,

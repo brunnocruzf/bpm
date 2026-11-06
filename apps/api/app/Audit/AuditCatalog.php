@@ -47,6 +47,8 @@ final class AuditCatalog
         'instance.ended' => ['runtime', 'Solicitação encerrada'],
         'instance.branch_taken' => ['runtime', 'Decisão: caminho escolhido'],
         'task.created' => ['runtime', 'Tarefa criada (entrada na etapa)'],
+        'task.auto_assigned' => ['runtime', 'Tarefa atribuída pela regra da etapa'],
+        'task.assignment_fallback' => ['runtime', 'Tarefa enviada ao grupo de contingência'],
         'task.claimed' => ['runtime', 'Tarefa assumida'],
         'task.released' => ['runtime', 'Tarefa liberada'],
         'task.reassigned' => ['runtime', 'Tarefa reatribuída'],
