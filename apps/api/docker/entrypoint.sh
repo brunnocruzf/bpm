@@ -13,9 +13,12 @@ done
 php artisan config:cache >/dev/null
 php artisan route:cache >/dev/null
 
+# Idempotente (só cria o bucket se faltar): roda sempre, independente de RUN_MIGRATIONS, para nunca deixar
+# o storage de anexos/fotos sem bucket (upload/leitura viram 500 silenciosamente nesse caso).
+php artisan bpm:storage-init || echo "Aviso: storage de anexos não inicializado (verifique BPM_S3_*)." >&2
+
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   php artisan migrate --force
-  php artisan bpm:storage-init || echo "Aviso: storage de anexos não inicializado (verifique BPM_S3_*)." >&2
   if [ "${SEED_ON_START:-false}" = "true" ]; then
     php artisan db:seed --force
   fi

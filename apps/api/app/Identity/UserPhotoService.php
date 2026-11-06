@@ -216,7 +216,14 @@ class UserPhotoService
         if ($photo->status !== UserPhoto::PRESENT || ! $photo->disk || ! $photo->object_key) {
             return null;
         }
-        $bytes = Storage::disk($photo->disk)->get($photo->object_key);
+        try {
+            $bytes = Storage::disk($photo->disk)->get($photo->object_key);
+        } catch (Throwable $e) {
+            // disco S3 configurado com "throw" => true: falta do objeto vira exceção, não null; trata como "sem foto"
+            Log::notice('Foto: objeto ausente/ilegível no storage', ['reason' => Masker::error($e)]);
+
+            return null;
+        }
 
         return $bytes === null ? null : ['bytes' => $bytes, 'contentType' => (string) $photo->content_type];
     }
