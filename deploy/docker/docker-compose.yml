@@ -208,8 +208,8 @@ services:
     image: bpm-tmsa/api:dev
     environment:
       <<: *api-env
-      RUN_MIGRATIONS: "true"
-      SEED_ON_START: ${SEED_ON_START:-true}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-false}
+      SEED_ON_START: ${SEED_ON_START:-false}
     secrets: *api-secrets
     depends_on:
       postgres: { condition: service_healthy }
