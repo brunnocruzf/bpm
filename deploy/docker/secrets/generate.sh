@@ -13,7 +13,11 @@ fi
 if [ ! -s bpm_secrets_key ]; then
   # 32 bytes aleatórios em base64 = chave AES-256 do cofre de segredos das integrações
   head -c 32 /dev/urandom | base64 > bpm_secrets_key
-  chmod 600 bpm_secrets_key
+  # 644 (não 600): o Compose (fora do Swarm) faz bind-mount deste arquivo preservando dono/permissões
+  # do host. Se o script rodar como um usuário diferente de www-data (uid do container), um modo 600
+  # deixaria o arquivo ilegível dentro do container — SecretStore cai silenciosamente para a chave
+  # derivada da APP_KEY, e qualquer segredo já salvo com a chave dedicada vira irrecuperável.
+  chmod 644 bpm_secrets_key
   echo "bpm_secrets_key criado${1:+ ($1)}."
 else
   echo "bpm_secrets_key já existe${1:+ ($1)} (rotação: ver docs/runbook.md)."

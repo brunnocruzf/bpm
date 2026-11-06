@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Support\ApiProblem;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Encryption\Encrypter;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -140,8 +141,15 @@ class SecretStore
     {
         $raw = config('bpm.secrets.key');
         $file = config('bpm.secrets.key_file');
-        if (! $raw && $file && is_readable((string) $file)) {
-            $raw = trim((string) file_get_contents((string) $file));
+        if (! $raw && $file) {
+            if (is_readable((string) $file)) {
+                $raw = trim((string) file_get_contents((string) $file));
+            } else {
+                // Configurado mas ilegível (permissão/propriedade do arquivo montado em /run/secrets):
+                // sem este aviso, o cofre cai silenciosamente para a chave derivada da APP_KEY e
+                // qualquer segredo já salvo com a chave dedicada passa a falhar ("rotação incompleta").
+                Log::warning('SecretStore: BPM_SECRETS_KEY_FILE configurado mas ilegível pelo processo; usando chave derivada da APP_KEY.', ['file' => (string) $file]);
+            }
         }
 
         return $raw ? $this->decodeKey((string) $raw) : $this->fallbackKey();
